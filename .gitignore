@@ -1,0 +1,15 @@
+# backend (Python)
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# env files — nunca sobem, cada ambiente (local/produção) tem o seu
+.env
+.env.*
+!.env.example
+
+# editores/SO
+.DS_Store
+Thumbs.db

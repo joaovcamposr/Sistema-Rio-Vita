@@ -1,0 +1,70 @@
+.bar {
+  background: var(--surface);
+  border-bottom: 1px solid var(--rule);
+  padding: 8px 20px;
+}
+.inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.brand { display: flex; align-items: center; color: var(--brand); }
+
+.logo {
+  display: block;
+  width: 112px;
+}
+.logo :global(svg) { display: block; width: 100%; height: auto; }
+
+.tagline {
+  display: none;
+  font-size: 0.76rem;
+  color: var(--ink-faint);
+  flex: 1;
+}
+
+.usuario {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+}
+.nome {
+  display: none;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--ink-muted);
+}
+.trocarSenha {
+  display: flex;
+  align-items: center;
+  font-size: 0.9rem;
+  color: var(--ink-faint);
+  text-decoration: none;
+}
+.trocarSenha:hover { color: var(--brand-deep); }
+.trocarSenhaTexto { display: none; }
+.sair {
+  border: 1px solid var(--rule-strong);
+  background: var(--surface);
+  color: var(--ink-muted);
+  padding: 7px 12px;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.sair:hover { border-color: var(--brand); color: var(--brand-deep); }
+
+@media (min-width: 720px) {
+  .bar { padding: 10px 32px; }
+  .logo { width: 170px; }
+  .tagline { display: block; font-size: 0.8rem; }
+  .nome { display: block; }
+  .trocarSenha { font-size: 0.78rem; text-decoration: underline; gap: 4px; }
+  .trocarSenhaTexto { display: inline; }
+}

@@ -1,0 +1,83 @@
+:root {
+  /* marca Rio Vita — C90 M0 Y0 K0 */
+  --brand: #00A6E0;
+  --brand-deep: #05627F;
+  --brand-ink: #04303F;
+  --brand-wash: #E3F4FB;
+
+  --ground: #F2F7FA;
+  --surface: #FFFFFF;
+  --surface-sunk: #E9F1F5;
+  --ink: #0C1F27;
+  --ink-muted: #4C6570;
+  --ink-faint: #74909B;
+  --ok: #1F7D55;
+  --ok-soft: #E0F1E8;
+  --warn: #96660D;
+  --warn-soft: #FAEFD9;
+  --crit: #A8362A;
+  --crit-soft: #FBE7E4;
+  --rule: #D6E3EA;
+  --rule-strong: #BACED8;
+  --shadow: 0 1px 2px rgba(12, 31, 39, .05), 0 8px 24px -12px rgba(12, 31, 39, .16);
+  --shadow-lg: 0 24px 60px -24px rgba(5, 49, 66, .42);
+
+  --logo-ink: var(--ink);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --brand: #3FBEEC; --brand-deep: #8FD9F5; --brand-ink: #06201C; --brand-wash: #0C2C39;
+    --ground: #071820; --surface: #0D2029; --surface-sunk: #132B35;
+    --ink: #E4F0F5; --ink-muted: #9BB4BF; --ink-faint: #74909B;
+    --ok: #56B98C; --ok-soft: #10281F;
+    --warn: #D0A153; --warn-soft: #2A2214;
+    --crit: #E38477; --crit-soft: #2D1A17;
+    --rule: #1E3742; --rule-strong: #2B4A57;
+    --shadow: 0 1px 2px rgba(0,0,0,.45), 0 8px 24px -12px rgba(0,0,0,.65);
+    --shadow-lg: 0 24px 60px -24px rgba(0,0,0,.85);
+  }
+  html { color-scheme: dark; }
+}
+:root[data-theme="dark"] {
+  --brand: #3FBEEC; --brand-deep: #8FD9F5; --brand-ink: #06201C; --brand-wash: #0C2C39;
+  --ground: #071820; --surface: #0D2029; --surface-sunk: #132B35;
+  --ink: #E4F0F5; --ink-muted: #9BB4BF; --ink-faint: #74909B;
+  --ok: #56B98C; --ok-soft: #10281F;
+  --warn: #D0A153; --warn-soft: #2A2214;
+  --crit: #E38477; --crit-soft: #2D1A17;
+  --rule: #1E3742; --rule-strong: #2B4A57;
+  --shadow: 0 1px 2px rgba(0,0,0,.45), 0 8px 24px -12px rgba(0,0,0,.65);
+  --shadow-lg: 0 24px 60px -24px rgba(0,0,0,.85);
+}
+:root[data-theme="light"] {
+  --brand: #00A6E0; --brand-deep: #05627F; --brand-ink: #04303F; --brand-wash: #E3F4FB;
+  --ground: #F2F7FA; --surface: #FFFFFF; --surface-sunk: #E9F1F5;
+  --ink: #0C1F27; --ink-muted: #4C6570; --ink-faint: #74909B;
+  --ok: #1F7D55; --ok-soft: #E0F1E8;
+  --warn: #96660D; --warn-soft: #FAEFD9;
+  --crit: #A8362A; --crit-soft: #FBE7E4;
+  --rule: #D6E3EA; --rule-strong: #BACED8;
+  --shadow: 0 1px 2px rgba(12, 31, 39, .05), 0 8px 24px -12px rgba(12, 31, 39, .16);
+  --shadow-lg: 0 24px 60px -24px rgba(5, 49, 66, .42);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { height: 100%; }
+html, body { max-width: 100vw; overflow-x: hidden; }
+
+body {
+  min-height: 100%;
+  background: var(--ground);
+  color: var(--ink);
+  font-family: "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+a { color: inherit; text-decoration: none; }
+button { font-family: inherit; }
+.tabular { font-variant-numeric: tabular-nums; }
