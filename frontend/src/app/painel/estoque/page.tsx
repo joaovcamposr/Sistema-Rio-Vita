@@ -54,6 +54,7 @@ export default function PainelEstoque() {
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [produtoId, setProdutoId] = useState<number | null>(null);
   const [tipo, setTipo] = useState<TipoAjusteEstoque>("amostra");
+  const [direcao, setDirecao] = useState<"reduzir" | "aumentar">("reduzir");
   const [quantidade, setQuantidade] = useState("");
   const [observacao, setObservacao] = useState("");
   const [enviando, setEnviando] = useState(false);
@@ -87,12 +88,14 @@ export default function PainelEstoque() {
     if (!produto) return;
     setEnviando(true);
     try {
+      const sinal = tipo === "diferenca_estoque" && direcao === "aumentar" ? -1 : 1;
+      const valor = qtdNum * sinal;
       await criarAjusteEstoque({
         client_id: novoClientId(),
         data: hojeISO(),
         produto_id: produto.id,
-        quantidade_embalagens: produto.kg_digitado ? null : qtdNum,
-        quantidade_kg: produto.kg_digitado ? qtdNum : null,
+        quantidade_embalagens: produto.kg_digitado ? null : valor,
+        quantidade_kg: produto.kg_digitado ? valor : null,
         tipo,
         observacao: observacao || null,
       });
@@ -152,7 +155,7 @@ export default function PainelEstoque() {
                   <div className={styles.cardValue}>{nf(i.saldo_un ?? 0, 0)} un</div>
                   <div className={styles.cardSub}>
                     Produzido {nf(i.produzido_un ?? 0, 0)} · Vendido {nf(i.vendido_un ?? 0, 0)}
-                    {(i.ajustado_un ?? 0) > 0 ? ` · Ajustado ${nf(i.ajustado_un ?? 0, 0)}` : ""}
+                    {(i.ajustado_un ?? 0) !== 0 ? ` · Ajustado ${nf(i.ajustado_un ?? 0, 0)}` : ""}
                   </div>
                 </div>
               ))}
@@ -201,13 +204,39 @@ export default function PainelEstoque() {
                       type="button"
                       className={styles.chip}
                       aria-pressed={tipo === t}
-                      onClick={() => setTipo(t)}
+                      onClick={() => {
+                        setTipo(t);
+                        if (t !== "diferenca_estoque") setDirecao("reduzir");
+                      }}
                     >
                       {TIPO_LABEL[t]}
                     </button>
                   ))}
                 </div>
               </div>
+              {tipo === "diferenca_estoque" && (
+                <div className={styles.campo} style={{ marginBottom: 14 }}>
+                  <label>Direção</label>
+                  <div className={styles.chips}>
+                    <button
+                      type="button"
+                      className={styles.chip}
+                      aria-pressed={direcao === "reduzir"}
+                      onClick={() => setDirecao("reduzir")}
+                    >
+                      Reduzir estoque (sistema mostra a mais)
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.chip}
+                      aria-pressed={direcao === "aumentar"}
+                      onClick={() => setDirecao("aumentar")}
+                    >
+                      Aumentar estoque (sistema mostra a menos)
+                    </button>
+                  </div>
+                </div>
+              )}
               <div className={styles.filtros} style={{ marginBottom: 14 }}>
                 <div className={styles.campo}>
                   <label>{produto?.kg_digitado ? "Quantidade (Kg)" : `Quantidade (${produto ? unidadeRotulo(produto) : "un"})`}</label>

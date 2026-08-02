@@ -433,8 +433,10 @@ class AjusteEstoqueIn(BaseModel):
     client_id: uuid.UUID
     data: date
     produto_id: int
-    quantidade_embalagens: float | None = Field(default=None, ge=0)
-    quantidade_kg: float | None = Field(default=None, ge=0)
+    # negativo só é aceito pra tipo="diferenca_estoque" (correção pra cima —
+    # ver model_validator abaixo); amostra/descarte continuam só positivos
+    quantidade_embalagens: float | None = Field(default=None)
+    quantidade_kg: float | None = Field(default=None)
     tipo: TipoAjusteEstoque
     observacao: str | None = None
 
@@ -442,6 +444,9 @@ class AjusteEstoqueIn(BaseModel):
     def um_dos_dois_informado(self) -> "AjusteEstoqueIn":
         if self.quantidade_embalagens is None and self.quantidade_kg is None:
             raise ValueError("informe quantidade_embalagens ou quantidade_kg")
+        if self.tipo != "diferenca_estoque":
+            if (self.quantidade_embalagens or 0) < 0 or (self.quantidade_kg or 0) < 0:
+                raise ValueError("amostra/descarte não podem ser negativos — só 'diferença de estoque' admite correção pra cima")
         return self
 
 
