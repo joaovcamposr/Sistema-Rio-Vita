@@ -42,7 +42,7 @@ class Settings:
     # sem a chave, os endpoints de leitura ficam indisponíveis (422), mas o
     # resto do sistema funciona normalmente
     gemini_api_key: str | None = os.environ.get("GEMINI_API_KEY")
-    gemini_model: str = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
+    gemini_model: str = os.environ.get("GEMINI_MODEL", "gemini-flash-latest")
 
 
 @lru_cache
