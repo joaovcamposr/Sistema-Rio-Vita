@@ -80,6 +80,17 @@ export interface ProducaoResumo {
   rendimento_medio_ponderado_tilapia_limpa: number | null;
 }
 
+export interface ProducaoDetalheLinha {
+  data: string;
+  produto_nome: string;
+  quantidade_kg: number;
+  lote_codigo: string | null;
+  viveiro_codigo: string | null;
+  data_despesca: string | null;
+  peso_medio_suja_g: number | null;
+  rendimento: number | null;
+}
+
 export interface EstoqueItem {
   id: number;
   nome: string;
@@ -353,6 +364,13 @@ export const painelAgua = () => cachedGet<AguaViveiro[]>("cache:painel:agua", "/
 export const painelProducao = (de?: string, ate?: string) => {
   const qs = de && ate ? `?de=${de}&ate=${ate}` : "";
   return cachedGet<ProducaoResumo>(`cache:painel:producao:${de ?? ""}:${ate ?? ""}`, `/paineis/producao${qs}`);
+};
+
+export const painelProducaoDetalhe = (de?: string, ate?: string) => {
+  const qs = de && ate ? `?de=${de}&ate=${ate}` : "";
+  return cachedGet<ProducaoDetalheLinha[]>(
+    `cache:painel:producao-detalhe:${de ?? ""}:${ate ?? ""}`, `/paineis/producao/detalhe${qs}`
+  );
 };
 
 export const painelComercial = (de?: string, ate?: string, vendedor?: string | null) => {

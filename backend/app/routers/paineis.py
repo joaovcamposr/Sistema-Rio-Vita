@@ -36,6 +36,7 @@ from ..schemas import (
     NivelRepicagemOut,
     PainelViveiroOut,
     PontoHistoricoLoteOut,
+    ProducaoDetalheOut,
     ProducaoDiaOut,
     ProducaoPorProdutoOut,
     ProducaoResumoOut,
@@ -332,6 +333,31 @@ def _rendimento_por_destino(db: Session, de: date, ate: date, like_padrao: str, 
           GROUP BY p.lote_id, p.data_despesca
         ) batch
     """), {"de": de, "ate": ate, "like_padrao": like_padrao, "destino": destino}).scalar()
+
+
+@router.get("/producao/detalhe", response_model=list[ProducaoDetalheOut])
+def painel_producao_detalhe(
+    de: date | None = Query(default=None),
+    ate: date | None = Query(default=None),
+    db: Session = Depends(get_db),
+):
+    """Uma linha por lançamento de produção, com o rendimento e a despesca
+    de origem (mesma conta de vw_producao_detalhe — rendimento é do lote
+    despescado, não muda entre produtos do mesmo lote/data)."""
+    ate = ate or date.today()
+    de = de or (ate - timedelta(days=30))
+    rows = db.execute(text("""
+        SELECT d.data, pr.nome AS produto_nome, d.quantidade_kg,
+               l.codigo AS lote_codigo, v.codigo AS viveiro_codigo,
+               d.data_despesca, d.peso_medio_suja_g, d.rendimento
+        FROM vw_producao_detalhe d
+        JOIN produto pr ON pr.id = d.produto_id
+        LEFT JOIN lote l ON l.id = d.lote_id
+        LEFT JOIN viveiro v ON v.id = l.viveiro_id
+        WHERE d.data BETWEEN :de AND :ate
+        ORDER BY d.data DESC, d.id DESC
+    """), {"de": de, "ate": ate}).mappings().all()
+    return [ProducaoDetalheOut(**r) for r in rows]
 
 
 @router.get("/producao", response_model=ProducaoResumoOut)

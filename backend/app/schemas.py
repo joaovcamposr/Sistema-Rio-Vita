@@ -390,6 +390,17 @@ class ProducaoPorProdutoOut(BaseModel):
     quantidade_kg: float
 
 
+class ProducaoDetalheOut(BaseModel):
+    data: date
+    produto_nome: str
+    quantidade_kg: float
+    lote_codigo: str | None
+    viveiro_codigo: str | None
+    data_despesca: date | None
+    peso_medio_suja_g: float | None
+    rendimento: float | None
+
+
 class ProducaoResumoOut(BaseModel):
     de: date
     ate: date

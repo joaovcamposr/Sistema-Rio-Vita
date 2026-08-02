@@ -2,7 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { painelProducao, painelProducaoSerie, type Granularidade, type ProducaoResumo, type ProducaoSerie } from "@/lib/paineis";
+import {
+  painelProducao, painelProducaoDetalhe, painelProducaoSerie,
+  type Granularidade, type ProducaoDetalheLinha, type ProducaoResumo, type ProducaoSerie,
+} from "@/lib/paineis";
 import Chart, { type SeriePonto } from "@/components/Chart";
 import styles from "../painel.module.css";
 
@@ -16,6 +19,10 @@ function diasAtras(dias: number): string {
 }
 function nf(v: number, casas = 1): string {
   return v.toLocaleString("pt-BR", { minimumFractionDigits: casas, maximumFractionDigits: casas });
+}
+function dataBr(iso: string): string {
+  const [a, m, d] = iso.split("-");
+  return `${d}/${m}/${a}`;
 }
 function formatarBucket(b: string): string {
   if (b.length === 4) return b;
@@ -43,10 +50,17 @@ export default function PainelProducao() {
   const [granularidade, setGranularidade] = useState<Granularidade>("mes");
   const [serie, setSerie] = useState<ProducaoSerie | null>(null);
   const [comoTabela, setComoTabela] = useState(false);
+  const [detalhe, setDetalhe] = useState<ProducaoDetalheLinha[] | null>(null);
+  const [mostrarDetalhe, setMostrarDetalhe] = useState(false);
 
   useEffect(() => {
     setDados(null);
     painelProducao(de, ate).then(setDados).catch(() => setErro("Sem conexão e sem dado salvo deste aparelho ainda."));
+  }, [de, ate]);
+
+  useEffect(() => {
+    setDetalhe(null);
+    painelProducaoDetalhe(de, ate).then(setDetalhe).catch(() => undefined);
   }, [de, ate]);
 
   useEffect(() => {
@@ -234,6 +248,55 @@ export default function PainelProducao() {
               </tbody>
             </table>
           </div>
+        )}
+
+        <div className={styles.section} style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <span>Detalhe por lançamento</span>
+          <button
+            type="button"
+            onClick={() => setMostrarDetalhe((v) => !v)}
+            style={{
+              padding: "6px 12px", borderRadius: 9, border: "1px solid var(--rule-strong)",
+              background: "var(--surface)", color: "var(--ink-muted)", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer",
+            }}
+          >
+            {mostrarDetalhe ? "Ocultar" : "Mostrar"}
+          </button>
+        </div>
+        {mostrarDetalhe && (
+          <>
+            <p className={styles.hint}>
+              Cada linha é um lançamento de produção, com o tanque e a data de despesca de origem. O rendimento é do
+              lote despescado naquela data — igual pra todos os produtos que vieram da mesma despesca.
+            </p>
+            {!detalhe && <p className={styles.hint}>Carregando…</p>}
+            {detalhe && detalhe.length === 0 && <p className={styles.hint}>Nenhuma produção no período.</p>}
+            {detalhe && detalhe.length > 0 && (
+              <div className={styles.tableWrap}>
+                <table className={styles.tabela}>
+                  <thead>
+                    <tr>
+                      <th>Data</th><th>Produto</th><th>Kg</th><th>Tanque</th>
+                      <th>Despesca de origem</th><th>Peso sujo médio</th><th>Rendimento</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {detalhe.map((d, i) => (
+                      <tr key={i}>
+                        <td>{dataBr(d.data)}</td>
+                        <td>{d.produto_nome}</td>
+                        <td>{nf(d.quantidade_kg, 1)}</td>
+                        <td>{d.viveiro_codigo ?? "—"}{d.lote_codigo ? ` (${d.lote_codigo})` : ""}</td>
+                        <td>{d.data_despesca ? dataBr(d.data_despesca) : "—"}</td>
+                        <td>{d.peso_medio_suja_g !== null ? `${nf(d.peso_medio_suja_g)} g` : "—"}</td>
+                        <td>{d.rendimento !== null ? `${nf(d.rendimento * 100)}%` : "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
