@@ -14,6 +14,10 @@ export default function Home() {
           <span className={styles.ico}>🐟</span>
           <span>Produção</span>
         </Link>
+        <Link href="/lancar/producao-foto" className={styles.tile}>
+          <span className={styles.ico}>📸</span>
+          <span>Produção por foto</span>
+        </Link>
         <Link href="/lancar/despesca" className={styles.tile}>
           <span className={styles.ico}>🎣</span>
           <span>Despesca</span>
@@ -25,6 +29,10 @@ export default function Home() {
         <Link href="/lancar/arracoamento" className={styles.tile}>
           <span className={styles.ico}>🥣</span>
           <span>Arraçoamento</span>
+        </Link>
+        <Link href="/lancar/arracoamento-foto" className={styles.tile}>
+          <span className={styles.ico}>📸</span>
+          <span>Arraçoamento por foto</span>
         </Link>
         <Link href="/lancar/agua" className={styles.tile}>
           <span className={styles.ico}>💧</span>

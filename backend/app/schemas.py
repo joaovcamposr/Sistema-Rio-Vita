@@ -227,6 +227,32 @@ class ArracoamentoOut(BaseModel):
     criado_em: datetime
 
 
+class LeituraArracoamentoLinhaOut(BaseModel):
+    tanque: str
+    valores: dict[str, float]  # horario ("07:00") -> sacos, só os que a ficha tinha preenchidos
+
+
+class LeituraArracoamentoOut(BaseModel):
+    data_lida: str | None
+    tipo_racao_texto: str | None
+    linhas: list[LeituraArracoamentoLinhaOut]
+
+
+class LeituraProducaoItemOut(BaseModel):
+    produto_nome: str
+    caixas_fechadas: float | None
+    pacotes_soltos: float | None
+    quantidade_un: float | None
+    peso_total_kg: float | None
+
+
+class LeituraProducaoOut(BaseModel):
+    data_lida: str | None
+    tanque_origem: str | None
+    data_despesca: str | None
+    itens: list[LeituraProducaoItemOut]
+
+
 # ---------- Ração (fornecedor, tipo, chegada, estoque) ----------
 
 

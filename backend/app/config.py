@@ -38,6 +38,11 @@ class Settings:
     # de colocar em produção (o padrão aqui só serve pra rodar local)
     jwt_secret: str = os.environ.get("JWT_SECRET", "dev-secret-troque-em-producao")
     jwt_dias_validade: int = int(os.environ.get("JWT_DIAS_VALIDADE", "30"))
+    # leitura das fichas fotografadas (arraçoamento/produção) via Gemini —
+    # sem a chave, os endpoints de leitura ficam indisponíveis (422), mas o
+    # resto do sistema funciona normalmente
+    gemini_api_key: str | None = os.environ.get("GEMINI_API_KEY")
+    gemini_model: str = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
 
 
 @lru_cache

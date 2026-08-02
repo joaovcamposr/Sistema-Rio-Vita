@@ -127,6 +127,48 @@ export const resumoDespesca = (despescaId: number) =>
 export const listarClientes = () => cachedGet<Cliente[]>("cache:clientes", "/clientes");
 export const listarVendedoresDeVenda = () => cachedGet<string[]>("cache:vendas-vendedores", "/vendas/vendedores");
 
+export interface LeituraArracoamentoLinha {
+  tanque: string;
+  valores: Record<string, number>;
+}
+export interface LeituraArracoamento {
+  data_lida: string | null;
+  tipo_racao_texto: string | null;
+  linhas: LeituraArracoamentoLinha[];
+}
+
+export async function lerFotoArracoamento(foto: File): Promise<LeituraArracoamento> {
+  const form = new FormData();
+  form.append("foto", foto);
+  const r = await fetch(`${apiBase()}/arracoamento/ler-foto`, { method: "POST", headers: authHeader(), body: form });
+  if (r.status === 401) sessaoInvalida();
+  if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+  return (await r.json()) as LeituraArracoamento;
+}
+
+export interface LeituraProducaoItem {
+  produto_nome: string;
+  caixas_fechadas: number | null;
+  pacotes_soltos: number | null;
+  quantidade_un: number | null;
+  peso_total_kg: number | null;
+}
+export interface LeituraProducao {
+  data_lida: string | null;
+  tanque_origem: string | null;
+  data_despesca: string | null;
+  itens: LeituraProducaoItem[];
+}
+
+export async function lerFotoProducao(foto: File): Promise<LeituraProducao> {
+  const form = new FormData();
+  form.append("foto", foto);
+  const r = await fetch(`${apiBase()}/producao/ler-foto`, { method: "POST", headers: authHeader(), body: form });
+  if (r.status === 401) sessaoInvalida();
+  if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+  return (await r.json()) as LeituraProducao;
+}
+
 export async function encerrarLote(loteId: number, data: string): Promise<void> {
   const r = await fetch(`${apiBase()}/lotes/${loteId}/encerrar`, {
     method: "PATCH",

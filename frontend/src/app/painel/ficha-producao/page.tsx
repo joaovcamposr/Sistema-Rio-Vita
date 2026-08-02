@@ -91,10 +91,14 @@ export default function FichaProducao() {
                     </>
                   ) : (
                     <>
-                      <div className={ficha.regraProduto}>Anotado individualmente (unidades)</div>
+                      <div className={ficha.regraProduto}>Anotado individualmente (unidades) + peso total</div>
                       <div className={ficha.linhasContagem}>
                         <div className={ficha.contagemItem}>
                           <label>Quantidade (un)</label>
+                          <span className={ficha.caixaResposta} style={{ width: 120 }}></span>
+                        </div>
+                        <div className={ficha.contagemItem}>
+                          <label>Peso total (Kg)</label>
                           <span className={ficha.caixaResposta} style={{ width: 120 }}></span>
                         </div>
                       </div>
