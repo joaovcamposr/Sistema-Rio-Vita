@@ -110,8 +110,11 @@ def ler_foto_producao(
     prompt = (
         "Você está lendo uma ficha impressa de produção de pescado, preenchida à mão pelo pessoal do frigorífico. "
         f"Os produtos possíveis são: {', '.join(produtos)}. Pra filé (qualquer embalagem) e postas, a contagem é "
-        "por caixa fechada (filé = 8 pacotes por caixa, postas = 6 pacotes por caixa) e a ficha tem dois campos "
-        "por produto: 'Caixas fechadas' e 'Pacotes soltos' (sobra de caixa incompleta, comum no fim do turno). "
+        "por caixa fechada (filé = 8 pacotes por caixa, postas = 6 pacotes por caixa). Pra 'Caixas fechadas', a "
+        "ficha tem uma grade de quadradinhos numerados e o operador marca um X em cada um conforme fecha as "
+        "caixas, e depois escreve o total à mão num campo 'Total de caixas fechadas' — use esse número escrito "
+        "como valor de caixas_fechadas; só conte os quadradinhos marcados se o total escrito estiver em branco "
+        "ou ilegível. Também tem o campo 'Pacotes soltos' (sobra de caixa incompleta, comum no fim do turno). "
         "Pra 'Tilápia limpa', a ficha tem 'Quantidade (un)' e 'Peso total (Kg)', preenchidos separadamente — não "
         "confunda com caixas. Também tem campos escritos à mão no topo: 'Data', 'Tanque de origem' e 'Data da "
         "despesca'. Se um número estiver ilegível ou o campo estiver em branco, não inclua esse valor — prefira "

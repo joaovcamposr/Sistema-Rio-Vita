@@ -64,8 +64,9 @@ export default function FichaProducao() {
             </div>
 
             <p className={ficha.instrucao}>
-              Uma ficha por despesca/tanque. Preencha o número de caixas fechadas e, se sobrar produto sem fechar
-              uma caixa (comum no fim do turno), o número de pacotes soltos ao lado.
+              Uma ficha por despesca/tanque. A cada caixa fechada, marque um X no próximo quadradinho. No fim do
+              turno, escreva o total de caixas fechadas e, se sobrar produto sem fechar uma caixa, o número de
+              pacotes soltos ao lado.
             </p>
 
             {produtos.map((p) => {
@@ -78,11 +79,21 @@ export default function FichaProducao() {
                       <div className={ficha.regraProduto}>
                         Caixas de <strong>{porCaixa} pacotes</strong> — confirmar se está certo
                       </div>
-                      <div className={ficha.linhasContagem}>
-                        <div className={ficha.contagemItem}>
-                          <label>Caixas fechadas</label>
-                          <span className={ficha.caixaResposta}></span>
+                      <div className={ficha.marcarCaixas}>
+                        <label style={{ fontWeight: 700, fontSize: "0.9rem" }}>
+                          Caixas fechadas — marque um X a cada caixa
+                        </label>
+                        <div className={ficha.grade}>
+                          {Array.from({ length: 60 }, (_, i) => (
+                            <span key={i} className={ficha.marca} data-n={i + 1}></span>
+                          ))}
                         </div>
+                        <div className={ficha.totalEscrito}>
+                          <span>Total de caixas fechadas</span>
+                          <span className={ficha.caixaResposta} style={{ width: 70, height: 34 }}></span>
+                        </div>
+                      </div>
+                      <div className={ficha.linhasContagem} style={{ marginTop: 10 }}>
                         <div className={ficha.contagemItem}>
                           <label>Pacotes soltos (caixa incompleta)</label>
                           <span className={ficha.caixaResposta}></span>
