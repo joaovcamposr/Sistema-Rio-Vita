@@ -1,0 +1,139 @@
+/* Fichas em branco pra impressão (arraçoamento e produção realizados).
+   Grade grande e de alto contraste — pensada tanto pra ser fácil de
+   preencher à mão quanto fácil do sistema ler depois, numa foto:
+   cada campo tem uma posição fixa e óbvia, sem ambiguidade. */
+
+.folha {
+  background: #fff;
+  color: #000;
+  border: 1px solid var(--rule);
+  border-radius: 14px;
+  padding: 24px;
+}
+
+.cabecalho {
+  font-size: 1.15rem;
+  font-weight: 800;
+  text-align: center;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 3px solid #000;
+}
+
+.camposTopo {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  margin-bottom: 14px;
+}
+.campoTopo {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+.linhaPreencher {
+  font-weight: 400;
+  letter-spacing: 0.05em;
+}
+
+.instrucao {
+  font-size: 0.82rem;
+  color: #444;
+  margin: 0 0 14px;
+}
+
+.tabela {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+.tabela th, .tabela td {
+  border: 2px solid #000;
+  text-align: center;
+  padding: 0;
+}
+.tabela th {
+  font-size: 0.85rem;
+  font-weight: 800;
+  padding: 8px 4px;
+  background: #eee;
+}
+.colViveiro {
+  width: 90px;
+  font-weight: 800;
+  font-size: 0.95rem;
+  background: #f5f5f5 !important;
+}
+.celulaVazia {
+  height: 46px;
+  min-width: 60px;
+}
+
+.rodape {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 32px;
+  margin-top: 22px;
+}
+.rodape > div {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-width: 220px;
+}
+.rodape span:first-child {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #444;
+}
+.linhaAssinatura {
+  border-bottom: 1.5px solid #000;
+  height: 26px;
+}
+
+/* ---------- Produção: seções por produto ---------- */
+
+.secaoProduto {
+  border: 2px solid #000;
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin-bottom: 14px;
+}
+.tituloProduto {
+  font-weight: 800;
+  font-size: 1rem;
+  margin-bottom: 4px;
+}
+.regraProduto {
+  font-size: 0.8rem;
+  color: #444;
+  margin-bottom: 10px;
+}
+.linhasContagem {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 28px;
+}
+.contagemItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.contagemItem label {
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+.caixaResposta {
+  border: 2px solid #000;
+  width: 70px;
+  height: 44px;
+  display: inline-block;
+}
+
+@media print {
+  .folha { border: none; padding: 0; }
+  body { background: #fff; }
+}
