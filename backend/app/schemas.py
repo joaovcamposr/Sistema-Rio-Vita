@@ -295,7 +295,30 @@ class VendaOut(BaseModel):
     preco_kg: float
     valor_total: float
     forma_pgto: str | None
+    situacao: str | None
+    data_pagamento: date | None
     criado_em: datetime
+
+
+class VendaListaOut(BaseModel):
+    id: int
+    data: date
+    cliente_id: int | None
+    cliente_nome: str
+    cliente_prazo_dias: int | None
+    produto_nome: str
+    quantidade_kg: float
+    valor_total: float
+    forma_pgto: str | None
+    vendedor: str | None
+    situacao: str | None
+    data_pagamento: date | None
+
+
+class VendaPagamentoIn(BaseModel):
+    situacao: str
+    data_pagamento: date | None = None
+    forma_pgto: str | None = None
 
 
 TipoAjusteEstoque = Literal["amostra", "descarte", "diferenca_estoque"]

@@ -1,17 +1,23 @@
-from fastapi import APIRouter, Depends, HTTPException
+from datetime import date, timedelta
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
 from ..db import get_db
-from ..schemas import UsuarioOut, VendaIn, VendaOut
+from ..schemas import UsuarioOut, VendaIn, VendaListaOut, VendaOut, VendaPagamentoIn
 
 router = APIRouter(prefix="/vendas", tags=["vendas"])
 _COLUNAS = (
     "id, client_id, data, cliente_id, vendedor, produto_id, quantidade_un, "
-    "quantidade_kg, preco_kg, valor_total, forma_pgto, criado_em"
+    "quantidade_kg, preco_kg, valor_total, forma_pgto, situacao, data_pagamento, criado_em"
 )
+
+# Vendas à vista (Pix/Dinheiro) já entram como recebidas; só "Prazo" fica em
+# aberto até alguém confirmar o recebimento na tela de Recebimentos.
+_FORMAS_A_VISTA = {"Pix", "Dinheiro"}
 
 
 @router.get("/vendedores", response_model=list[str])
@@ -24,19 +30,58 @@ def listar_vendedores(db: Session = Depends(get_db), _usuario: UsuarioOut = Depe
     return list(rows)
 
 
+@router.get("", response_model=list[VendaListaOut])
+def listar_vendas(
+    de: date | None = Query(default=None),
+    ate: date | None = Query(default=None),
+    situacao: str | None = Query(default=None),
+    cliente_id: int | None = Query(default=None),
+    vendedor: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+    _usuario: UsuarioOut = Depends(get_current_user),
+):
+    """Lista vendas para conferência/recebimento — não é o lançamento (esse
+    é o POST), é a tela de controle de quais já foram pagas."""
+    ate = ate or date.today()
+    de = de or (ate - timedelta(days=90))
+    rows = db.execute(text("""
+        SELECT v.id, v.data, v.cliente_id, COALESCE(c.nome, 'Consumidor final') AS cliente_nome,
+               c.prazo_dias AS cliente_prazo_dias, pr.nome AS produto_nome,
+               v.quantidade_kg, v.valor_total, v.forma_pgto, v.vendedor,
+               v.situacao, v.data_pagamento
+        FROM venda v
+        JOIN produto pr ON pr.id = v.produto_id
+        LEFT JOIN cliente c ON c.id = v.cliente_id
+        WHERE v.data BETWEEN :de AND :ate
+          AND (CAST(:situacao AS text) IS NULL OR v.situacao = :situacao)
+          AND (CAST(:cliente_id AS bigint) IS NULL OR v.cliente_id = :cliente_id)
+          AND (CAST(:vendedor AS text) IS NULL OR v.vendedor = :vendedor)
+        ORDER BY v.data DESC, v.id DESC
+    """), {"de": de, "ate": ate, "situacao": situacao, "cliente_id": cliente_id, "vendedor": vendedor}).mappings().all()
+    return [VendaListaOut(**r) for r in rows]
+
+
 @router.post("", response_model=VendaOut, status_code=201)
 def criar_venda(body: VendaIn, db: Session = Depends(get_db), usuario: UsuarioOut = Depends(get_current_user)):
+    a_vista = body.forma_pgto in _FORMAS_A_VISTA
     try:
         row = db.execute(
             text(f"""
                 INSERT INTO venda (client_id, data, cliente_id, vendedor, produto_id,
-                                    quantidade_un, quantidade_kg, preco_kg, forma_pgto, criado_por)
+                                    quantidade_un, quantidade_kg, preco_kg, forma_pgto,
+                                    situacao, data_pagamento, criado_por)
                 VALUES (:client_id, :data, :cliente_id, :vendedor, :produto_id,
-                        :quantidade_un, :quantidade_kg, :preco_kg, :forma_pgto, :criado_por)
+                        :quantidade_un, :quantidade_kg, :preco_kg, :forma_pgto,
+                        :situacao, :data_pagamento, :criado_por)
                 ON CONFLICT (client_id) DO NOTHING
                 RETURNING {_COLUNAS}
             """),
-            {**body.model_dump(), "criado_por": usuario.nome},
+            {
+                **body.model_dump(),
+                "situacao": "Pago" if a_vista else "Em aberto",
+                "data_pagamento": body.data if a_vista else None,
+                "criado_por": usuario.nome,
+            },
         ).mappings().first()
         db.commit()
     except DBAPIError as exc:
@@ -48,4 +93,28 @@ def criar_venda(body: VendaIn, db: Session = Depends(get_db), usuario: UsuarioOu
             text(f"SELECT {_COLUNAS} FROM venda WHERE client_id = :cid"),
             {"cid": str(body.client_id)},
         ).mappings().first()
+    return VendaOut(**row)
+
+
+@router.patch("/{venda_id}/pagamento", response_model=VendaOut)
+def atualizar_pagamento(
+    venda_id: int, body: VendaPagamentoIn, db: Session = Depends(get_db),
+    _usuario: UsuarioOut = Depends(get_current_user),
+):
+    try:
+        row = db.execute(
+            text(f"""
+                UPDATE venda SET situacao = :situacao, data_pagamento = :data_pagamento,
+                                  forma_pgto = COALESCE(:forma_pgto, forma_pgto)
+                WHERE id = :id
+                RETURNING {_COLUNAS}
+            """),
+            {"id": venda_id, **body.model_dump()},
+        ).mappings().first()
+        db.commit()
+    except DBAPIError as exc:
+        db.rollback()
+        raise HTTPException(422, f"data de pagamento inválida: {exc.orig}") from exc
+    if row is None:
+        raise HTTPException(404, "venda não encontrada")
     return VendaOut(**row)

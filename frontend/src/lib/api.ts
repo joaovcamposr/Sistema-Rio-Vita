@@ -62,6 +62,21 @@ export interface Cliente {
   emite_boleto: boolean;
 }
 
+export interface VendaLista {
+  id: number;
+  data: string;
+  cliente_id: number | null;
+  cliente_nome: string;
+  cliente_prazo_dias: number | null;
+  produto_nome: string;
+  quantidade_kg: number;
+  valor_total: number;
+  forma_pgto: string | null;
+  vendedor: string | null;
+  situacao: string | null;
+  data_pagamento: string | null;
+}
+
 function apiBase(): string {
   return process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 }
@@ -117,6 +132,39 @@ export async function encerrarLote(loteId: number, data: string): Promise<void> 
     method: "PATCH",
     headers: { "Content-Type": "application/json", ...authHeader() },
     body: JSON.stringify({ data }),
+  });
+  if (r.status === 401) sessaoInvalida();
+  if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+}
+
+export interface FiltroVendas {
+  de?: string;
+  ate?: string;
+  situacao?: string;
+  clienteId?: number | null;
+  vendedor?: string | null;
+}
+
+export async function listarVendas(filtro: FiltroVendas): Promise<VendaLista[]> {
+  const params = new URLSearchParams();
+  if (filtro.de) params.set("de", filtro.de);
+  if (filtro.ate) params.set("ate", filtro.ate);
+  if (filtro.situacao) params.set("situacao", filtro.situacao);
+  if (filtro.clienteId) params.set("cliente_id", String(filtro.clienteId));
+  if (filtro.vendedor) params.set("vendedor", filtro.vendedor);
+  const r = await fetch(`${apiBase()}/vendas?${params}`, { cache: "no-store", headers: authHeader() });
+  if (r.status === 401) sessaoInvalida();
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return (await r.json()) as VendaLista[];
+}
+
+export async function marcarPagamentoVenda(
+  vendaId: number, situacao: string, dataPagamento: string | null, formaPgto?: string | null
+): Promise<void> {
+  const r = await fetch(`${apiBase()}/vendas/${vendaId}/pagamento`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...authHeader() },
+    body: JSON.stringify({ situacao, data_pagamento: dataPagamento, forma_pgto: formaPgto ?? null }),
   });
   if (r.status === 401) sessaoInvalida();
   if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
