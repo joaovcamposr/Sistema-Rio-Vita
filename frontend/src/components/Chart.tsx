@@ -17,6 +17,10 @@ interface ChartProps {
   formatarValor?: (v: number) => string;
   formatarBucket?: (b: string) => string;
   altura?: number;
+  // por padrão a barra cresce em largura fixa por bucket e rola na
+  // horizontal quando não cabe; com isso ligado, o gráfico encolhe pra
+  // caber todos os buckets do período de uma vez, sem precisar rolar
+  caberNaTela?: boolean;
 }
 
 // paleta restrita à identidade visual da Rio Vita — tons do azul da marca
@@ -28,6 +32,7 @@ export default function Chart({
   formatarValor = (v) => v.toLocaleString("pt-BR", { maximumFractionDigits: 1 }),
   formatarBucket = (b) => b,
   altura = 260,
+  caberNaTela = false,
 }: ChartProps) {
   const [ocultas, setOcultas] = useState<Set<string>>(new Set());
   const [dica, setDica] = useState<{ x: number; y: number; texto: string } | null>(null);
@@ -102,8 +107,14 @@ export default function Chart({
         ))}
       </div>
 
-      <div style={{ overflowX: "auto", position: "relative" }}>
-        <svg width={largura} height={altura} style={{ display: "block" }}>
+      <div style={{ overflowX: caberNaTela ? "hidden" : "auto", position: "relative" }}>
+        <svg
+          width={caberNaTela ? "100%" : largura}
+          height={altura}
+          viewBox={caberNaTela ? `0 0 ${largura} ${altura}` : undefined}
+          preserveAspectRatio={caberNaTela ? "none" : undefined}
+          style={{ display: "block" }}
+        >
           {Array.from({ length: ticksY + 1 }, (_, i) => {
             const v = (maxValor / ticksY) * i;
             const yy = y(v);

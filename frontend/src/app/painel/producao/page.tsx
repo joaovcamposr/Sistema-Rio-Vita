@@ -215,15 +215,15 @@ export default function PainelProducao() {
             <div className={styles.section}>Produção por produto (Kg)</div>
             <Chart
               dados={pontosProducao} series={produtos} tipo="barra" modoBarra="empilhada" mostrarTotal
-              formatarBucket={formatarBucket} formatarValor={(v) => nf(v, 0)}
+              formatarBucket={formatarBucket} formatarValor={(v) => nf(v, 0)} caberNaTela
             />
 
             <div className={styles.section}>Rendimento médio ponderado de Filé (%)</div>
             <p className={styles.hint}>Medido por lote despescado — não se separa por embalagem de produto final.</p>
-            <Chart dados={pontosRendimento} series={["Rendimento (%)"]} tipo="linha" formatarBucket={formatarBucket} formatarValor={(v) => `${nf(v)}%`} />
+            <Chart dados={pontosRendimento} series={["Rendimento (%)"]} tipo="linha" formatarBucket={formatarBucket} formatarValor={(v) => `${nf(v)}%`} caberNaTela />
 
             <div className={styles.section}>Peso sujo médio (g)</div>
-            <Chart dados={pontosPesoSujo} series={["Peso sujo médio (g)"]} tipo="linha" formatarBucket={formatarBucket} formatarValor={(v) => `${nf(v)} g`} />
+            <Chart dados={pontosPesoSujo} series={["Peso sujo médio (g)"]} tipo="linha" formatarBucket={formatarBucket} formatarValor={(v) => `${nf(v)} g`} caberNaTela />
           </>
         )}
 
