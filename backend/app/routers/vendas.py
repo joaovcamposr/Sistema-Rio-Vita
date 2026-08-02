@@ -14,6 +14,16 @@ _COLUNAS = (
 )
 
 
+@router.get("/vendedores", response_model=list[str])
+def listar_vendedores(db: Session = Depends(get_db), _usuario: UsuarioOut = Depends(get_current_user)):
+    """Nomes distintos já usados no campo livre 'vendedor' das vendas —
+    alimenta o filtro do painel comercial."""
+    rows = db.execute(
+        text("SELECT DISTINCT vendedor FROM venda WHERE vendedor IS NOT NULL ORDER BY vendedor")
+    ).scalars().all()
+    return list(rows)
+
+
 @router.post("", response_model=VendaOut, status_code=201)
 def criar_venda(body: VendaIn, db: Session = Depends(get_db), usuario: UsuarioOut = Depends(get_current_user)):
     try:

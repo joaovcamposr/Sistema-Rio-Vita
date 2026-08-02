@@ -110,3 +110,4 @@ export const listarDespescasDoLote = (loteId: number) =>
 export const resumoDespesca = (despescaId: number) =>
   cachedGet<DespescaResumo>(`cache:resumo:${despescaId}`, `/despescas/${despescaId}/resumo`);
 export const listarClientes = () => cachedGet<Cliente[]>("cache:clientes", "/clientes");
+export const listarVendedoresDeVenda = () => cachedGet<string[]>("cache:vendas-vendedores", "/vendas/vendedores");

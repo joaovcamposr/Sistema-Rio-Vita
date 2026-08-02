@@ -2,7 +2,7 @@
 
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { listarClientes, type Cliente } from "@/lib/api";
+import { listarClientes, listarVendedoresDeVenda, type Cliente } from "@/lib/api";
 import {
   painelComercial,
   painelComercialSerie,
@@ -56,6 +56,8 @@ export default function PainelComercial() {
 
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [clienteFiltro, setClienteFiltro] = useState<number | null>(null);
+  const [vendedores, setVendedores] = useState<string[]>([]);
+  const [vendedorFiltro, setVendedorFiltro] = useState("");
   const [granularidade, setGranularidade] = useState<Granularidade>("mes");
   const [serie, setSerie] = useState<ComercialSerie | null>(null);
   const [comoTabela, setComoTabela] = useState(false);
@@ -63,19 +65,22 @@ export default function PainelComercial() {
 
   useEffect(() => {
     setDados(null);
-    painelComercial(de, ate).then(setDados).catch(() => setErro("Sem conexão e sem dado salvo deste aparelho ainda."));
-  }, [de, ate]);
+    painelComercial(de, ate, vendedorFiltro || null)
+      .then(setDados)
+      .catch(() => setErro("Sem conexão e sem dado salvo deste aparelho ainda."));
+  }, [de, ate, vendedorFiltro]);
 
   useEffect(() => {
     listarClientes().then(setClientes).catch(() => undefined);
+    listarVendedoresDeVenda().then(setVendedores).catch(() => undefined);
   }, []);
 
   useEffect(() => {
     setSerie(null);
-    painelComercialSerie(granularidade, de, ate, clienteFiltro)
+    painelComercialSerie(granularidade, de, ate, clienteFiltro, vendedorFiltro || null)
       .then(setSerie)
       .catch(() => setErro("Sem conexão e sem dado salvo deste aparelho ainda."));
-  }, [granularidade, clienteFiltro, de, ate]);
+  }, [granularidade, clienteFiltro, vendedorFiltro, de, ate]);
 
   const produtos = useMemo(() => {
     if (!serie) return [];
@@ -207,6 +212,17 @@ export default function PainelComercial() {
             >
               <option value="">Todos os clientes</option>
               {clientes.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+            </select>
+          </div>
+          <div className={styles.campo}>
+            <label>Vendedor</label>
+            <select
+              style={{ padding: "9px 11px", borderRadius: 9, border: "1px solid var(--rule-strong)", background: "var(--surface)", color: "var(--ink)" }}
+              value={vendedorFiltro}
+              onChange={(e) => setVendedorFiltro(e.target.value)}
+            >
+              <option value="">Todos os vendedores</option>
+              {vendedores.map((v) => <option key={v} value={v}>{v}</option>)}
             </select>
           </div>
           <div className={styles.campo}>

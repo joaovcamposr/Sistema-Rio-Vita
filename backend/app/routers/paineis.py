@@ -493,42 +493,45 @@ def painel_mortalidade(db: Session = Depends(get_db)):
 def painel_comercial(
     de: date | None = Query(default=None),
     ate: date | None = Query(default=None),
+    vendedor: str | None = Query(default=None),
     db: Session = Depends(get_db),
 ):
     ate = ate or date.today()
     de = de or (ate - timedelta(days=30))
+    params = {"de": de, "ate": ate, "vendedor": vendedor}
+    filtro_vendedor = "AND (CAST(:vendedor AS text) IS NULL OR v.vendedor = :vendedor)"
 
-    por_produto = db.execute(text("""
+    por_produto = db.execute(text(f"""
         SELECT v.produto_id, pr.nome AS produto_nome,
                SUM(v.quantidade_kg) AS quantidade_kg, SUM(v.valor_total) AS valor_total
         FROM venda v JOIN produto pr ON pr.id = v.produto_id
-        WHERE v.data BETWEEN :de AND :ate
+        WHERE v.data BETWEEN :de AND :ate {filtro_vendedor}
         GROUP BY v.produto_id, pr.nome ORDER BY pr.nome
-    """), {"de": de, "ate": ate}).mappings().all()
+    """), params).mappings().all()
 
-    por_cliente = db.execute(text("""
+    por_cliente = db.execute(text(f"""
         SELECT v.cliente_id, COALESCE(c.nome, 'Consumidor final') AS cliente_nome,
                SUM(v.quantidade_kg) AS quantidade_kg, SUM(v.valor_total) AS valor_total
         FROM venda v LEFT JOIN cliente c ON c.id = v.cliente_id
-        WHERE v.data BETWEEN :de AND :ate
+        WHERE v.data BETWEEN :de AND :ate {filtro_vendedor}
         GROUP BY v.cliente_id, c.nome ORDER BY valor_total DESC
-    """), {"de": de, "ate": ate}).mappings().all()
+    """), params).mappings().all()
 
-    por_cliente_file = db.execute(text("""
+    por_cliente_file = db.execute(text(f"""
         SELECT v.cliente_id, SUM(v.quantidade_kg) AS kg, SUM(v.valor_total) AS valor
         FROM venda v JOIN produto pr ON pr.id = v.produto_id
-        WHERE v.data BETWEEN :de AND :ate AND pr.nome LIKE 'Filé%'
+        WHERE v.data BETWEEN :de AND :ate AND pr.nome LIKE 'Filé%' {filtro_vendedor}
         GROUP BY v.cliente_id
-    """), {"de": de, "ate": ate}).mappings().all()
+    """), params).mappings().all()
     file_por_cliente = {r["cliente_id"]: (float(r["kg"]), float(r["valor"])) for r in por_cliente_file}
 
-    por_cliente_produto = db.execute(text("""
+    por_cliente_produto = db.execute(text(f"""
         SELECT v.cliente_id, v.produto_id, pr.nome AS produto_nome,
                SUM(v.quantidade_kg) AS quantidade_kg, SUM(v.valor_total) AS valor_total
         FROM venda v JOIN produto pr ON pr.id = v.produto_id
-        WHERE v.data BETWEEN :de AND :ate
+        WHERE v.data BETWEEN :de AND :ate {filtro_vendedor}
         GROUP BY v.cliente_id, v.produto_id, pr.nome
-    """), {"de": de, "ate": ate}).mappings().all()
+    """), params).mappings().all()
     produtos_por_cliente: dict[int | None, list[VendaClienteProdutoOut]] = {}
     for r in por_cliente_produto:
         kg = float(r["quantidade_kg"])
@@ -540,16 +543,16 @@ def painel_comercial(
             preco_medio_ponderado=float(r["valor_total"]) / kg,
         ))
 
-    totais = db.execute(text("""
+    totais = db.execute(text(f"""
         SELECT COALESCE(SUM(quantidade_kg), 0) AS kg, COALESCE(SUM(valor_total), 0) AS valor
-        FROM venda WHERE data BETWEEN :de AND :ate
-    """), {"de": de, "ate": ate}).mappings().first()
+        FROM venda v WHERE data BETWEEN :de AND :ate {filtro_vendedor}
+    """), params).mappings().first()
 
-    file_totais = db.execute(text("""
+    file_totais = db.execute(text(f"""
         SELECT COALESCE(SUM(v.quantidade_kg), 0) AS kg, COALESCE(SUM(v.valor_total), 0) AS valor
         FROM venda v JOIN produto pr ON pr.id = v.produto_id
-        WHERE v.data BETWEEN :de AND :ate AND pr.nome LIKE 'Filé%'
-    """), {"de": de, "ate": ate}).mappings().first()
+        WHERE v.data BETWEEN :de AND :ate AND pr.nome LIKE 'Filé%' {filtro_vendedor}
+    """), params).mappings().first()
     file_kg = float(file_totais["kg"])
     file_preco_medio_ponderado = float(file_totais["valor"]) / file_kg if file_kg > 0 else None
 
@@ -584,11 +587,12 @@ def painel_comercial_serie(
     de: date | None = Query(default=None),
     ate: date | None = Query(default=None),
     cliente_id: int | None = Query(default=None),
+    vendedor: str | None = Query(default=None),
     db: Session = Depends(get_db),
 ):
     """Alimenta os gráficos de volume vendido, faturamento e preço médio
     ponderado por produto — cada um quebrado por dia/mês/ano, com filtro
-    opcional por cliente."""
+    opcional por cliente e por vendedor."""
     de, ate = _periodo_padrao(de, ate, granularidade)
     bucket = _bucket_expr(granularidade, "v.data")
 
@@ -598,9 +602,10 @@ def painel_comercial_serie(
         FROM venda v JOIN produto pr ON pr.id = v.produto_id
         WHERE v.data BETWEEN :de AND :ate
           AND (CAST(:cliente_id AS bigint) IS NULL OR v.cliente_id = :cliente_id)
+          AND (CAST(:vendedor AS text) IS NULL OR v.vendedor = :vendedor)
         GROUP BY bucket, v.produto_id, pr.nome
         ORDER BY bucket, pr.nome
-    """), {"de": de, "ate": ate, "cliente_id": cliente_id}).mappings().all()
+    """), {"de": de, "ate": ate, "cliente_id": cliente_id, "vendedor": vendedor}).mappings().all()
 
     por_bucket: dict[str, list[SerieBucketProdutoOut]] = {}
     for r in rows:

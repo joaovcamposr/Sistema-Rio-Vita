@@ -355,9 +355,13 @@ export const painelProducao = (de?: string, ate?: string) => {
   return cachedGet<ProducaoResumo>(`cache:painel:producao:${de ?? ""}:${ate ?? ""}`, `/paineis/producao${qs}`);
 };
 
-export const painelComercial = (de?: string, ate?: string) => {
-  const qs = de && ate ? `?de=${de}&ate=${ate}` : "";
-  return cachedGet<ComercialResumo>(`cache:painel:comercial:${de ?? ""}:${ate ?? ""}`, `/paineis/comercial${qs}`);
+export const painelComercial = (de?: string, ate?: string, vendedor?: string | null) => {
+  const params = new URLSearchParams();
+  if (de) params.set("de", de);
+  if (ate) params.set("ate", ate);
+  if (vendedor) params.set("vendedor", vendedor);
+  const qs = params.toString() ? `?${params}` : "";
+  return cachedGet<ComercialResumo>(`cache:painel:comercial:${params.toString()}`, `/paineis/comercial${qs}`);
 };
 
 export const painelCaixa = (de?: string, ate?: string) => {
@@ -365,11 +369,14 @@ export const painelCaixa = (de?: string, ate?: string) => {
   return cachedGet<CaixaResumo>(`cache:painel:caixa:${de ?? ""}:${ate ?? ""}`, `/paineis/caixa${qs}`);
 };
 
-export const painelComercialSerie = (granularidade: Granularidade, de?: string, ate?: string, clienteId?: number | null) => {
+export const painelComercialSerie = (
+  granularidade: Granularidade, de?: string, ate?: string, clienteId?: number | null, vendedor?: string | null
+) => {
   const params = new URLSearchParams({ granularidade });
   if (de) params.set("de", de);
   if (ate) params.set("ate", ate);
   if (clienteId) params.set("cliente_id", String(clienteId));
+  if (vendedor) params.set("vendedor", vendedor);
   return cachedGet<ComercialSerie>(`cache:painel:comercial-serie:${params.toString()}`, `/paineis/comercial/serie?${params}`);
 };
 
