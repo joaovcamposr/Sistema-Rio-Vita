@@ -12,6 +12,18 @@ function unidadesPorCaixa(nome: string): number | null {
   return null; // Tilápia limpa (e qualquer outro) — anotado individualmente
 }
 
+// Ordem de impressão pedida: filé 400g, 500g, 1kg, depois postas — o
+// resto (ex.: Tilápia limpa) mantém a ordem que já veio da API, no fim.
+const _ORDEM_IMPRESSAO = ["400g", "500g", "1kg", "Postas"];
+
+function ordenarParaImpressao(produtos: Produto[]): Produto[] {
+  return [...produtos].sort((a, b) => {
+    const ia = _ORDEM_IMPRESSAO.findIndex((chave) => a.nome.includes(chave));
+    const ib = _ORDEM_IMPRESSAO.findIndex((chave) => b.nome.includes(chave));
+    return (ia === -1 ? _ORDEM_IMPRESSAO.length : ia) - (ib === -1 ? _ORDEM_IMPRESSAO.length : ib);
+  });
+}
+
 export default function FichaProducao() {
   const router = useRouter();
   const [produtos, setProdutos] = useState<Produto[]>([]);
@@ -69,7 +81,7 @@ export default function FichaProducao() {
               pacotes soltos ao lado.
             </p>
 
-            {produtos.map((p) => {
+            {ordenarParaImpressao(produtos).map((p) => {
               const porCaixa = unidadesPorCaixa(p.nome);
               return (
                 <div key={p.id} className={ficha.secaoProduto}>
