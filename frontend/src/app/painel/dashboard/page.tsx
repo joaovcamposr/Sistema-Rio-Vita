@@ -42,20 +42,20 @@ const CONFIG_SERIE: Record<SerieAtiva, {
   formatarValor: (v: number) => string;
 }> = {
   producao: {
-    titulo: "Produção diária no período",
-    nomeSerie: "Produção (kg)",
+    titulo: "Produção de filé diária no período",
+    nomeSerie: "Produção de filé (kg)",
     extrair: (d) => d.serie_producao_diaria.map((p) => ({ data: p.data, valor: p.quantidade_kg })),
     formatarValor: (v) => `${nf(v)} kg`,
   },
   vendas_kg: {
-    titulo: "Vendas diárias no período (Kg)",
-    nomeSerie: "Vendas (kg)",
+    titulo: "Vendas de filé diárias no período (Kg)",
+    nomeSerie: "Vendas de filé (kg)",
     extrair: (d) => d.serie_vendas_kg_diaria,
     formatarValor: (v) => `${nf(v)} kg`,
   },
   vendas_valor: {
-    titulo: "Vendas diárias no período (R$)",
-    nomeSerie: "Vendas (R$)",
+    titulo: "Vendas de filé diárias no período (R$)",
+    nomeSerie: "Vendas de filé (R$)",
     extrair: (d) => d.serie_vendas_valor_diaria,
     formatarValor: (v) => moeda(v),
   },
@@ -177,22 +177,22 @@ export default function PainelDashboard() {
             <p className={styles.hint}>Clique num card para ver a evolução diária dele no gráfico abaixo.</p>
             <div className={styles.cards}>
               <button type="button" className={cardClicavel("producao")} onClick={() => setSerieAtiva("producao")}>
-                <div className={styles.cardLabel}>Produção total</div>
+                <div className={styles.cardLabel}>Produção total de filé</div>
                 <div className={styles.cardValue}>{nf(dados.producao_total_kg)} kg</div>
-                <div className={styles.cardSub}>{dados.dias_trabalhados} dia(s) com produção lançada</div>
+                <div className={styles.cardSub}>{dados.dias_trabalhados} dia(s) com produção de filé lançada</div>
               </button>
               <button type="button" className={cardClicavel("producao")} onClick={() => setSerieAtiva("producao")}>
-                <div className={styles.cardLabel}>Produção por dia trabalhado</div>
+                <div className={styles.cardLabel}>Produção de filé por dia trabalhado</div>
                 <div className={styles.cardValue}>
                   {dados.producao_por_dia_kg !== null ? `${nf(dados.producao_por_dia_kg)} kg/dia` : "—"}
                 </div>
               </button>
               <button type="button" className={cardClicavel("vendas_kg")} onClick={() => setSerieAtiva("vendas_kg")}>
-                <div className={styles.cardLabel}>Vendas</div>
+                <div className={styles.cardLabel}>Vendas de filé</div>
                 <div className={styles.cardValue}>{nf(dados.vendas_kg)} kg</div>
               </button>
               <button type="button" className={cardClicavel("vendas_valor")} onClick={() => setSerieAtiva("vendas_valor")}>
-                <div className={styles.cardLabel}>Vendas (R$)</div>
+                <div className={styles.cardLabel}>Vendas de filé (R$)</div>
                 <div className={styles.cardValue}>{moeda(dados.vendas_valor)}</div>
               </button>
             </div>

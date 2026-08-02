@@ -801,26 +801,34 @@ def painel_dashboard(
     ate = ate or date.today()
     de = de or (ate - timedelta(days=30))
 
+    # "Produção total" e "por dia trabalhado" no dashboard olham só Filé —
+    # é o produto de maior valor/foco comercial, Postas e Tilápia limpa não
+    # entram nessa conta (pedido do usuário)
     producao_tot = db.execute(text("""
-        SELECT COALESCE(SUM(quantidade_kg), 0) AS kg, COUNT(DISTINCT data) AS dias
-        FROM producao WHERE data BETWEEN :de AND :ate
+        SELECT COALESCE(SUM(p.quantidade_kg), 0) AS kg, COUNT(DISTINCT p.data) AS dias
+        FROM producao p JOIN produto pr ON pr.id = p.produto_id
+        WHERE p.data BETWEEN :de AND :ate AND pr.nome LIKE 'Filé%'
     """), {"de": de, "ate": ate}).mappings().first()
 
+    # "Vendas" no dashboard também olha só Filé, mesmo critério da Produção
     vendas_tot = db.execute(text("""
-        SELECT COALESCE(SUM(quantidade_kg), 0) AS kg, COALESCE(SUM(valor_total), 0) AS valor
-        FROM venda WHERE data BETWEEN :de AND :ate
+        SELECT COALESCE(SUM(v.quantidade_kg), 0) AS kg, COALESCE(SUM(v.valor_total), 0) AS valor
+        FROM venda v JOIN produto pr ON pr.id = v.produto_id
+        WHERE v.data BETWEEN :de AND :ate AND pr.nome LIKE 'Filé%'
     """), {"de": de, "ate": ate}).mappings().first()
 
     serie_rows = db.execute(text("""
-        SELECT data, SUM(quantidade_kg) AS kg
-        FROM producao WHERE data BETWEEN :de AND :ate
-        GROUP BY data ORDER BY data
+        SELECT p.data, SUM(p.quantidade_kg) AS kg
+        FROM producao p JOIN produto pr ON pr.id = p.produto_id
+        WHERE p.data BETWEEN :de AND :ate AND pr.nome LIKE 'Filé%'
+        GROUP BY p.data ORDER BY p.data
     """), {"de": de, "ate": ate}).mappings().all()
 
     vendas_diarias_rows = db.execute(text("""
-        SELECT data, SUM(quantidade_kg) AS kg, SUM(valor_total) AS valor
-        FROM venda WHERE data BETWEEN :de AND :ate
-        GROUP BY data ORDER BY data
+        SELECT v.data, SUM(v.quantidade_kg) AS kg, SUM(v.valor_total) AS valor
+        FROM venda v JOIN produto pr ON pr.id = v.produto_id
+        WHERE v.data BETWEEN :de AND :ate AND pr.nome LIKE 'Filé%'
+        GROUP BY v.data ORDER BY v.data
     """), {"de": de, "ate": ate}).mappings().all()
 
     rendimento_diario_rows = db.execute(text("""
