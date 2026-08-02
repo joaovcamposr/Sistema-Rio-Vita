@@ -8,7 +8,7 @@ from ..db import get_db
 from ..schemas import ArracoamentoIn, ArracoamentoOut, UsuarioOut
 
 router = APIRouter(prefix="/arracoamento", tags=["arracoamento"])
-_COLUNAS = "id, client_id, lote_id, data, trato, sacos, criado_em"
+_COLUNAS = "id, client_id, lote_id, data, trato, sacos, tipo_racao_id, criado_em"
 
 
 def _linha(r) -> ArracoamentoOut:
@@ -24,8 +24,8 @@ def criar_arracoamento(
     try:
         row = db.execute(
             text(f"""
-                INSERT INTO arracoamento (client_id, lote_id, data, trato, sacos, criado_por)
-                VALUES (:client_id, :lote_id, :data, :trato, :sacos, :criado_por)
+                INSERT INTO arracoamento (client_id, lote_id, data, trato, sacos, tipo_racao_id, criado_por)
+                VALUES (:client_id, :lote_id, :data, :trato, :sacos, :tipo_racao_id, :criado_por)
                 ON CONFLICT (client_id) DO NOTHING
                 RETURNING {_COLUNAS}
             """),

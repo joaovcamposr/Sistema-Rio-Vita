@@ -13,6 +13,33 @@ export interface Vendedor {
   telefone: string | null;
 }
 
+export interface TipoRacao {
+  id: number;
+  fornecedor_id: number;
+  codigo: string;
+}
+
+export interface FornecedorRacao {
+  id: number;
+  nome: string;
+  tipos: TipoRacao[];
+}
+
+export interface ChegadaRacaoItem {
+  tipo_racao_id: number;
+  tipo_racao_codigo: string;
+  quantidade_sacos: number;
+}
+
+export interface ChegadaRacao {
+  id: number;
+  data: string;
+  fornecedor_id: number;
+  fornecedor_nome: string;
+  observacao: string | null;
+  itens: ChegadaRacaoItem[];
+}
+
 export interface ClienteDetalhe {
   id: number;
   nome: string;
@@ -74,7 +101,7 @@ async function cachedGet<T>(cacheKey: string, path: string): Promise<T> {
   }
 }
 
-async function enviar<T>(path: string, metodo: "POST" | "PUT", body: unknown): Promise<T> {
+async function enviar<T>(path: string, metodo: "POST" | "PUT" | "PATCH", body: unknown): Promise<T> {
   const r = await fetch(`${apiBase()}${path}`, {
     method: metodo,
     headers: { "Content-Type": "application/json", ...authHeader() },
@@ -95,6 +122,20 @@ export const listarVendedores = () => cachedGet<Vendedor[]>("cache:vendedores", 
 export const criarVendedor = (nome: string, telefone: string | null) =>
   enviar<Vendedor>("/vendedores", "POST", { nome, telefone });
 export const excluirVendedor = (id: number) => excluir(`/vendedores/${id}`);
+
+export const listarFornecedoresRacao = () =>
+  cachedGet<FornecedorRacao[]>("cache:fornecedores-racao", "/fornecedores-racao");
+export const criarFornecedorRacao = (nome: string) =>
+  enviar<FornecedorRacao>("/fornecedores-racao", "POST", { nome });
+export const excluirFornecedorRacao = (id: number) => excluir(`/fornecedores-racao/${id}`);
+export const criarTipoRacao = (fornecedorId: number, codigo: string) =>
+  enviar<TipoRacao>(`/fornecedores-racao/${fornecedorId}/tipos`, "POST", { codigo });
+export const atualizarTipoRacao = (fornecedorId: number, tipoId: number, codigo: string) =>
+  enviar<TipoRacao>(`/fornecedores-racao/${fornecedorId}/tipos/${tipoId}`, "PATCH", { codigo });
+export const excluirTipoRacao = (fornecedorId: number, tipoId: number) =>
+  excluir(`/fornecedores-racao/${fornecedorId}/tipos/${tipoId}`);
+
+export const listarChegadasRacao = () => cachedGet<ChegadaRacao[]>("cache:chegadas-racao", "/chegadas-racao");
 
 export const listarExpedicoesAbertas = () =>
   cachedGet<Expedicao[]>("cache:expedicoes:abertas", "/expedicoes/abertas");

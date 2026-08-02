@@ -10,6 +10,7 @@ const PAINEIS = [
   { href: "/painel/abate", ico: "📅", nome: "Programação de abate", desc: "Previsão por lote, a partir da última biometria" },
   { href: "/painel/producao", ico: "📦", nome: "Produção e rendimento", desc: "Peso sujo e rendimento ponderados por período" },
   { href: "/painel/estoque", ico: "🧊", nome: "Estoque", desc: "Produzido − vendido, calculado (sem lançamento)" },
+  { href: "/painel/estoque-racao", ico: "🌾", nome: "Estoque de ração", desc: "Chegadas − consumo por tipo, e quando pedir a próxima carga" },
   { href: "/painel/mortalidade", ico: "📉", nome: "Mortalidade por fase", desc: "Pré-engorda e engorda, por lote encerrado" },
   { href: "/painel/comercial", ico: "💰", nome: "Comercial", desc: "Vendas por período e funil de clientes" },
   { href: "/painel/agua", ico: "💧", nome: "Análise da água", desc: "Série dos últimos 60 dias, por viveiro" },

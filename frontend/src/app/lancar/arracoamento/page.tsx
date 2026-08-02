@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { listarViveiros, type Viveiro } from "@/lib/api";
+import { listarFornecedoresRacao, type FornecedorRacao } from "@/lib/cadastros";
 import { enfileirar } from "@/lib/offline-queue";
 import styles from "../form.module.css";
 
@@ -20,11 +21,20 @@ export default function RegistrarArracoamento() {
   const [valores, setValores] = useState<Record<number, string>>({});
   const [enviando, setEnviando] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [tiposRacao, setTiposRacao] = useState<{ id: number; codigo: string; fornecedorNome: string }[]>([]);
+  const [tipoRacaoId, setTipoRacaoId] = useState<number | null>(null);
 
   useEffect(() => {
     listarViveiros()
       .then((lista) => setViveiros(lista.filter((v) => v.lote_atual !== null)))
       .catch(() => setErroCarregar("Sem conexão e sem dados salvos deste aparelho ainda. Conecte-se ao menos uma vez."));
+    listarFornecedoresRacao()
+      .then((fs: FornecedorRacao[]) => {
+        const todos = fs.flatMap((f) => f.tipos.map((t) => ({ id: t.id, codigo: t.codigo, fornecedorNome: f.nome })));
+        setTiposRacao(todos);
+        if (todos.length > 0) setTipoRacaoId(todos[0].id);
+      })
+      .catch(() => {});
   }, []);
 
   const preenchidos = Object.entries(valores).filter(([, v]) => (parseFloat(v.replace(",", ".")) || 0) >= 0 && v !== "");
@@ -42,6 +52,7 @@ export default function RegistrarArracoamento() {
           data,
           trato,
           sacos: parseFloat(valor.replace(",", ".")),
+          tipo_racao_id: tipoRacaoId,
         });
       }
       setToast(`Arraçoamento das ${trato} registrado`);
@@ -92,6 +103,26 @@ export default function RegistrarArracoamento() {
             value={trato}
             onChange={(e) => setTrato(e.target.value)}
           />
+        </div>
+
+        <div className={styles.field}>
+          <label>Tipo de ração</label>
+          <div className={styles.chips}>
+            {tiposRacao.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                className={styles.chip}
+                aria-pressed={tipoRacaoId === t.id}
+                onClick={() => setTipoRacaoId(t.id)}
+              >
+                {t.codigo}
+              </button>
+            ))}
+          </div>
+          {tiposRacao.length === 0 && (
+            <p className={styles.hint}>Nenhum tipo de ração cadastrado — vale lançar mesmo assim, sem tipo.</p>
+          )}
         </div>
 
         {viveiros.length === 0 && <p className={styles.hint}>Nenhum viveiro com lote ativo.</p>}

@@ -46,6 +46,15 @@ export default function CadastrosHub() {
               Quem tem login no sistema (gerente)
             </div>
           </Link>
+          <Link href="/cadastros/racao" style={{
+            background: "var(--surface)", border: "1px solid var(--rule)", borderRadius: 14,
+            padding: 18, color: "var(--ink)", fontWeight: 700,
+          }}>
+            🌾 Fornecedores de ração
+            <div style={{ fontWeight: 400, fontSize: ".8rem", color: "var(--ink-faint)", marginTop: 4 }}>
+              Fornecedores e tipos (ex.: 32AP, 36AP)
+            </div>
+          </Link>
         </div>
       </div>
     </div>

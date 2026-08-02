@@ -22,7 +22,8 @@ export type TipoLancamento =
   | "venda"
   | "expedicao"
   | "expedicao_acerto"
-  | "despesa";
+  | "despesa"
+  | "chegada_racao";
 
 export interface ItemFila {
   client_id: string;
@@ -114,6 +115,7 @@ const ENDPOINT: Record<TipoLancamento, (payload: Record<string, unknown>) => str
   expedicao: () => "/expedicoes",
   expedicao_acerto: (p) => `/expedicoes/${p.expedicao_id}/acerto`,
   despesa: () => "/despesas",
+  chegada_racao: () => "/chegadas-racao",
 };
 
 function apiBase(): string {

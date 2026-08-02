@@ -213,6 +213,7 @@ class ArracoamentoIn(BaseModel):
     data: date
     trato: str  # "07:00", "09:00", ...
     sacos: float = Field(ge=0)
+    tipo_racao_id: int | None = None
 
 
 class ArracoamentoOut(BaseModel):
@@ -222,7 +223,85 @@ class ArracoamentoOut(BaseModel):
     data: date
     trato: str
     sacos: float
+    tipo_racao_id: int | None
     criado_em: datetime
+
+
+# ---------- Ração (fornecedor, tipo, chegada, estoque) ----------
+
+
+class FornecedorRacaoOut(BaseModel):
+    id: int
+    nome: str
+
+
+class FornecedorRacaoIn(BaseModel):
+    nome: str
+
+
+class TipoRacaoOut(BaseModel):
+    id: int
+    fornecedor_id: int
+    codigo: str
+
+
+class TipoRacaoIn(BaseModel):
+    codigo: str
+
+
+class FornecedorRacaoDetalheOut(BaseModel):
+    id: int
+    nome: str
+    tipos: list[TipoRacaoOut]
+
+
+class ChegadaRacaoItemIn(BaseModel):
+    tipo_racao_id: int
+    quantidade_sacos: float = Field(gt=0)
+
+
+class ChegadaRacaoIn(BaseModel):
+    client_id: uuid.UUID
+    data: date
+    fornecedor_id: int
+    observacao: str | None = None
+    itens: list[ChegadaRacaoItemIn] = Field(min_length=1)
+
+
+class ChegadaRacaoItemOut(BaseModel):
+    tipo_racao_id: int
+    tipo_racao_codigo: str
+    quantidade_sacos: float
+
+
+class ChegadaRacaoOut(BaseModel):
+    id: int
+    data: date
+    fornecedor_id: int
+    fornecedor_nome: str
+    observacao: str | None
+    itens: list[ChegadaRacaoItemOut]
+
+
+class EstoqueRacaoTipoOut(BaseModel):
+    tipo_racao_id: int
+    tipo_racao_codigo: str
+    fornecedor_nome: str
+    chegou_sacos: float
+    consumido_sacos: float
+    saldo_sacos: float
+    consumo_sacos_dia: float | None
+    dias_restantes: float | None
+    sacos_sugeridos_proxima_carga: float | None
+
+
+class EstoqueRacaoOut(BaseModel):
+    saldo_total_sacos: float
+    por_tipo: list[EstoqueRacaoTipoOut]
+    consumo_total_sacos_dia: float
+    dias_restantes_total: float | None
+    data_prevista_proxima_carga: date | None
+    sacos_sem_tipo_informado_ultimos_30_dias: float
 
 
 # ---------- Análise da água ----------

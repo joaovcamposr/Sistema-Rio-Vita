@@ -18,6 +18,7 @@ from .routers import (
     parametros,
     producao,
     produtos,
+    racao,
     vendas,
     vendedores,
     viveiros,
@@ -60,6 +61,7 @@ app.include_router(despesas.router, dependencies=_exige_login)
 app.include_router(paineis.router, dependencies=_exige_login)
 app.include_router(parametros.router, dependencies=_exige_login)
 app.include_router(ajustes_estoque.router, dependencies=_exige_login)
+app.include_router(racao.router, dependencies=_exige_login)
 
 
 @app.get("/health")

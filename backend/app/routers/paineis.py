@@ -36,6 +36,8 @@ from ..schemas import (
     NivelRepicagemOut,
     PainelViveiroOut,
     PontoHistoricoLoteOut,
+    EstoqueRacaoOut,
+    EstoqueRacaoTipoOut,
     ProducaoDetalheOut,
     ProducaoDiaOut,
     ProducaoPorProdutoOut,
@@ -1053,6 +1055,91 @@ def arracoamento_previsto(
             ))
             inicio_bloco += timedelta(days=7)
     return out
+
+
+_HORIZONTE_SUGESTAO_DIAS = 30
+
+
+@router.get("/estoque-racao", response_model=EstoqueRacaoOut)
+def painel_estoque_racao(db: Session = Depends(get_db)):
+    """Estoque = chegadas - consumo, por tipo (acumulado, não é um
+    período). O consumo por dia (pra estimar quando acaba e sugerir
+    quanto pedir na próxima carga) usa o mesmo cálculo do arraçoamento
+    previsto, atribuído ao tipo que cada lote usou por último."""
+    tipos = db.execute(text("""
+        SELECT t.id, t.codigo, f.nome AS fornecedor_nome
+        FROM tipo_racao t JOIN fornecedor_racao f ON f.id = t.fornecedor_id
+        WHERE t.ativo AND f.ativo
+        ORDER BY f.nome, t.codigo
+    """)).mappings().all()
+
+    chegou_por_tipo = {
+        r["tipo_racao_id"]: float(r["chegou"])
+        for r in db.execute(text(
+            "SELECT tipo_racao_id, SUM(quantidade_sacos) AS chegou FROM chegada_racao_item GROUP BY tipo_racao_id"
+        )).mappings().all()
+    }
+    consumido_por_tipo = {
+        r["tipo_racao_id"]: float(r["consumido"])
+        for r in db.execute(text(
+            "SELECT tipo_racao_id, SUM(sacos) AS consumido FROM arracoamento "
+            "WHERE tipo_racao_id IS NOT NULL GROUP BY tipo_racao_id"
+        )).mappings().all()
+    }
+
+    hoje = date.today()
+    previsto_hoje = arracoamento_previsto(de=hoje, ate=hoje, db=db)
+    lote_por_codigo = {r["codigo"]: r["id"] for r in db.execute(text("SELECT id, codigo FROM lote")).mappings().all()}
+    ultimo_tipo_por_lote = {
+        r["lote_id"]: r["tipo_racao_id"]
+        for r in db.execute(text("""
+            SELECT DISTINCT ON (lote_id) lote_id, tipo_racao_id
+            FROM arracoamento WHERE tipo_racao_id IS NOT NULL
+            ORDER BY lote_id, data DESC, trato DESC
+        """)).mappings().all()
+    }
+    consumo_dia_por_tipo: dict[int, float] = {}
+    sacos_sem_tipo_hoje = 0.0
+    for p in previsto_hoje:
+        lote_id = lote_por_codigo.get(p.lote_codigo)
+        tipo_id = ultimo_tipo_por_lote.get(lote_id) if lote_id is not None else None
+        if tipo_id is None:
+            sacos_sem_tipo_hoje += p.sacos_total_dia
+        else:
+            consumo_dia_por_tipo[tipo_id] = consumo_dia_por_tipo.get(tipo_id, 0.0) + p.sacos_total_dia
+
+    por_tipo: list[EstoqueRacaoTipoOut] = []
+    dias_restantes_candidatos: list[float] = []
+    for t in tipos:
+        chegou = chegou_por_tipo.get(t["id"], 0.0)
+        consumido = consumido_por_tipo.get(t["id"], 0.0)
+        saldo = chegou - consumido
+        consumo_dia = consumo_dia_por_tipo.get(t["id"])
+        dias_restantes = (saldo / consumo_dia) if consumo_dia else None
+        if dias_restantes is not None:
+            dias_restantes_candidatos.append(dias_restantes)
+        sugestao = max(0.0, consumo_dia * _HORIZONTE_SUGESTAO_DIAS - saldo) if consumo_dia else None
+        por_tipo.append(EstoqueRacaoTipoOut(
+            tipo_racao_id=t["id"], tipo_racao_codigo=t["codigo"], fornecedor_nome=t["fornecedor_nome"],
+            chegou_sacos=chegou, consumido_sacos=consumido, saldo_sacos=saldo,
+            consumo_sacos_dia=consumo_dia, dias_restantes=dias_restantes,
+            sacos_sugeridos_proxima_carga=sugestao,
+        ))
+
+    trinta_dias_atras = hoje - timedelta(days=30)
+    sacos_sem_tipo_30d = float(db.execute(text(
+        "SELECT COALESCE(SUM(sacos), 0) FROM arracoamento WHERE tipo_racao_id IS NULL AND data >= :de"
+    ), {"de": trinta_dias_atras}).scalar())
+
+    dias_restantes_total = min(dias_restantes_candidatos) if dias_restantes_candidatos else None
+    return EstoqueRacaoOut(
+        saldo_total_sacos=sum(p.saldo_sacos for p in por_tipo),
+        por_tipo=por_tipo,
+        consumo_total_sacos_dia=sum(consumo_dia_por_tipo.values()) + sacos_sem_tipo_hoje,
+        dias_restantes_total=dias_restantes_total,
+        data_prevista_proxima_carga=(hoje + timedelta(days=dias_restantes_total)) if dias_restantes_total is not None else None,
+        sacos_sem_tipo_informado_ultimos_30_dias=sacos_sem_tipo_30d,
+    )
 
 
 def _viveiro_valido_como_destino(tipo_origem: str, tipo_destino: str) -> bool:

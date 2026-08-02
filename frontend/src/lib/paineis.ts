@@ -216,6 +216,27 @@ export interface CaixaResumo {
   expedicoes_abertas: ExpedicaoAberta[];
 }
 
+export interface EstoqueRacaoTipo {
+  tipo_racao_id: number;
+  tipo_racao_codigo: string;
+  fornecedor_nome: string;
+  chegou_sacos: number;
+  consumido_sacos: number;
+  saldo_sacos: number;
+  consumo_sacos_dia: number | null;
+  dias_restantes: number | null;
+  sacos_sugeridos_proxima_carga: number | null;
+}
+
+export interface EstoqueRacao {
+  saldo_total_sacos: number;
+  por_tipo: EstoqueRacaoTipo[];
+  consumo_total_sacos_dia: number;
+  dias_restantes_total: number | null;
+  data_prevista_proxima_carga: string | null;
+  sacos_sem_tipo_informado_ultimos_30_dias: number;
+}
+
 export type Granularidade = "dia" | "mes" | "ano";
 
 export interface SerieBucketProduto {
@@ -372,6 +393,9 @@ export const painelProducaoDetalhe = (de?: string, ate?: string) => {
     `cache:painel:producao-detalhe:${de ?? ""}:${ate ?? ""}`, `/paineis/producao/detalhe${qs}`
   );
 };
+
+export const painelEstoqueRacao = () =>
+  cachedGet<EstoqueRacao>("cache:painel:estoque-racao", "/paineis/estoque-racao");
 
 export const painelComercial = (de?: string, ate?: string, vendedor?: string | null) => {
   const params = new URLSearchParams();
