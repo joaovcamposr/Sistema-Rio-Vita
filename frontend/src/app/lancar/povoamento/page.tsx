@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { listarViveiros, type Viveiro } from "@/lib/api";
+import { encerrarLote, listarViveiros, type Viveiro } from "@/lib/api";
 import { enfileirar } from "@/lib/offline-queue";
 import styles from "../form.module.css";
 
@@ -21,6 +21,8 @@ export default function RegistrarPovoamento() {
   const [observacao, setObservacao] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [viveirosZerados, setViveirosZerados] = useState<Viveiro[]>([]);
+  const [encerrandoId, setEncerrandoId] = useState<number | null>(null);
 
   useEffect(() => {
     listarViveiros()
@@ -28,9 +30,29 @@ export default function RegistrarPovoamento() {
         const vazios = lista.filter((v) => v.lote_atual === null && v.tipo !== "decantacao");
         setViveiros(vazios);
         if (vazios.length > 0) setViveiroId(vazios[0].id);
+        // lote já esvaziado (saldo zero ou negativo por mortalidade não
+        // lançada) mas ainda "aberto" — trava o viveiro pro povoamento
+        setViveirosZerados(lista.filter((v) => v.lote_atual !== null && v.lote_atual.saldo_un <= 0));
       })
       .catch(() => setErroCarregar("Sem conexão e sem dados salvos deste aparelho ainda. Conecte-se ao menos uma vez."));
   }, []);
+
+  async function encerrar(v: Viveiro) {
+    if (!v.lote_atual) return;
+    setEncerrandoId(v.id);
+    try {
+      await encerrarLote(v.lote_atual.id, hojeISO());
+      setViveirosZerados((vs) => vs.filter((x) => x.id !== v.id));
+      setViveiros((vs) => (vs.some((x) => x.id === v.id) ? vs : [...vs, { ...v, lote_atual: null }]));
+      setToast(`Lote do viveiro ${v.codigo} encerrado`);
+      setTimeout(() => setToast(null), 2200);
+    } catch {
+      setToast("Não foi possível encerrar — confira a conexão");
+      setTimeout(() => setToast(null), 2200);
+    } finally {
+      setEncerrandoId(null);
+    }
+  }
 
   const viveiro = viveiros.find((v) => v.id === viveiroId) ?? null;
   const qtdNum = parseFloat(quantidade.replace(",", ".")) || 0;
@@ -74,6 +96,28 @@ export default function RegistrarPovoamento() {
       <div className={styles.body}>
         {erroCarregar && <div className={styles.error}>{erroCarregar}</div>}
         <p className={styles.hint}>Só aparecem viveiros vazios. O código do lote é gerado automaticamente.</p>
+
+        {viveirosZerados.length > 0 && (
+          <div className={styles.note} style={{ marginBottom: 18 }}>
+            <strong>Viveiros zerados aguardando fechamento do lote:</strong>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
+              {viveirosZerados.map((v) => (
+                <div key={v.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span>Viveiro {v.codigo} — saldo {v.lote_atual!.saldo_un.toLocaleString("pt-BR")}</span>
+                  <button
+                    type="button"
+                    className={styles.btnPrimary}
+                    style={{ padding: "6px 12px", fontSize: "0.8rem" }}
+                    disabled={encerrandoId === v.id}
+                    onClick={() => encerrar(v)}
+                  >
+                    {encerrandoId === v.id ? "Encerrando…" : "Encerrar lote"}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className={styles.field}>
           <label>Viveiro</label>

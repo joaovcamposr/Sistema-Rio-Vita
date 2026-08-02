@@ -111,3 +111,13 @@ export const resumoDespesca = (despescaId: number) =>
   cachedGet<DespescaResumo>(`cache:resumo:${despescaId}`, `/despescas/${despescaId}/resumo`);
 export const listarClientes = () => cachedGet<Cliente[]>("cache:clientes", "/clientes");
 export const listarVendedoresDeVenda = () => cachedGet<string[]>("cache:vendas-vendedores", "/vendas/vendedores");
+
+export async function encerrarLote(loteId: number, data: string): Promise<void> {
+  const r = await fetch(`${apiBase()}/lotes/${loteId}/encerrar`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...authHeader() },
+    body: JSON.stringify({ data }),
+  });
+  if (r.status === 401) sessaoInvalida();
+  if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+}

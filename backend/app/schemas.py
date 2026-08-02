@@ -165,6 +165,10 @@ class PovoamentoIn(BaseModel):
     observacao: str | None = None
 
 
+class EncerrarLoteIn(BaseModel):
+    data: date
+
+
 class RepicagemOrigemIn(BaseModel):
     viveiro_origem_id: int
     quantidade: int = Field(gt=0)

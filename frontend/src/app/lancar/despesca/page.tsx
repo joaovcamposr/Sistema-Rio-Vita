@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { listarViveiros, type Viveiro } from "@/lib/api";
+import { encerrarLote, listarViveiros, type Viveiro } from "@/lib/api";
 import { enfileirar } from "@/lib/offline-queue";
 import styles from "../form.module.css";
 
@@ -33,6 +33,7 @@ export default function RegistrarDespesca() {
   const [pesoMedio, setPesoMedio] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [encerrarTanque, setEncerrarTanque] = useState(true);
 
   useEffect(() => {
     listarViveiros()
@@ -66,10 +67,19 @@ export default function RegistrarDespesca() {
         quantidade_un: Math.round(qtdNum),
         peso_medio_g: pesoNum,
       });
-      setToast("Despesca registrada");
+      let msg = "Despesca registrada";
+      if (encerrarTanque && saldoDepois !== null && saldoDepois <= 0) {
+        try {
+          await encerrarLote(lote.id, hojeISO());
+          msg = "Despesca registrada — lote encerrado";
+        } catch {
+          msg = "Despesca registrada — não deu pra encerrar o lote agora, tente de novo com conexão";
+        }
+      }
+      setToast(msg);
       setQuantidade("");
       setPesoMedio("");
-      setTimeout(() => setToast(null), 2200);
+      setTimeout(() => setToast(null), 3200);
     } finally {
       setEnviando(false);
     }
@@ -161,6 +171,17 @@ export default function RegistrarDespesca() {
               <span style={{ color: "var(--crit)", display: "block", marginTop: 4 }}>
                 Isso é mais do que o saldo atual — confira a quantidade antes de salvar.
               </span>
+            )}
+            {saldoDepois <= 0 && (
+              <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, fontWeight: 600, cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  style={{ width: 18, height: 18, accentColor: "var(--brand)" }}
+                  checked={encerrarTanque}
+                  onChange={(e) => setEncerrarTanque(e.target.checked)}
+                />
+                Tanque zerou — encerrar este lote
+              </label>
             )}
           </div>
         )}

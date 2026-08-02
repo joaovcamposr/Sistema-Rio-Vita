@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
 from ..db import get_db
-from ..schemas import LoteOut, PovoamentoIn, RepicagemIn, RepicagemOut, UsuarioOut
+from ..schemas import EncerrarLoteIn, LoteOut, PovoamentoIn, RepicagemIn, RepicagemOut, UsuarioOut
 
 router = APIRouter(tags=["lotes"])
 
@@ -176,3 +176,26 @@ def registrar_repicagem(
         raise HTTPException(422, f"dado inválido ou fora das regras: {exc.orig}") from exc
 
     return RepicagemOut(lote=LoteOut(**novo), lotes_origem_fechados=fechados)
+
+
+@router.patch("/lotes/{lote_id}/encerrar", response_model=LoteOut)
+def encerrar_lote(
+    lote_id: int, body: EncerrarLoteIn, db: Session = Depends(get_db), _usuario: UsuarioOut = Depends(get_current_user),
+):
+    """Fecha o lote quando o tanque foi zerado por despesca (sem repicagem
+    — essa já fecha sozinha). Sem isso o viveiro fica preso, sem poder
+    receber um povoamento novo (só um lote aberto por viveiro)."""
+    lote = db.execute(text("SELECT data_inicio, data_fim FROM lote WHERE id = :id"), {"id": lote_id}).mappings().first()
+    if lote is None:
+        raise HTTPException(404, "lote não encontrado")
+    if lote["data_fim"] is not None:
+        raise HTTPException(422, "esse lote já está encerrado")
+    if body.data < lote["data_inicio"]:
+        raise HTTPException(422, "data de encerramento não pode ser antes do início do lote")
+
+    row = db.execute(
+        text(f"UPDATE lote SET data_fim = :data WHERE id = :id RETURNING {_COLUNAS_LOTE}"),
+        {"data": body.data, "id": lote_id},
+    ).mappings().first()
+    db.commit()
+    return LoteOut(**row)
