@@ -145,8 +145,8 @@
 }
 .marca {
   border: 1.5px solid #000;
-  width: 22px;
-  height: 22px;
+  width: 30px;
+  height: 30px;
   flex: 0 0 auto;
   position: relative;
 }
@@ -155,7 +155,7 @@
   position: absolute;
   top: 1px;
   left: 2px;
-  font-size: 0.5rem;
+  font-size: 0.55rem;
   color: #999;
 }
 .totalEscrito {
@@ -166,7 +166,43 @@
   font-size: 0.9rem;
 }
 
+/* ---------- Produção: uma ficha por produto, uma por página ---------- */
+
+.selecaoProdutos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: center;
+  margin-bottom: 18px;
+  padding: 14px 16px;
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+}
+.checkProduto {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.86rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.checkProduto input { width: 16px; height: 16px; accent-color: var(--brand); }
+.linkSelecao {
+  background: none;
+  border: none;
+  color: var(--brand-deep);
+  font-weight: 700;
+  font-size: 0.8rem;
+  cursor: pointer;
+  padding: 0;
+}
+
+.folhaQuebra { page-break-after: always; margin-bottom: 24px; }
+.folhaQuebra:last-child { page-break-after: auto; }
+
 @media print {
   .folha { border: none; padding: 0; }
+  .selecaoProdutos { display: none; }
+  .folhaQuebra { margin-bottom: 0; }
   body { background: #fff; }
 }

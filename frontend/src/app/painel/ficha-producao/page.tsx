@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { listarProdutos, type Produto } from "@/lib/api";
 import styles from "../painel.module.css";
@@ -24,18 +24,39 @@ function ordenarParaImpressao(produtos: Produto[]): Produto[] {
   });
 }
 
+const TOTAL_QUADRADOS = 240; // 12 colunas x 20 linhas — cabe numa página A4
+
 export default function FichaProducao() {
   const router = useRouter();
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [erro, setErro] = useState<string | null>(null);
+  const [selecionados, setSelecionados] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     // "Tilápia suja" não passa por Produção — sai direto da despesca pra
     // venda, sem processamento/embalagem no frigorífico
     listarProdutos()
-      .then((ps) => setProdutos(ps.filter((p) => !p.nome.toLowerCase().includes("suja"))))
+      .then((ps) => {
+        const filtrados = ordenarParaImpressao(ps.filter((p) => !p.nome.toLowerCase().includes("suja")));
+        setProdutos(filtrados);
+        setSelecionados(new Set(filtrados.map((p) => p.id)));
+      })
       .catch(() => setErro("Sem conexão e sem dados salvos deste aparelho ainda."));
   }, []);
+
+  const paraImprimir = useMemo(
+    () => produtos.filter((p) => selecionados.has(p.id)),
+    [produtos, selecionados]
+  );
+
+  function alternar(id: number) {
+    setSelecionados((s) => {
+      const nova = new Set(s);
+      if (nova.has(id)) nova.delete(id);
+      else nova.add(id);
+      return nova;
+    });
+  }
 
   return (
     <div className={styles.page}>
@@ -48,7 +69,7 @@ export default function FichaProducao() {
           <div className={styles.sub}>Para imprimir, preencher à mão e fotografar depois</div>
         </div>
         <div className={styles.spacer} />
-        <button type="button" className={styles.printBtn} onClick={() => window.print()}>
+        <button type="button" className={styles.printBtn} disabled={paraImprimir.length === 0} onClick={() => window.print()}>
           Imprimir
         </button>
       </div>
@@ -57,91 +78,99 @@ export default function FichaProducao() {
         {produtos.length === 0 && !erro && <div className={styles.carregando}>Carregando…</div>}
 
         {produtos.length > 0 && (
-          <div className={ficha.folha}>
-            <div className={ficha.cabecalho}>Rio Vita — Ficha de Produção Realizada</div>
-
-            <div className={ficha.camposTopo}>
-              <div className={ficha.campoTopo}>
-                <span>Data</span>
-                <span className={ficha.linhaPreencher}>____ / ____ / ________</span>
-              </div>
-              <div className={ficha.campoTopo}>
-                <span>Tanque de origem</span>
-                <span className={ficha.linhaPreencher}>_____________</span>
-              </div>
-              <div className={ficha.campoTopo}>
-                <span>Data da despesca</span>
-                <span className={ficha.linhaPreencher}>____ / ____ / ________</span>
-              </div>
+          <>
+            <div className={ficha.selecaoProdutos}>
+              <strong style={{ fontSize: "0.86rem" }}>Imprimir:</strong>
+              {produtos.map((p) => (
+                <label key={p.id} className={ficha.checkProduto}>
+                  <input
+                    type="checkbox"
+                    checked={selecionados.has(p.id)}
+                    onChange={() => alternar(p.id)}
+                  />
+                  {p.nome}
+                </label>
+              ))}
+              <button type="button" className={ficha.linkSelecao} onClick={() => setSelecionados(new Set(produtos.map((p) => p.id)))}>
+                Todos
+              </button>
+              <button type="button" className={ficha.linkSelecao} onClick={() => setSelecionados(new Set())}>
+                Nenhum
+              </button>
             </div>
 
-            <p className={ficha.instrucao}>
-              Uma ficha por despesca/tanque. A cada caixa fechada, marque um X no próximo quadradinho. No fim do
-              turno, escreva o total de caixas fechadas e, se sobrar produto sem fechar uma caixa, o número de
-              pacotes soltos ao lado.
-            </p>
+            {paraImprimir.length === 0 && (
+              <p className={styles.hint}>Selecione ao menos um produto pra ver a ficha.</p>
+            )}
 
-            {ordenarParaImpressao(produtos).map((p) => {
+            {paraImprimir.map((p) => {
               const porCaixa = unidadesPorCaixa(p.nome);
               return (
-                <div key={p.id} className={ficha.secaoProduto}>
-                  <div className={ficha.tituloProduto}>{p.nome}</div>
+                <div key={p.id} className={`${ficha.folha} ${ficha.folhaQuebra}`}>
+                  <div className={ficha.cabecalho}>
+                    Rio Vita — Ficha de Produção Realizada
+                    <div style={{ fontSize: "0.85rem", fontWeight: 700, marginTop: 4 }}>{p.nome}</div>
+                  </div>
+
+                  <div className={ficha.camposTopo}>
+                    <div className={ficha.campoTopo}>
+                      <span>Data</span>
+                      <span className={ficha.linhaPreencher}>____ / ____ / ________</span>
+                    </div>
+                    <div className={ficha.campoTopo}>
+                      <span>Tanque de origem</span>
+                      <span className={ficha.linhaPreencher}>_____________</span>
+                    </div>
+                    <div className={ficha.campoTopo}>
+                      <span>Data da despesca</span>
+                      <span className={ficha.linhaPreencher}>____ / ____ / ________</span>
+                    </div>
+                  </div>
+
                   {porCaixa !== null ? (
                     <>
-                      <div className={ficha.regraProduto}>
-                        Caixas de <strong>{porCaixa} pacotes</strong> — confirmar se está certo
-                      </div>
-                      <div className={ficha.marcarCaixas}>
-                        <label style={{ fontWeight: 700, fontSize: "0.9rem" }}>
-                          Caixas fechadas — marque um X a cada caixa
-                        </label>
-                        <div className={ficha.grade}>
-                          {Array.from({ length: 60 }, (_, i) => (
-                            <span key={i} className={ficha.marca} data-n={i + 1}></span>
-                          ))}
-                        </div>
-                        <div className={ficha.totalEscrito}>
-                          <span>Total de caixas fechadas</span>
-                          <span className={ficha.caixaResposta} style={{ width: 70, height: 34 }}></span>
-                        </div>
-                      </div>
-                      <div className={ficha.linhasContagem} style={{ marginTop: 10 }}>
-                        <div className={ficha.contagemItem}>
-                          <label>Pacotes soltos (caixa incompleta)</label>
-                          <span className={ficha.caixaResposta}></span>
-                        </div>
+                      <p className={ficha.instrucao}>
+                        Caixas de <strong>{porCaixa} pacotes</strong> — confirme se está certo. A cada caixa fechada,
+                        marque um <strong>X</strong> no próximo quadrado. Se a caixa ficar incompleta (comum no fim
+                        do turno), <strong>não marque X</strong> — escreva no quadrado o número de pacotes que tem
+                        nela.
+                      </p>
+                      <div className={ficha.grade}>
+                        {Array.from({ length: TOTAL_QUADRADOS }, (_, i) => (
+                          <span key={i} className={ficha.marca} data-n={i + 1}></span>
+                        ))}
                       </div>
                     </>
                   ) : (
                     <>
-                      <div className={ficha.regraProduto}>Anotado individualmente (unidades) + peso total</div>
+                      <p className={ficha.instrucao}>Anotado individualmente (unidades) + peso total.</p>
                       <div className={ficha.linhasContagem}>
                         <div className={ficha.contagemItem}>
                           <label>Quantidade (un)</label>
-                          <span className={ficha.caixaResposta} style={{ width: 120 }}></span>
+                          <span className={ficha.caixaResposta} style={{ width: 160 }}></span>
                         </div>
                         <div className={ficha.contagemItem}>
                           <label>Peso total (Kg)</label>
-                          <span className={ficha.caixaResposta} style={{ width: 120 }}></span>
+                          <span className={ficha.caixaResposta} style={{ width: 160 }}></span>
                         </div>
                       </div>
                     </>
                   )}
+
+                  <div className={ficha.rodape}>
+                    <div>
+                      <span>Preenchido por (produção/frigorífico)</span>
+                      <span className={ficha.linhaAssinatura}></span>
+                    </div>
+                    <div>
+                      <span>Conferido por (quem lança no sistema)</span>
+                      <span className={ficha.linhaAssinatura}></span>
+                    </div>
+                  </div>
                 </div>
               );
             })}
-
-            <div className={ficha.rodape}>
-              <div>
-                <span>Preenchido por (produção/frigorífico)</span>
-                <span className={ficha.linhaAssinatura}></span>
-              </div>
-              <div>
-                <span>Conferido por (quem lança no sistema)</span>
-                <span className={ficha.linhaAssinatura}></span>
-              </div>
-            </div>
-          </div>
+          </>
         )}
       </div>
     </div>

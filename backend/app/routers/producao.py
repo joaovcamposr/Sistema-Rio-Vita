@@ -108,17 +108,18 @@ def ler_foto_producao(
         text("SELECT nome FROM produto WHERE ativo AND nome NOT ILIKE '%suja%' ORDER BY nome")
     ).scalars().all()
     prompt = (
-        "Você está lendo uma ficha impressa de produção de pescado, preenchida à mão pelo pessoal do frigorífico. "
+        "Você está lendo uma ficha impressa de produção de pescado, preenchida à mão pelo pessoal do frigorífico — "
+        "cada ficha é de UM produto só (o nome vem escrito no topo da folha). "
         f"Os produtos possíveis são: {', '.join(produtos)}. Pra filé (qualquer embalagem) e postas, a contagem é "
-        "por caixa fechada (filé = 8 pacotes por caixa, postas = 6 pacotes por caixa). Pra 'Caixas fechadas', a "
-        "ficha tem uma grade de quadradinhos numerados e o operador marca um X em cada um conforme fecha as "
-        "caixas, e depois escreve o total à mão num campo 'Total de caixas fechadas' — use esse número escrito "
-        "como valor de caixas_fechadas; só conte os quadradinhos marcados se o total escrito estiver em branco "
-        "ou ilegível. Também tem o campo 'Pacotes soltos' (sobra de caixa incompleta, comum no fim do turno). "
-        "Pra 'Tilápia limpa', a ficha tem 'Quantidade (un)' e 'Peso total (Kg)', preenchidos separadamente — não "
-        "confunda com caixas. Também tem campos escritos à mão no topo: 'Data', 'Tanque de origem' e 'Data da "
-        "despesca'. Se um número estiver ilegível ou o campo estiver em branco, não inclua esse valor — prefira "
-        "omitir a arriscar um valor errado."
+        "por caixa fechada (filé = 8 pacotes por caixa, postas = 6 pacotes por caixa) e a ficha tem uma grade de "
+        "quadradinhos numerados: a cada caixa fechada, o operador marca um X num quadradinho; caixas_fechadas é a "
+        "contagem de quadradinhos marcados com X. Se a caixa ficou incompleta (comum no fim do turno), o operador "
+        "NÃO marca X — em vez disso escreve dentro do quadradinho o número de pacotes que tem naquela caixa; se "
+        "achar um quadradinho assim (com número em vez de X), esse número é pacotes_soltos, e não conte esse "
+        "quadradinho em caixas_fechadas. Pra 'Tilápia limpa', a ficha tem 'Quantidade (un)' e 'Peso total (Kg)', "
+        "preenchidos separadamente — não confunda com caixas. Também tem campos escritos à mão no topo: 'Data', "
+        "'Tanque de origem' e 'Data da despesca'. Se um número estiver ilegível ou o campo estiver em branco, não "
+        "inclua esse valor — prefira omitir a arriscar um valor errado."
     )
     bruto = ler_ficha(foto.file.read(), foto.content_type or "image/jpeg", prompt, _SCHEMA_LEITURA)
 
