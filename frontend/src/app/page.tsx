@@ -78,13 +78,13 @@ export default function Home() {
           <span className={styles.ico}>📋</span>
           <span>Tabela de arraçoamento</span>
         </Link>
-        <Link href="/painel/ficha-arracoamento" className={styles.tile}>
-          <span className={styles.ico}>🖨️</span>
-          <span>Ficha de arraçoamento (impressão)</span>
-        </Link>
         <Link href="/painel/ficha-producao" className={styles.tile}>
           <span className={styles.ico}>🖨️</span>
           <span>Ficha de produção (impressão)</span>
+        </Link>
+        <Link href="/painel/ficha-arracoamento" className={styles.tile}>
+          <span className={styles.ico}>🖨️</span>
+          <span>Ficha de arraçoamento (impressão)</span>
         </Link>
       </div>
 
