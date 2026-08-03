@@ -134,6 +134,17 @@ export default function RegistrarProducao() {
           <h1>Registrar produção</h1>
           <div className={styles.sub}>{new Date().toLocaleDateString("pt-BR")}</div>
         </div>
+        <button
+          type="button"
+          onClick={() => router.push("/lancar/producao-foto")}
+          style={{
+            marginLeft: "auto", border: "1px solid var(--rule-strong)", background: "var(--surface)",
+            color: "var(--ink)", borderRadius: 10, padding: "8px 12px", fontSize: "0.8rem",
+            fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap",
+          }}
+        >
+          📸 Por foto
+        </button>
       </div>
 
       <div className={styles.body}>

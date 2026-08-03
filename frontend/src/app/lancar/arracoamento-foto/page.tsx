@@ -140,7 +140,7 @@ export default function ArracoamentoPorFoto() {
   return (
     <div className={styles.page}>
       <div className={styles.appbar}>
-        <button className={styles.backbtn} aria-label="Voltar" onClick={() => router.push("/")}>
+        <button className={styles.backbtn} aria-label="Voltar" onClick={() => router.push("/lancar/arracoamento")}>
           ←
         </button>
         <div>
