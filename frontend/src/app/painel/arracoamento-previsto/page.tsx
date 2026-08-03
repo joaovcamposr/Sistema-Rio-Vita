@@ -86,7 +86,7 @@ export default function ArracoamentoPrevistoFicha() {
 
         {linhas.length > 0 && (
           <div className={styles.tableWrap}>
-            <table className={styles.tabela}>
+            <table className={`${styles.tabela} ${styles.tabelaGrande}`}>
               <thead>
                 <tr>
                   <th>Viveiro</th>

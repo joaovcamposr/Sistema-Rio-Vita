@@ -11,25 +11,23 @@ from ..vision import ler_ficha
 router = APIRouter(prefix="/arracoamento", tags=["arracoamento"])
 _COLUNAS = "id, client_id, lote_id, data, trato, sacos, tipo_racao_id, criado_em"
 
-_HORARIO_CAMPO = {"07:00": "h07", "09:00": "h09", "11:00": "h11", "13:00": "h13", "15:00": "h15", "17:00": "h17"}
+_HORARIO_CAMPO = {"08:30": "h0830", "10:30": "h1030", "12:00": "h1200", "15:30": "h1530"}
 
 _SCHEMA_LEITURA = {
     "type": "object",
     "properties": {
         "data": {"type": "string"},
-        "tipo_racao_texto": {"type": "string"},
         "linhas": {
             "type": "array",
             "items": {
                 "type": "object",
                 "properties": {
                     "tanque": {"type": "string"},
-                    "h07": {"type": "number"},
-                    "h09": {"type": "number"},
-                    "h11": {"type": "number"},
-                    "h13": {"type": "number"},
-                    "h15": {"type": "number"},
-                    "h17": {"type": "number"},
+                    "tipo_racao_texto": {"type": "string"},
+                    "h0830": {"type": "number"},
+                    "h1030": {"type": "number"},
+                    "h1200": {"type": "number"},
+                    "h1530": {"type": "number"},
                 },
                 "required": ["tanque"],
             },
@@ -85,11 +83,11 @@ def ler_foto_arracoamento(
     viveiros = db.execute(text("SELECT codigo FROM viveiro WHERE ativo ORDER BY codigo")).scalars().all()
     prompt = (
         "Você está lendo uma ficha impressa de arraçoamento de peixes, preenchida à mão. A tabela tem uma coluna "
-        "'Tanque' (os códigos possíveis são: " + ", ".join(viveiros) + ") e colunas de horário (07:00, 09:00, "
-        "11:00, 13:00, 15:00, 17:00) — cada célula tem um número de sacos (pode ter vírgula decimal, ex: 2,5) ou "
-        "está em branco (nesse caso não inclua esse horário no resultado). Também tem dois campos escritos à mão "
-        "no topo da ficha: 'Data' e 'Tipo de ração usado hoje'. Se um número estiver ilegível, prefira omitir a "
-        "arriscar um valor errado."
+        "'Tanque' (os códigos possíveis são: " + ", ".join(viveiros) + "), uma coluna 'Ração' (código do tipo de "
+        "ração usado naquele tanque, ex.: 30AR, 32AP, 36AP) e colunas de horário (08:30, 10:30, 12:00, 15:30) — "
+        "cada célula de horário tem um número de sacos (pode ter vírgula decimal, ex: 2,5) ou está em branco "
+        "(nesse caso não inclua esse horário no resultado). Também tem um campo escrito à mão no topo da ficha: "
+        "'Data'. Se um número estiver ilegível, prefira omitir a arriscar um valor errado."
     )
     bruto = ler_ficha(foto.file.read(), foto.content_type or "image/jpeg", prompt, _SCHEMA_LEITURA)
 
@@ -99,8 +97,10 @@ def ler_foto_arracoamento(
             horario: float(linha[campo]) for horario, campo in _HORARIO_CAMPO.items() if linha.get(campo) is not None
         }
         if valores:
-            linhas.append(LeituraArracoamentoLinhaOut(tanque=str(linha.get("tanque", "")).strip(), valores=valores))
+            linhas.append(LeituraArracoamentoLinhaOut(
+                tanque=str(linha.get("tanque", "")).strip(),
+                tipo_racao_texto=linha.get("tipo_racao_texto"),
+                valores=valores,
+            ))
 
-    return LeituraArracoamentoOut(
-        data_lida=bruto.get("data"), tipo_racao_texto=bruto.get("tipo_racao_texto"), linhas=linhas,
-    )
+    return LeituraArracoamentoOut(data_lida=bruto.get("data"), linhas=linhas)

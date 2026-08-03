@@ -974,8 +974,8 @@ def painel_dashboard(
 
 # ---------- Tabelas informativas ----------
 
-_SLOTS_6 = ["07:00", "09:00", "11:00", "13:00", "15:00", "17:00"]
-_SLOTS_3 = ["07:00", "11:00", "15:00"]
+_SLOTS_PRE_ENGORDA = ["08:30", "10:30", "12:00", "15:30"]
+_SLOTS_ENGORDA = ["08:30", "12:00", "15:30"]
 
 
 def _arredondar_saco(v: float) -> float:
@@ -984,16 +984,11 @@ def _arredondar_saco(v: float) -> float:
     return round(round(v / 0.5) * 0.5, 1)
 
 
-def _slots_para_tratos(n: int) -> list[str]:
-    if n == 6:
-        return _SLOTS_6
-    if n == 3:
-        return _SLOTS_3
-    if n <= 0:
-        return []
-    passo = max(1, round(len(_SLOTS_6) / n))
-    escolhidos = _SLOTS_6[::passo][:n]
-    return escolhidos or [_SLOTS_6[0]]
+def _slots_para_fase(fase: str) -> list[str]:
+    """Horários fixos do trato — não vêm mais do tratos_por_dia da tabela
+    de arraçoamento (que só define quantidade/tipo de ração por semana),
+    e sim da fase do lote: pré-engorda come mais vezes ao dia que engorda."""
+    return _SLOTS_PRE_ENGORDA if fase == "pre_engorda" else _SLOTS_ENGORDA
 
 
 @router.get("/tabela-arracoamento", response_model=list[TabelaArracoamentoLinhaOut])
@@ -1040,7 +1035,7 @@ def arracoamento_previsto(
 
     rows = db.execute(text("""
         SELECT v.codigo AS viveiro_codigo, l.codigo AS lote_codigo, l.data_inicio AS lote_data_inicio,
-               l.peso_medio_inicial_g, s.saldo_un,
+               l.peso_medio_inicial_g, l.fase, s.saldo_un,
                b.data AS biometria_data, b.peso_medio_g AS biometria_peso
         FROM viveiro v
         JOIN lote l ON l.viveiro_id = v.id AND l.data_fim IS NULL
@@ -1077,7 +1072,7 @@ def arracoamento_previsto(
             info = tabela_by_semana[semana_tabela]
             kg_dia = float(info["consumo_diario_kg"]) * (saldo_un / 1000)
             sacos_dia = kg_dia / 25
-            slots = _slots_para_tratos(info["tratos_por_dia"])
+            slots = _slots_para_fase(r["fase"])
             sacos_por_trato = (sacos_dia / len(slots)) if slots else 0.0
 
             tratos = [TratoPrevistoOut(horario=h, sacos=_arredondar_saco(sacos_por_trato)) for h in slots]

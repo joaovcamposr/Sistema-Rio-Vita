@@ -144,11 +144,11 @@ export const listarVendedoresDeVenda = () => cachedGet<string[]>("cache:vendas-v
 
 export interface LeituraArracoamentoLinha {
   tanque: string;
+  tipo_racao_texto: string | null;
   valores: Record<string, number>;
 }
 export interface LeituraArracoamento {
   data_lida: string | null;
-  tipo_racao_texto: string | null;
   linhas: LeituraArracoamentoLinha[];
 }
 

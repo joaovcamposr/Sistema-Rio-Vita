@@ -159,6 +159,12 @@ table.tabelaCompacta { font-size: 0.74rem; }
 table.tabelaCompacta th { font-size: 0.6rem; padding: 6px 7px; white-space: normal; }
 table.tabelaCompacta td { padding: 6px 7px; }
 
+/* variante grande — pra tabelas lidas de longe/impressas (ex.: arraçoamento
+   previsto, colada na parede do galpão) */
+table.tabelaGrande { font-size: 1.15rem; }
+table.tabelaGrande th { font-size: 0.85rem; padding: 14px 18px; }
+table.tabelaGrande td { padding: 14px 18px; font-weight: 600; }
+
 .badge {
   display: inline-block;
   padding: 3px 9px;
@@ -259,4 +265,6 @@ table.tabelaCompacta td { padding: 6px 7px; }
   table.tabela th, table.tabela td { padding: 5px 8px; }
   table.tabela thead { display: table-header-group; }
   table.tabela tr { break-inside: avoid; }
+  table.tabelaGrande { font-size: 1rem; }
+  table.tabelaGrande th, table.tabelaGrande td { padding: 8px 10px; }
 }

@@ -232,7 +232,7 @@ class ArracoamentoIn(BaseModel):
     client_id: uuid.UUID
     lote_id: int
     data: date
-    trato: str  # "07:00", "09:00", ...
+    trato: str  # "08:30", "10:30", ...
     sacos: float = Field(ge=0)
     tipo_racao_id: int | None = None
 
@@ -250,12 +250,12 @@ class ArracoamentoOut(BaseModel):
 
 class LeituraArracoamentoLinhaOut(BaseModel):
     tanque: str
-    valores: dict[str, float]  # horario ("07:00") -> sacos, só os que a ficha tinha preenchidos
+    tipo_racao_texto: str | None
+    valores: dict[str, float]  # horario ("08:30") -> sacos, só os que a ficha tinha preenchidos
 
 
 class LeituraArracoamentoOut(BaseModel):
     data_lida: str | None
-    tipo_racao_texto: str | None
     linhas: list[LeituraArracoamentoLinhaOut]
 
 

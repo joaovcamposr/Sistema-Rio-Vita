@@ -8,7 +8,7 @@ import { enfileirar } from "@/lib/offline-queue";
 import styles from "../form.module.css";
 import tabelaStyles from "../../painel/painel.module.css";
 
-const HORARIOS = ["07:00", "09:00", "11:00", "13:00", "15:00", "17:00"];
+const HORARIOS = ["08:30", "10:30", "12:00", "15:30"];
 
 function hojeISO(): string {
   return new Date().toISOString().slice(0, 10);
@@ -41,7 +41,7 @@ export default function ArracoamentoPorFoto() {
   const [naoReconhecidos, setNaoReconhecidos] = useState<string[]>([]);
 
   const [data, setData] = useState(hojeISO());
-  const [tipoRacaoId, setTipoRacaoId] = useState<number | null>(null);
+  const [tipoRacaoPorViveiro, setTipoRacaoPorViveiro] = useState<Record<number, number | null>>({});
   const [grade, setGrade] = useState<Record<number, Record<string, string>>>({});
 
   const [enviando, setEnviando] = useState(false);
@@ -65,13 +65,8 @@ export default function ArracoamentoPorFoto() {
       const dataConvertida = tentarConverterData(leitura.data_lida);
       if (dataConvertida) setData(dataConvertida);
 
-      if (leitura.tipo_racao_texto) {
-        const alvo = leitura.tipo_racao_texto.trim().toLowerCase();
-        const achado = tiposRacao.find((t) => t.codigo.toLowerCase() === alvo || alvo.includes(t.codigo.toLowerCase()));
-        if (achado) setTipoRacaoId(achado.id);
-      }
-
       const novaGrade: Record<number, Record<string, string>> = {};
+      const novoTipoPorViveiro: Record<number, number | null> = {};
       const semMatch: string[] = [];
       for (const linha of leitura.linhas) {
         const viveiro = viveiros.find((v) => v.codigo.trim().toLowerCase() === linha.tanque.trim().toLowerCase());
@@ -82,8 +77,14 @@ export default function ArracoamentoPorFoto() {
         novaGrade[viveiro.id] = Object.fromEntries(
           Object.entries(linha.valores).map(([h, sacos]) => [h, String(sacos).replace(".", ",")])
         );
+        if (linha.tipo_racao_texto) {
+          const alvo = linha.tipo_racao_texto.trim().toLowerCase();
+          const achado = tiposRacao.find((t) => t.codigo.toLowerCase() === alvo || alvo.includes(t.codigo.toLowerCase()));
+          novoTipoPorViveiro[viveiro.id] = achado ? achado.id : null;
+        }
       }
       setGrade(novaGrade);
+      setTipoRacaoPorViveiro(novoTipoPorViveiro);
       setNaoReconhecidos(semMatch);
       setLido(true);
     } catch {
@@ -118,6 +119,7 @@ export default function ArracoamentoPorFoto() {
       for (const [viveiroId, porHorario] of Object.entries(grade)) {
         const v = viveiros.find((vv) => vv.id === Number(viveiroId));
         if (!v?.lote_atual) continue;
+        const tipoRacaoId = tipoRacaoPorViveiro[v.id] ?? null;
         for (const [horario, valor] of Object.entries(porHorario)) {
           const sacos = parseFloat(valor.replace(",", "."));
           if (!(sacos >= 0)) continue;
@@ -131,6 +133,7 @@ export default function ArracoamentoPorFoto() {
       setLido(false);
       setGrade({});
       setNaoReconhecidos([]);
+      setTipoRacaoPorViveiro({});
       setTimeout(() => setToast(null), 3000);
     } finally {
       setEnviando(false);
@@ -181,23 +184,6 @@ export default function ArracoamentoPorFoto() {
               <input className={styles.inp} type="date" value={data} onChange={(e) => setData(e.target.value)} />
             </div>
 
-            <div className={styles.field}>
-              <label>Tipo de ração</label>
-              <div className={styles.chips}>
-                {tiposRacao.map((t) => (
-                  <button
-                    key={t.id}
-                    type="button"
-                    className={styles.chip}
-                    aria-pressed={tipoRacaoId === t.id}
-                    onClick={() => setTipoRacaoId(t.id)}
-                  >
-                    {t.codigo}
-                  </button>
-                ))}
-              </div>
-            </div>
-
             {naoReconhecidos.length > 0 && (
               <div className={styles.error}>
                 Não reconheci estes tanques na ficha: {naoReconhecidos.join(", ")}. Confira se o código foi escrito
@@ -210,6 +196,7 @@ export default function ArracoamentoPorFoto() {
                 <thead>
                   <tr>
                     <th>Tanque</th>
+                    <th>Ração</th>
                     {HORARIOS.map((h) => <th key={h}>{h}</th>)}
                   </tr>
                 </thead>
@@ -217,6 +204,23 @@ export default function ArracoamentoPorFoto() {
                   {viveiros.map((v) => (
                     <tr key={v.id}>
                       <td style={{ fontWeight: 700 }}>{v.codigo}</td>
+                      <td>
+                        <select
+                          className={styles.inp}
+                          style={{ padding: "6px 8px", fontSize: "0.85rem" }}
+                          value={tipoRacaoPorViveiro[v.id] ?? ""}
+                          onChange={(e) =>
+                            setTipoRacaoPorViveiro((s) => ({
+                              ...s, [v.id]: e.target.value ? Number(e.target.value) : null,
+                            }))
+                          }
+                        >
+                          <option value="">—</option>
+                          {tiposRacao.map((t) => (
+                            <option key={t.id} value={t.id}>{t.codigo}</option>
+                          ))}
+                        </select>
+                      </td>
                       {HORARIOS.map((h) => (
                         <td key={h}>
                           <input
@@ -241,7 +245,7 @@ export default function ArracoamentoPorFoto() {
                 marginTop: 10, background: "none", border: "none", padding: 0,
                 color: "var(--brand-deep)", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer",
               }}
-              onClick={() => { setLido(false); setGrade({}); setNaoReconhecidos([]); }}
+              onClick={() => { setLido(false); setGrade({}); setNaoReconhecidos([]); setTipoRacaoPorViveiro({}); }}
             >
               Tirar outra foto
             </button>

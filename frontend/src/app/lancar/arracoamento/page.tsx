@@ -7,7 +7,7 @@ import { listarFornecedoresRacao, type FornecedorRacao } from "@/lib/cadastros";
 import { enfileirar } from "@/lib/offline-queue";
 import styles from "../form.module.css";
 
-const TRATOS = ["07:00", "09:00", "11:00", "13:00", "15:00", "17:00"];
+const TRATOS = ["08:30", "10:30", "12:00", "15:30"];
 
 function hojeISO(): string {
   return new Date().toISOString().slice(0, 10);

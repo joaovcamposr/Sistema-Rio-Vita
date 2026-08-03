@@ -6,7 +6,7 @@ import { listarViveiros, type Viveiro } from "@/lib/api";
 import styles from "../painel.module.css";
 import ficha from "../ficha.module.css";
 
-const HORARIOS = ["07:00", "09:00", "11:00", "13:00", "15:00", "17:00"];
+const HORARIOS = ["08:30", "10:30", "12:00", "15:30"];
 
 export default function FichaArracoamento() {
   const router = useRouter();
@@ -49,21 +49,18 @@ export default function FichaArracoamento() {
                 <span>Data</span>
                 <span className={ficha.linhaPreencher}>____ / ____ / ________</span>
               </div>
-              <div className={ficha.campoTopo}>
-                <span>Tipo de ração usado hoje</span>
-                <span className={ficha.linhaPreencher}>_____________________</span>
-              </div>
             </div>
 
             <p className={ficha.instrucao}>
-              Escreva o número de sacos em cada quadro. Use vírgula pra meio saco (ex.: <strong>2,5</strong>). Deixe em
-              branco o horário que não teve trato nesse tanque.
+              Escreva o código da ração usada em cada tanque, e o número de sacos em cada horário. Use vírgula pra
+              meio saco (ex.: <strong>2,5</strong>). Deixe em branco o horário que não teve trato nesse tanque.
             </p>
 
             <table className={ficha.tabela}>
               <thead>
                 <tr>
                   <th className={ficha.colViveiro}>Tanque</th>
+                  <th>Ração</th>
                   {HORARIOS.map((h) => (
                     <th key={h}>{h}</th>
                   ))}
@@ -73,6 +70,7 @@ export default function FichaArracoamento() {
                 {viveiros.map((v) => (
                   <tr key={v.id}>
                     <td className={ficha.colViveiro}>{v.codigo}</td>
+                    <td className={ficha.celulaVazia}></td>
                     {HORARIOS.map((h) => (
                       <td key={h} className={ficha.celulaVazia}></td>
                     ))}
