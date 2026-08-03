@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  atualizarObservacoesVenda,
   listarClientes,
   listarVendas,
   listarVendedoresDeVenda,
@@ -54,6 +55,9 @@ export default function Recebimentos() {
   const [dataPag, setDataPag] = useState(hojeISO());
   const [formaPag, setFormaPag] = useState(FORMAS_RECEBIMENTO[0]);
   const [salvando, setSalvando] = useState(false);
+  const [editandoObs, setEditandoObs] = useState<number | null>(null);
+  const [obsValor, setObsValor] = useState("");
+  const [salvandoObs, setSalvandoObs] = useState(false);
 
   function carregar() {
     setErro(null);
@@ -98,6 +102,24 @@ export default function Recebimentos() {
       setErro("Não foi possível salvar o pagamento.");
     } finally {
       setSalvando(false);
+    }
+  }
+
+  function iniciarEdicaoObs(v: VendaLista) {
+    setEditandoObs(v.id);
+    setObsValor(v.observacoes ?? "");
+  }
+
+  async function salvarObs(vendaId: number) {
+    setSalvandoObs(true);
+    try {
+      await atualizarObservacoesVenda(vendaId, obsValor.trim() || null);
+      setEditandoObs(null);
+      carregar();
+    } catch {
+      setErro("Não foi possível salvar a observação.");
+    } finally {
+      setSalvandoObs(false);
     }
   }
 
@@ -167,7 +189,7 @@ export default function Recebimentos() {
               <thead>
                 <tr>
                   <th>Data</th><th>Cliente</th><th>Produto</th><th>Valor</th>
-                  <th>Forma</th><th>Vendedor</th><th>Situação</th><th></th>
+                  <th>Forma</th><th>Vendedor</th><th>Situação</th><th>Observações</th><th></th>
                 </tr>
               </thead>
               <tbody>
@@ -190,6 +212,36 @@ export default function Recebimentos() {
                         }}>
                           {pago ? `Pago${v.data_pagamento ? ` em ${dataBr(v.data_pagamento)}` : ""}` : vencida ? "Vencida" : (v.situacao ?? "Em aberto")}
                         </span>
+                      </td>
+                      <td style={{ minWidth: 160 }}>
+                        {editandoObs === v.id ? (
+                          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                            <input
+                              className={styles.inp}
+                              style={{ padding: "6px 8px", width: 160 }}
+                              value={obsValor}
+                              onChange={(e) => setObsValor(e.target.value)}
+                              placeholder="Observação"
+                            />
+                            <button
+                              className={styles.btnPrimary}
+                              style={{ padding: "6px 12px", fontSize: "0.8rem" }}
+                              disabled={salvandoObs}
+                              onClick={() => salvarObs(v.id)}
+                            >
+                              OK
+                            </button>
+                            <button className={styles.btnLink} onClick={() => setEditandoObs(null)}>Cancelar</button>
+                          </div>
+                        ) : (
+                          <button
+                            className={styles.btnLink}
+                            style={{ textAlign: "left", whiteSpace: "normal" }}
+                            onClick={() => iniciarEdicaoObs(v)}
+                          >
+                            {v.observacoes || "+ adicionar"}
+                          </button>
+                        )}
                       </td>
                       <td>
                         {!pago && editando !== v.id && (

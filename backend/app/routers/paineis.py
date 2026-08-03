@@ -22,6 +22,7 @@ from ..schemas import (
     ComercialSerieBucketOut,
     ComercialSerieOut,
     DashboardOut,
+    DespescaDetalheOut,
     DespescaPreviaOut,
     EstoqueItemOut,
     EventoProjetadoOut,
@@ -362,6 +363,28 @@ def painel_producao_detalhe(
     return [ProducaoDetalheOut(**r) for r in rows]
 
 
+@router.get("/despesca", response_model=list[DespescaDetalheOut])
+def painel_despesca(
+    de: date | None = Query(default=None),
+    ate: date | None = Query(default=None),
+    db: Session = Depends(get_db),
+):
+    """Uma linha por lançamento de despesca — tela de conferência, com
+    opção de corrigir cada lançamento (PATCH /despescas/{id})."""
+    ate = ate or date.today()
+    de = de or (ate - timedelta(days=30))
+    rows = db.execute(text("""
+        SELECT d.id, d.data, d.destino, d.quantidade_un, d.peso_medio_g, d.peso_total_kg,
+               d.lote_id, l.codigo AS lote_codigo, v.codigo AS viveiro_codigo, d.criado_em
+        FROM despesca d
+        JOIN lote l ON l.id = d.lote_id
+        JOIN viveiro v ON v.id = l.viveiro_id
+        WHERE d.data BETWEEN :de AND :ate
+        ORDER BY d.data DESC, d.id DESC
+    """), {"de": de, "ate": ate}).mappings().all()
+    return [DespescaDetalheOut(**r) for r in rows]
+
+
 @router.get("/producao", response_model=ProducaoResumoOut)
 def painel_producao(
     de: date | None = Query(default=None),
@@ -451,7 +474,10 @@ def painel_estoque(
           SELECT produto_id, SUM(quantidade_embalagens) AS embalagens, SUM(quantidade_kg) AS kg
           FROM ajuste_estoque WHERE data BETWEEN :de AND :ate GROUP BY produto_id
         ) ajuste ON ajuste.produto_id = pr.id
-        WHERE pr.ativo
+        -- Tilápia suja não passa por Produção (vai direto da despesca pra
+        -- venda), então "produzido - vendido" não representa estoque real
+        -- pra ela — fica de fora desse painel
+        WHERE pr.ativo AND pr.nome NOT ILIKE '%suja%'
         ORDER BY pr.nome
     """), {"de": de, "ate": ate}).mappings().all()
 

@@ -62,6 +62,9 @@ export default function PainelEstoque() {
 
   useEffect(() => {
     listarProdutos()
+      // Tilápia suja não entra no estoque (não passa por Produção) — fora
+      // do painel e fora do seletor de ajuste também
+      .then((ps) => ps.filter((p) => !p.nome.toLowerCase().includes("suja")))
       .then((ps) => {
         setProdutos(ps);
         if (ps.length > 0) setProdutoId(ps[0].id);

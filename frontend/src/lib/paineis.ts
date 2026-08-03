@@ -397,6 +397,24 @@ export const painelProducaoDetalhe = (de?: string, ate?: string) => {
 export const painelEstoqueRacao = () =>
   cachedGet<EstoqueRacao>("cache:painel:estoque-racao", "/paineis/estoque-racao");
 
+export interface DespescaDetalhe {
+  id: number;
+  data: string;
+  destino: "file" | "postas" | "inteira_limpa" | "inteira_suja";
+  quantidade_un: number;
+  peso_medio_g: number;
+  peso_total_kg: number;
+  lote_id: number;
+  lote_codigo: string;
+  viveiro_codigo: string;
+  criado_em: string;
+}
+
+export const painelDespesca = (de?: string, ate?: string) => {
+  const qs = de && ate ? `?de=${de}&ate=${ate}` : "";
+  return cachedGet<DespescaDetalhe[]>(`cache:painel:despesca:${de ?? ""}:${ate ?? ""}`, `/paineis/despesca${qs}`);
+};
+
 export const painelComercial = (de?: string, ate?: string, vendedor?: string | null) => {
   const params = new URLSearchParams();
   if (de) params.set("de", de);

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
@@ -11,6 +13,8 @@ from ..schemas import (
     AcertoDiferencaOut,
     AcertoIn,
     AcertoOut,
+    ExpedicaoEdicaoOut,
+    ExpedicaoEditarIn,
     ExpedicaoIn,
     ExpedicaoItemOut,
     ExpedicaoOut,
@@ -22,22 +26,25 @@ router = APIRouter(prefix="/expedicoes", tags=["expedicoes"])
 
 def _carregar_expedicao(db: Session, expedicao_id: int) -> ExpedicaoOut:
     cab = db.execute(text("""
-        SELECT e.id, e.vendedor_id, v.nome AS vendedor_nome, e.data_saida, e.data_acerto
+        SELECT e.id, e.vendedor_id, v.nome AS vendedor_nome, e.data_saida, e.data_acerto, e.observacao
         FROM expedicao e JOIN vendedor v ON v.id = e.vendedor_id
         WHERE e.id = :id
     """), {"id": expedicao_id}).mappings().first()
     if cab is None:
         raise HTTPException(404, "expedição não encontrada")
     itens = db.execute(text("""
-        SELECT ei.produto_id, p.nome AS produto_nome, ei.quantidade_kg
+        SELECT ei.produto_id, p.nome AS produto_nome, ei.quantidade_embalagens, ei.quantidade_kg
         FROM expedicao_item ei JOIN produto p ON p.id = ei.produto_id
         WHERE ei.expedicao_id = :id ORDER BY p.nome
     """), {"id": expedicao_id}).mappings().all()
     return ExpedicaoOut(
         id=cab["id"], vendedor_id=cab["vendedor_id"], vendedor_nome=cab["vendedor_nome"],
-        data_saida=cab["data_saida"], data_acerto=cab["data_acerto"],
-        itens=[ExpedicaoItemOut(produto_id=i["produto_id"], produto_nome=i["produto_nome"],
-                                 quantidade_kg=float(i["quantidade_kg"])) for i in itens],
+        data_saida=cab["data_saida"], data_acerto=cab["data_acerto"], observacao=cab["observacao"],
+        itens=[ExpedicaoItemOut(
+            produto_id=i["produto_id"], produto_nome=i["produto_nome"],
+            quantidade_embalagens=float(i["quantidade_embalagens"]) if i["quantidade_embalagens"] is not None else None,
+            quantidade_kg=float(i["quantidade_kg"]),
+        ) for i in itens],
     )
 
 
@@ -89,6 +96,69 @@ def criar_expedicao(
 @router.get("/{expedicao_id}", response_model=ExpedicaoOut)
 def obter_expedicao(expedicao_id: int, db: Session = Depends(get_db)):
     return _carregar_expedicao(db, expedicao_id)
+
+
+@router.patch("/{expedicao_id}", response_model=ExpedicaoOut)
+def editar_expedicao(
+    expedicao_id: int, body: ExpedicaoEditarIn, db: Session = Depends(get_db),
+    usuario: UsuarioOut = Depends(get_current_user),
+):
+    """Só dá pra editar enquanto a expedição está aberta (sem acerto) — depois
+    do acerto ela já gerou vendas/despesas reais, então fica travada. Toda
+    edição fica registrada em expedicao_edicao (antes/depois), nada some."""
+    atual = db.execute(
+        text("SELECT data_acerto FROM expedicao WHERE id = :id"), {"id": expedicao_id}
+    ).mappings().first()
+    if atual is None:
+        raise HTTPException(404, "expedição não encontrada")
+    if atual["data_acerto"] is not None:
+        raise HTTPException(422, "esta expedição já foi acertada — não dá mais pra editar")
+
+    antes = _carregar_expedicao(db, expedicao_id)
+
+    try:
+        db.execute(text("""
+            UPDATE expedicao SET vendedor_id = :vendedor_id, data_saida = :data_saida, observacao = :observacao
+            WHERE id = :id
+        """), {
+            "id": expedicao_id, "vendedor_id": body.vendedor_id,
+            "data_saida": body.data_saida, "observacao": body.observacao,
+        })
+        db.execute(text("DELETE FROM expedicao_item WHERE expedicao_id = :id"), {"id": expedicao_id})
+        for item in body.itens:
+            db.execute(text("""
+                INSERT INTO expedicao_item (expedicao_id, produto_id, quantidade_embalagens, quantidade_kg)
+                VALUES (:expedicao_id, :produto_id, :quantidade_embalagens, :quantidade_kg)
+            """), {
+                "expedicao_id": expedicao_id, "produto_id": item.produto_id,
+                "quantidade_embalagens": item.quantidade_embalagens,
+                "quantidade_kg": item.quantidade_kg or 0,
+            })
+
+        depois = _carregar_expedicao(db, expedicao_id)
+        db.execute(text("""
+            INSERT INTO expedicao_edicao (expedicao_id, editado_por, antes, depois)
+            VALUES (:expedicao_id, :editado_por, CAST(:antes AS jsonb), CAST(:depois AS jsonb))
+        """), {
+            "expedicao_id": expedicao_id, "editado_por": usuario.nome,
+            "antes": json.dumps(antes.model_dump(mode="json")),
+            "depois": json.dumps(depois.model_dump(mode="json")),
+        })
+        db.commit()
+    except DBAPIError as exc:
+        db.rollback()
+        raise HTTPException(422, f"dado inválido, ou este vendedor já tem outra expedição em aberto: {exc.orig}") from exc
+
+    return depois
+
+
+@router.get("/{expedicao_id}/edicoes", response_model=list[ExpedicaoEdicaoOut])
+def listar_edicoes(expedicao_id: int, db: Session = Depends(get_db)):
+    rows = db.execute(text("""
+        SELECT id, editado_em, editado_por, antes, depois
+        FROM expedicao_edicao WHERE expedicao_id = :id ORDER BY editado_em DESC
+    """), {"id": expedicao_id}).mappings().all()
+    return [ExpedicaoEdicaoOut(**r) for r in rows]
 
 
 @router.post("/{expedicao_id}/acerto", response_model=AcertoOut)

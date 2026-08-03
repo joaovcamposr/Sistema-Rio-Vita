@@ -114,6 +114,27 @@ class DespescaResumoOut(BaseModel):
     kg_file_lancado: float
 
 
+class DespescaEditarIn(BaseModel):
+    lote_id: int
+    data: date
+    destino: DestinoDespesca
+    quantidade_un: int = Field(gt=0)
+    peso_medio_g: float = Field(gt=0)
+
+
+class DespescaDetalheOut(BaseModel):
+    id: int
+    data: date
+    destino: DestinoDespesca
+    quantidade_un: int
+    peso_medio_g: float
+    peso_total_kg: float
+    lote_id: int
+    lote_codigo: str
+    viveiro_codigo: str
+    criado_em: datetime
+
+
 class ProducaoIn(BaseModel):
     client_id: uuid.UUID
     data: date
@@ -418,12 +439,17 @@ class VendaListaOut(BaseModel):
     vendedor: str | None
     situacao: str | None
     data_pagamento: date | None
+    observacoes: str | None
 
 
 class VendaPagamentoIn(BaseModel):
     situacao: str
     data_pagamento: date | None = None
     forma_pgto: str | None = None
+
+
+class VendaObservacoesIn(BaseModel):
+    observacoes: str | None = None
 
 
 TipoAjusteEstoque = Literal["amostra", "descarte", "diferenca_estoque"]
@@ -805,6 +831,7 @@ class ExpedicaoIn(BaseModel):
 class ExpedicaoItemOut(BaseModel):
     produto_id: int
     produto_nome: str
+    quantidade_embalagens: float | None
     quantidade_kg: float
 
 
@@ -814,7 +841,23 @@ class ExpedicaoOut(BaseModel):
     vendedor_nome: str
     data_saida: date
     data_acerto: date | None
+    observacao: str | None
     itens: list[ExpedicaoItemOut]
+
+
+class ExpedicaoEditarIn(BaseModel):
+    vendedor_id: int
+    data_saida: date
+    observacao: str | None = None
+    itens: list[ExpedicaoItemIn] = Field(min_length=1)
+
+
+class ExpedicaoEdicaoOut(BaseModel):
+    id: int
+    editado_em: datetime
+    editado_por: str | None
+    antes: dict
+    depois: dict
 
 
 class AcertoVendaIn(BaseModel):

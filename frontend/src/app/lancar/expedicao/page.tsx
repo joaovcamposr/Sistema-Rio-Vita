@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { listarProdutos, type Produto } from "@/lib/api";
-import { listarVendedores, type Vendedor } from "@/lib/cadastros";
+import { editarExpedicao, listarExpedicoesAbertas, listarVendedores, type Expedicao, type Vendedor } from "@/lib/cadastros";
 import { enfileirar } from "@/lib/offline-queue";
 import styles from "../form.module.css";
 
@@ -22,15 +22,44 @@ export default function RegistrarExpedicao() {
   const [enviando, setEnviando] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
+  const [expedicoesAbertas, setExpedicoesAbertas] = useState<Expedicao[]>([]);
+  const [editandoId, setEditandoId] = useState<number | null>(null);
+  const [dataSaidaEdicao, setDataSaidaEdicao] = useState(hojeISO());
+  const [observacaoEdicao, setObservacaoEdicao] = useState<string | null>(null);
+
   useEffect(() => {
-    Promise.all([listarVendedores(), listarProdutos()])
-      .then(([vs, ps]) => {
+    Promise.all([listarVendedores(), listarProdutos(), listarExpedicoesAbertas()])
+      .then(([vs, ps, es]) => {
         setVendedores(vs);
         setProdutos(ps);
+        setExpedicoesAbertas(es);
         if (vs.length > 0) setVendedorId(vs[0].id);
       })
       .catch(() => setErroCarregar("Sem conexão e sem dados salvos deste aparelho ainda. Conecte-se ao menos uma vez."));
   }, []);
+
+  function iniciarEdicao(id: number | "") {
+    if (id === "") {
+      setEditandoId(null);
+      setValores({});
+      setDataSaidaEdicao(hojeISO());
+      setObservacaoEdicao(null);
+      if (vendedores.length > 0) setVendedorId(vendedores[0].id);
+      return;
+    }
+    const exp = expedicoesAbertas.find((e) => e.id === id);
+    if (!exp) return;
+    setEditandoId(exp.id);
+    setVendedorId(exp.vendedor_id);
+    setDataSaidaEdicao(exp.data_saida);
+    setObservacaoEdicao(exp.observacao);
+    const novosValores: Record<number, string> = {};
+    for (const item of exp.itens) {
+      const valor = item.quantidade_embalagens ?? item.quantidade_kg;
+      novosValores[item.produto_id] = String(valor).replace(".", ",");
+    }
+    setValores(novosValores);
+  }
 
   const preenchidos = Object.entries(valores).filter(([, v]) => (parseFloat(v.replace(",", ".")) || 0) > 0);
   const podeSalvar = vendedorId !== null && preenchidos.length > 0 && !enviando;
@@ -48,14 +77,27 @@ export default function RegistrarExpedicao() {
           quantidade_kg: p?.kg_digitado ? qtd : (p?.fator_kg ?? 1) * qtd,
         };
       });
-      await enfileirar("expedicao", {
-        vendedor_id: vendedorId,
-        data_saida: hojeISO(),
-        itens,
-      });
-      setToast("Expedição registrada");
-      setValores({});
+      if (editandoId !== null) {
+        await editarExpedicao(editandoId, {
+          vendedor_id: vendedorId, data_saida: dataSaidaEdicao, observacao: observacaoEdicao, itens,
+        });
+        setToast("Expedição corrigida");
+        setEditandoId(null);
+        setValores({});
+        listarExpedicoesAbertas().then(setExpedicoesAbertas).catch(() => {});
+      } else {
+        await enfileirar("expedicao", {
+          vendedor_id: vendedorId,
+          data_saida: hojeISO(),
+          itens,
+        });
+        setToast("Expedição registrada");
+        setValores({});
+      }
       setTimeout(() => setToast(null), 2200);
+    } catch {
+      setToast("Não foi possível salvar — confira a conexão e tente de novo");
+      setTimeout(() => setToast(null), 3200);
     } finally {
       setEnviando(false);
     }
@@ -68,13 +110,48 @@ export default function RegistrarExpedicao() {
           ←
         </button>
         <div>
-          <h1>Registrar expedição</h1>
+          <h1>{editandoId !== null ? "Editar expedição" : "Registrar expedição"}</h1>
           <div className={styles.sub}>{new Date().toLocaleDateString("pt-BR")} · saída de produtos</div>
         </div>
       </div>
 
       <div className={styles.body}>
         {erroCarregar && <div className={styles.error}>{erroCarregar}</div>}
+
+        {expedicoesAbertas.length > 0 && (
+          <div className={styles.field}>
+            <label>Corrigir uma expedição em aberto (opcional)</label>
+            <select
+              className={styles.inp}
+              value={editandoId ?? ""}
+              onChange={(e) => iniciarEdicao(e.target.value ? Number(e.target.value) : "")}
+            >
+              <option value="">— Nova expedição —</option>
+              {expedicoesAbertas.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.vendedor_nome} — saiu em {e.data_saida.split("-").reverse().join("/")}
+                </option>
+              ))}
+            </select>
+            {editandoId !== null && (
+              <p className={styles.hint} style={{ margin: "6px 0 0" }}>
+                Só dá pra corrigir enquanto ainda não foi feito o acerto dela. A correção fica registrada.
+              </p>
+            )}
+          </div>
+        )}
+
+        {editandoId !== null && (
+          <div className={styles.field}>
+            <label>Data de saída</label>
+            <input
+              className={styles.inp}
+              type="date"
+              value={dataSaidaEdicao}
+              onChange={(e) => setDataSaidaEdicao(e.target.value)}
+            />
+          </div>
+        )}
 
         <div className={styles.field}>
           <label>Vendedor/entregador</label>
@@ -116,7 +193,7 @@ export default function RegistrarExpedicao() {
 
       <div className={styles.savebar}>
         <button className={styles.btnPrimary} disabled={!podeSalvar} onClick={salvar}>
-          {enviando ? "Salvando…" : "Salvar expedição"}
+          {enviando ? "Salvando…" : editandoId !== null ? "Salvar correção" : "Salvar expedição"}
         </button>
       </div>
 

@@ -75,6 +75,7 @@ export interface VendaLista {
   vendedor: string | null;
   situacao: string | null;
   data_pagamento: string | null;
+  observacoes: string | null;
 }
 
 function apiBase(): string {
@@ -124,6 +125,20 @@ export const listarDespescasDoLote = (loteId: number) =>
   cachedGet<Despesca[]>(`cache:despescas:${loteId}`, `/despescas?lote_id=${loteId}`);
 export const resumoDespesca = (despescaId: number) =>
   cachedGet<DespescaResumo>(`cache:resumo:${despescaId}`, `/despescas/${despescaId}/resumo`);
+
+export async function editarDespesca(despescaId: number, body: {
+  lote_id: number; data: string; destino: Despesca["destino"];
+  quantidade_un: number; peso_medio_g: number;
+}): Promise<Despesca> {
+  const r = await fetch(`${apiBase()}/despescas/${despescaId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...authHeader() },
+    body: JSON.stringify(body),
+  });
+  if (r.status === 401) sessaoInvalida();
+  if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+  return (await r.json()) as Despesca;
+}
 export const listarClientes = () => cachedGet<Cliente[]>("cache:clientes", "/clientes");
 export const listarVendedoresDeVenda = () => cachedGet<string[]>("cache:vendas-vendedores", "/vendas/vendedores");
 
@@ -207,6 +222,16 @@ export async function marcarPagamentoVenda(
     method: "PATCH",
     headers: { "Content-Type": "application/json", ...authHeader() },
     body: JSON.stringify({ situacao, data_pagamento: dataPagamento, forma_pgto: formaPgto ?? null }),
+  });
+  if (r.status === 401) sessaoInvalida();
+  if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+}
+
+export async function atualizarObservacoesVenda(vendaId: number, observacoes: string | null): Promise<void> {
+  const r = await fetch(`${apiBase()}/vendas/${vendaId}/observacoes`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...authHeader() },
+    body: JSON.stringify({ observacoes }),
   });
   if (r.status === 401) sessaoInvalida();
   if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);

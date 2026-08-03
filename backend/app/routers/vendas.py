@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
 from ..db import get_db
-from ..schemas import UsuarioOut, VendaIn, VendaListaOut, VendaOut, VendaPagamentoIn
+from ..schemas import UsuarioOut, VendaIn, VendaListaOut, VendaObservacoesIn, VendaOut, VendaPagamentoIn
 
 router = APIRouter(prefix="/vendas", tags=["vendas"])
 _COLUNAS = (
@@ -48,7 +48,7 @@ def listar_vendas(
         SELECT v.id, v.data, v.cliente_id, COALESCE(c.nome, 'Consumidor final') AS cliente_nome,
                c.prazo_dias AS cliente_prazo_dias, pr.nome AS produto_nome,
                v.quantidade_kg, v.valor_total, v.forma_pgto, v.vendedor,
-               v.situacao, v.data_pagamento
+               v.situacao, v.data_pagamento, v.observacoes
         FROM venda v
         JOIN produto pr ON pr.id = v.produto_id
         LEFT JOIN cliente c ON c.id = v.cliente_id
@@ -115,6 +115,21 @@ def atualizar_pagamento(
     except DBAPIError as exc:
         db.rollback()
         raise HTTPException(422, f"data de pagamento inválida: {exc.orig}") from exc
+    if row is None:
+        raise HTTPException(404, "venda não encontrada")
+    return VendaOut(**row)
+
+
+@router.patch("/{venda_id}/observacoes", response_model=VendaOut)
+def atualizar_observacoes(
+    venda_id: int, body: VendaObservacoesIn, db: Session = Depends(get_db),
+    _usuario: UsuarioOut = Depends(get_current_user),
+):
+    row = db.execute(
+        text(f"UPDATE venda SET observacoes = :observacoes WHERE id = :id RETURNING {_COLUNAS}"),
+        {"id": venda_id, "observacoes": body.observacoes},
+    ).mappings().first()
+    db.commit()
     if row is None:
         raise HTTPException(404, "venda não encontrada")
     return VendaOut(**row)

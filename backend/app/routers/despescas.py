@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
 from ..db import get_db
-from ..schemas import DespescaIn, DespescaOut, DespescaResumoOut, UsuarioOut
+from ..schemas import DespescaEditarIn, DespescaIn, DespescaOut, DespescaResumoOut, UsuarioOut
 
 router = APIRouter(prefix="/despescas", tags=["despescas"])
 
@@ -62,6 +62,42 @@ def criar_despesca(body: DespescaIn, db: Session = Depends(get_db), usuario: Usu
             text(f"SELECT {_COLUNAS} FROM despesca WHERE client_id = :cid"),
             {"cid": str(body.client_id)},
         ).mappings().first()
+    return DespescaOut(**row)
+
+
+@router.patch("/{despesca_id}", response_model=DespescaOut)
+def editar_despesca(
+    despesca_id: int, body: DespescaEditarIn, db: Session = Depends(get_db),
+    usuario: UsuarioOut = Depends(get_current_user),
+):
+    """Corrige uma despesca já lançada (tanque, data, destino, quantidade ou
+    peso digitados errado). Não reabre um lote que já foi encerrado — se a
+    correção zerar o saldo de novo, fecha o lote como no lançamento normal."""
+    try:
+        row = db.execute(
+            text(f"""
+                UPDATE despesca SET lote_id = :lote_id, data = :data, destino = :destino,
+                                     quantidade_un = :quantidade_un, peso_medio_g = :peso_medio_g
+                WHERE id = :id
+                RETURNING {_COLUNAS}
+            """),
+            {"id": despesca_id, **body.model_dump()},
+        ).mappings().first()
+        if row is None:
+            raise HTTPException(404, "despesca não encontrada")
+
+        saldo = db.execute(
+            text("SELECT saldo_un FROM vw_saldo_lote WHERE lote_id = :l"), {"l": row["lote_id"]}
+        ).scalar_one()
+        if saldo <= 0:
+            db.execute(
+                text("UPDATE lote SET data_fim = :data WHERE id = :id AND data_fim IS NULL"),
+                {"data": row["data"], "id": row["lote_id"]},
+            )
+        db.commit()
+    except DBAPIError as exc:
+        db.rollback()
+        raise HTTPException(422, f"lote_id inválido ou dado fora das regras: {exc.orig}") from exc
     return DespescaOut(**row)
 
 

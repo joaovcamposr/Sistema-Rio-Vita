@@ -60,6 +60,7 @@ export interface ClienteProdutoPreco {
 export interface ExpedicaoItem {
   produto_id: number;
   produto_nome: string;
+  quantidade_embalagens: number | null;
   quantidade_kg: number;
 }
 
@@ -69,7 +70,16 @@ export interface Expedicao {
   vendedor_nome: string;
   data_saida: string;
   data_acerto: string | null;
+  observacao: string | null;
   itens: ExpedicaoItem[];
+}
+
+export interface ExpedicaoEdicao {
+  id: number;
+  editado_em: string;
+  editado_por: string | null;
+  antes: Expedicao;
+  depois: Expedicao;
 }
 
 function apiBase(): string {
@@ -141,6 +151,12 @@ export const listarExpedicoesAbertas = () =>
   cachedGet<Expedicao[]>("cache:expedicoes:abertas", "/expedicoes/abertas");
 export const obterExpedicao = (id: number) =>
   cachedGet<Expedicao>(`cache:expedicao:${id}`, `/expedicoes/${id}`);
+export const editarExpedicao = (id: number, body: {
+  vendedor_id: number; data_saida: string; observacao: string | null;
+  itens: { produto_id: number; quantidade_embalagens: number | null; quantidade_kg: number | null }[];
+}) => enviar<Expedicao>(`/expedicoes/${id}`, "PATCH", body);
+export const listarEdicoesExpedicao = (id: number) =>
+  cachedGet<ExpedicaoEdicao[]>(`cache:expedicao-edicoes:${id}`, `/expedicoes/${id}/edicoes`);
 
 export const obterCliente = (id: number) =>
   cachedGet<ClienteDetalhe>(`cache:cliente:${id}`, `/clientes/${id}`);
