@@ -13,7 +13,7 @@ router = APIRouter(tags=["lotes"])
 
 _COLUNAS_LOTE = (
     "id, codigo, fase, viveiro_id, data_inicio, quantidade_inicial, "
-    "peso_medio_inicial_g, data_fim, criado_em"
+    "peso_medio_inicial_g, data_fim, observacao, criado_em"
 )
 
 
@@ -182,9 +182,14 @@ def registrar_repicagem(
 def encerrar_lote(
     lote_id: int, body: EncerrarLoteIn, db: Session = Depends(get_db), _usuario: UsuarioOut = Depends(get_current_user),
 ):
-    """Fecha o lote quando o tanque foi zerado por despesca (sem repicagem
-    — essa já fecha sozinha). Sem isso o viveiro fica preso, sem poder
-    receber um povoamento novo (só um lote aberto por viveiro)."""
+    """Fecha o lote — tanto quando o tanque zerou por despesca (sem
+    repicagem, essa já fecha sozinha) quanto, deliberadamente, com saldo de
+    peixes ainda de pé: nesse segundo caso o saldo remanescente passa a
+    contar como mortalidade da fase (mesma regra R9 de sempre — mortalidade
+    é quantidade_inicial menos o que saiu por despesca/repicagem — só que
+    aqui ninguém tira o resto, ele fica registrado como perda). Sem
+    encerrar, o viveiro fica preso, sem poder receber povoamento novo (só
+    um lote aberto por viveiro)."""
     lote = db.execute(text("SELECT data_inicio, data_fim FROM lote WHERE id = :id"), {"id": lote_id}).mappings().first()
     if lote is None:
         raise HTTPException(404, "lote não encontrado")
@@ -194,8 +199,11 @@ def encerrar_lote(
         raise HTTPException(422, "data de encerramento não pode ser antes do início do lote")
 
     row = db.execute(
-        text(f"UPDATE lote SET data_fim = :data WHERE id = :id RETURNING {_COLUNAS_LOTE}"),
-        {"data": body.data, "id": lote_id},
+        text(f"""
+            UPDATE lote SET data_fim = :data, observacao = COALESCE(:observacao, observacao)
+            WHERE id = :id RETURNING {_COLUNAS_LOTE}
+        """),
+        {"data": body.data, "observacao": body.observacao, "id": lote_id},
     ).mappings().first()
     db.commit()
     return LoteOut(**row)

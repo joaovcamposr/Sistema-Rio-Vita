@@ -174,6 +174,7 @@ class LoteOut(BaseModel):
     quantidade_inicial: int
     peso_medio_inicial_g: float
     data_fim: date | None
+    observacao: str | None
     criado_em: datetime
 
 
@@ -188,6 +189,7 @@ class PovoamentoIn(BaseModel):
 
 class EncerrarLoteIn(BaseModel):
     data: date
+    observacao: str | None = None
 
 
 class RepicagemOrigemIn(BaseModel):

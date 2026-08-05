@@ -184,11 +184,11 @@ export async function lerFotoProducao(foto: File): Promise<LeituraProducao> {
   return (await r.json()) as LeituraProducao;
 }
 
-export async function encerrarLote(loteId: number, data: string): Promise<void> {
+export async function encerrarLote(loteId: number, data: string, observacao?: string | null): Promise<void> {
   const r = await fetch(`${apiBase()}/lotes/${loteId}/encerrar`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json", ...authHeader() },
-    body: JSON.stringify({ data }),
+    body: JSON.stringify({ data, observacao: observacao ?? null }),
   });
   if (r.status === 401) sessaoInvalida();
   if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);

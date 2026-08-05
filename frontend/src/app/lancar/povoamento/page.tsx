@@ -22,7 +22,10 @@ export default function RegistrarPovoamento() {
   const [enviando, setEnviando] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [viveirosZerados, setViveirosZerados] = useState<Viveiro[]>([]);
+  const [viveirosAtivos, setViveirosAtivos] = useState<Viveiro[]>([]);
   const [encerrandoId, setEncerrandoId] = useState<number | null>(null);
+  const [viveiroEncerrarId, setViveiroEncerrarId] = useState<number | null>(null);
+  const [encerrandoComSaldo, setEncerrandoComSaldo] = useState(false);
 
   useEffect(() => {
     listarViveiros()
@@ -33,6 +36,11 @@ export default function RegistrarPovoamento() {
         // lote já esvaziado (saldo zero ou negativo por mortalidade não
         // lançada) mas ainda "aberto" — trava o viveiro pro povoamento
         setViveirosZerados(lista.filter((v) => v.lote_atual !== null && v.lote_atual.saldo_un <= 0));
+        // todo lote em aberto — pra permitir encerrar de propósito mesmo
+        // com saldo de peixes ainda de pé (vira mortalidade da fase)
+        const ativos = lista.filter((v) => v.lote_atual !== null);
+        setViveirosAtivos(ativos);
+        if (ativos.length > 0) setViveiroEncerrarId(ativos[0].id);
       })
       .catch(() => setErroCarregar("Sem conexão e sem dados salvos deste aparelho ainda. Conecte-se ao menos uma vez."));
   }, []);
@@ -43,6 +51,7 @@ export default function RegistrarPovoamento() {
     try {
       await encerrarLote(v.lote_atual.id, hojeISO());
       setViveirosZerados((vs) => vs.filter((x) => x.id !== v.id));
+      setViveirosAtivos((vs) => vs.filter((x) => x.id !== v.id));
       setViveiros((vs) => (vs.some((x) => x.id === v.id) ? vs : [...vs, { ...v, lote_atual: null }]));
       setToast(`Lote do viveiro ${v.codigo} encerrado`);
       setTimeout(() => setToast(null), 2200);
@@ -51,6 +60,37 @@ export default function RegistrarPovoamento() {
       setTimeout(() => setToast(null), 2200);
     } finally {
       setEncerrandoId(null);
+    }
+  }
+
+  const viveiroEncerrar = viveirosAtivos.find((v) => v.id === viveiroEncerrarId) ?? null;
+
+  async function encerrarComSaldo() {
+    const v = viveiroEncerrar;
+    if (!v?.lote_atual) return;
+    const saldo = v.lote_atual.saldo_un;
+    const confirmar = window.confirm(
+      `Confirma encerrar o lote ${v.lote_atual.codigo} do viveiro ${v.codigo} com ${saldo.toLocaleString("pt-BR")} ` +
+      `peixes ainda no saldo?\n\nEsses ${saldo.toLocaleString("pt-BR")} peixes vão entrar como mortalidade da fase ` +
+      `(povoamento inicial menos esse saldo). Essa ação não pode ser desfeita.`
+    );
+    if (!confirmar) return;
+    setEncerrandoComSaldo(true);
+    try {
+      await encerrarLote(
+        v.lote_atual.id, hojeISO(),
+        `Encerrado com saldo de ${saldo.toLocaleString("pt-BR")} peixes ainda de pé, em ${hojeISO()} — considerado mortalidade da fase.`
+      );
+      setViveirosAtivos((vs) => vs.filter((x) => x.id !== v.id));
+      setViveirosZerados((vs) => vs.filter((x) => x.id !== v.id));
+      setViveiros((vs) => (vs.some((x) => x.id === v.id) ? vs : [...vs, { ...v, lote_atual: null }]));
+      setToast(`Lote do viveiro ${v.codigo} encerrado — ${saldo.toLocaleString("pt-BR")} peixes contabilizados como mortalidade`);
+      setTimeout(() => setToast(null), 3200);
+    } catch {
+      setToast("Não foi possível encerrar — confira a conexão");
+      setTimeout(() => setToast(null), 2200);
+    } finally {
+      setEncerrandoComSaldo(false);
     }
   }
 
@@ -115,6 +155,39 @@ export default function RegistrarPovoamento() {
                   </button>
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+
+        {viveirosAtivos.length > 0 && (
+          <div className={styles.note} style={{ marginBottom: 18 }}>
+            <strong>Encerrar lote com peixes ainda no tanque (mortalidade)</strong>
+            <p className={styles.hint} style={{ margin: "4px 0 10px" }}>
+              Pra quando o lote precisa ser fechado mesmo sem o tanque ter zerado — o saldo que sobrar entra como
+              mortalidade da fase (povoamento inicial menos esse saldo).
+            </p>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+              <select
+                className={styles.inp}
+                style={{ flex: 1, minWidth: 220 }}
+                value={viveiroEncerrarId ?? ""}
+                onChange={(e) => setViveiroEncerrarId(Number(e.target.value))}
+              >
+                {viveirosAtivos.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    Viveiro {v.codigo} — lote {v.lote_atual!.codigo} — saldo {v.lote_atual!.saldo_un.toLocaleString("pt-BR")}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className={styles.btnPrimary}
+                style={{ padding: "9px 14px", fontSize: "0.85rem" }}
+                disabled={encerrandoComSaldo || !viveiroEncerrar}
+                onClick={encerrarComSaldo}
+              >
+                {encerrandoComSaldo ? "Encerrando…" : "Encerrar e registrar mortalidade"}
+              </button>
             </div>
           </div>
         )}
