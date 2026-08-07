@@ -23,7 +23,7 @@ export default function RegistrarArracoamento() {
   const [enviando, setEnviando] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [tiposRacao, setTiposRacao] = useState<{ id: number; codigo: string; fornecedorNome: string }[]>([]);
-  const [tipoRacaoId, setTipoRacaoId] = useState<number | null>(null);
+  const [tipoRacaoPorViveiro, setTipoRacaoPorViveiro] = useState<Record<number, number | null>>({});
 
   useEffect(() => {
     listarViveiros()
@@ -33,10 +33,26 @@ export default function RegistrarArracoamento() {
       .then((fs: FornecedorRacao[]) => {
         const todos = fs.flatMap((f) => f.tipos.map((t) => ({ id: t.id, codigo: t.codigo, fornecedorNome: f.nome })));
         setTiposRacao(todos);
-        if (todos.length > 0) setTipoRacaoId(todos[0].id);
       })
       .catch(() => {});
   }, []);
+
+  // quando os tipos de ração carregam, pré-preenche todo mundo com o
+  // primeiro tipo — cada linha continua podendo ser trocada individualmente
+  useEffect(() => {
+    if (tiposRacao.length === 0 || viveiros.length === 0) return;
+    setTipoRacaoPorViveiro((atual) => {
+      const novo = { ...atual };
+      let mudou = false;
+      for (const v of viveiros) {
+        if (!(v.id in novo)) {
+          novo[v.id] = tiposRacao[0].id;
+          mudou = true;
+        }
+      }
+      return mudou ? novo : atual;
+    });
+  }, [tiposRacao, viveiros]);
 
   const preenchidos = Object.entries(valores).filter(([, v]) => (parseFloat(v.replace(",", ".")) || 0) >= 0 && v !== "");
   const podeSalvar = preenchidos.length > 0 && !enviando;
@@ -52,7 +68,7 @@ export default function RegistrarArracoamento() {
           data,
           trato,
           sacos: parseFloat(valor.replace(",", ".")),
-          tipo_racao_id: tipoRacaoId,
+          tipo_racao_id: tipoRacaoPorViveiro[v.id] ?? null,
         });
       }
       setToast(`Arraçoamento das ${trato} registrado`);
@@ -121,31 +137,30 @@ export default function RegistrarArracoamento() {
           />
         </div>
 
-        <div className={styles.field}>
-          <label>Tipo de ração</label>
-          <div className={styles.chips}>
-            {tiposRacao.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                className={styles.chip}
-                aria-pressed={tipoRacaoId === t.id}
-                onClick={() => setTipoRacaoId(t.id)}
-              >
-                {t.codigo}
-              </button>
-            ))}
-          </div>
-          {tiposRacao.length === 0 && (
-            <p className={styles.hint}>Nenhum tipo de ração cadastrado — vale lançar mesmo assim, sem tipo.</p>
-          )}
-        </div>
+        {tiposRacao.length === 0 && (
+          <p className={styles.hint}>Nenhum tipo de ração cadastrado — vale lançar mesmo assim, sem tipo.</p>
+        )}
 
         {viveiros.length === 0 && <p className={styles.hint}>Nenhum viveiro com lote ativo.</p>}
         {viveiros.map((v) => (
           <div key={v.id} className={styles.lrow}>
             <div>
               <div className="nm" style={{ fontWeight: 700, fontSize: ".9rem" }}>Viveiro {v.codigo}</div>
+              {tiposRacao.length > 0 && (
+                <select
+                  className={styles.inp}
+                  style={{ marginTop: 4, padding: "5px 8px", fontSize: "0.8rem" }}
+                  value={tipoRacaoPorViveiro[v.id] ?? ""}
+                  onChange={(e) =>
+                    setTipoRacaoPorViveiro((s) => ({ ...s, [v.id]: e.target.value ? Number(e.target.value) : null }))
+                  }
+                >
+                  <option value="">Sem tipo</option>
+                  {tiposRacao.map((t) => (
+                    <option key={t.id} value={t.id}>{t.codigo}</option>
+                  ))}
+                </select>
+              )}
             </div>
             <input
               className={styles.inp}
