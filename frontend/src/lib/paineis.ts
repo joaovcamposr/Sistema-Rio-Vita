@@ -415,6 +415,24 @@ export const painelDespesca = (de?: string, ate?: string) => {
   return cachedGet<DespescaDetalhe[]>(`cache:painel:despesca:${de ?? ""}:${ate ?? ""}`, `/paineis/despesca${qs}`);
 };
 
+export interface RepicagemDetalhe {
+  lote_id: number;
+  lote_origem_id: number;
+  data: string;
+  quantidade: number;
+  peso_medio_g: number;
+  lote_destino_codigo: string;
+  viveiro_destino_codigo: string;
+  lote_origem_codigo: string;
+  viveiro_origem_codigo: string;
+  lote_origem_fechado: boolean;
+}
+
+export const painelRepicagem = (de?: string, ate?: string) => {
+  const qs = de && ate ? `?de=${de}&ate=${ate}` : "";
+  return cachedGet<RepicagemDetalhe[]>(`cache:painel:repicagem:${de ?? ""}:${ate ?? ""}`, `/paineis/repicagem${qs}`);
+};
+
 export const painelComercial = (de?: string, ate?: string, vendedor?: string | null) => {
   const params = new URLSearchParams();
   if (de) params.set("de", de);

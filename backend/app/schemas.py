@@ -220,6 +220,25 @@ class RepicagemOut(BaseModel):
     lotes_origem_fechados: list[int]
 
 
+class RepicagemEditarIn(BaseModel):
+    data: date
+    quantidade: int = Field(gt=0)
+    peso_medio_g: float = Field(gt=0)
+
+
+class RepicagemDetalheOut(BaseModel):
+    lote_id: int
+    lote_origem_id: int
+    data: date
+    quantidade: int
+    peso_medio_g: float
+    lote_destino_codigo: str
+    viveiro_destino_codigo: str
+    lote_origem_codigo: str
+    viveiro_origem_codigo: str
+    lote_origem_fechado: bool
+
+
 # ---------- Biometria ----------
 
 class BiometriaIn(BaseModel):

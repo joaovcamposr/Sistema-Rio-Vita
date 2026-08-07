@@ -46,6 +46,7 @@ from ..schemas import (
     ProducaoSerieBucketOut,
     ProducaoSerieOut,
     ProjecaoCapacidadeOut,
+    RepicagemDetalheOut,
     SerieBucketProdutoOut,
     SerieDiariaOut,
     ProducaoSerieBucketProdutoOut,
@@ -388,6 +389,32 @@ def painel_despesca(
         ORDER BY d.data DESC, d.id DESC
     """), {"de": de, "ate": ate}).mappings().all()
     return [DespescaDetalheOut(**r) for r in rows]
+
+
+@router.get("/repicagem", response_model=list[RepicagemDetalheOut])
+def painel_repicagem(
+    de: date | None = Query(default=None),
+    ate: date | None = Query(default=None),
+    db: Session = Depends(get_db),
+):
+    """Uma linha por repicagem já lançada — tela de conferência, com
+    opção de corrigir cada lançamento (PATCH /repicagens/{lote_id}/{lote_origem_id})."""
+    ate = ate or date.today()
+    de = de or (ate - timedelta(days=30))
+    rows = db.execute(text("""
+        SELECT o.lote_id, o.lote_origem_id, o.data, o.quantidade, o.peso_medio_g,
+               ld.codigo AS lote_destino_codigo, vd.codigo AS viveiro_destino_codigo,
+               lo.codigo AS lote_origem_codigo, vo.codigo AS viveiro_origem_codigo,
+               (lo.data_fim IS NOT NULL) AS lote_origem_fechado
+        FROM lote_origem o
+        JOIN lote ld ON ld.id = o.lote_id
+        JOIN viveiro vd ON vd.id = ld.viveiro_id
+        JOIN lote lo ON lo.id = o.lote_origem_id
+        JOIN viveiro vo ON vo.id = lo.viveiro_id
+        WHERE o.data BETWEEN :de AND :ate
+        ORDER BY o.data DESC, o.lote_id DESC
+    """), {"de": de, "ate": ate}).mappings().all()
+    return [RepicagemDetalheOut(**r) for r in rows]
 
 
 @router.get("/producao", response_model=ProducaoResumoOut)

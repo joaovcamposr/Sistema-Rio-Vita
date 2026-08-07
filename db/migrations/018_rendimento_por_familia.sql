@@ -13,9 +13,9 @@ FROM producao p
 JOIN produto pr ON pr.id = p.produto_id
 CROSS JOIN LATERAL (
   SELECT CASE
-    WHEN pr.nome LIKE 'Filé%' THEN 'file'
-    WHEN pr.nome LIKE 'Postas%' THEN 'postas'
-    WHEN pr.nome LIKE 'Tilápia limpa%' THEN 'inteira_limpa'
+    WHEN pr.nome LIKE 'Filé%' THEN 'file'::destino_despesca
+    WHEN pr.nome LIKE 'Postas%' THEN 'postas'::destino_despesca
+    WHEN pr.nome LIKE 'Tilápia limpa%' THEN 'inteira_limpa'::destino_despesca
   END AS destino_familia
 ) fam
 LEFT JOIN LATERAL (

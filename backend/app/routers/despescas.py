@@ -103,9 +103,14 @@ def editar_despesca(
 
 @router.get("/{despesca_id}/resumo", response_model=DespescaResumoOut)
 def resumo_despesca(despesca_id: int, db: Session = Depends(get_db)):
-    """Peso despescado e Kg de filé já lançado para o mesmo lote+data —
-    o front soma o valor que o operador está digitando e calcula o
-    rendimento ao vivo (regra R2), sem gravar nada."""
+    """Peso despescado (destino filé) e Kg de filé já lançado para o mesmo
+    lote+data — o front soma o valor que o operador está digitando e
+    calcula o rendimento ao vivo (regra R2), sem gravar nada. Filtra por
+    destino='file': um mesmo lote+data pode ter despesca de mais de um
+    destino (ex.: parte foi pra filé, parte foi vendida inteira suja no
+    mesmo dia), e misturar esse peso no denominador sub-avalia o
+    rendimento real do filé (mesma falha corrigida na view
+    vw_producao_detalhe, migração 018)."""
     base = db.execute(
         text("SELECT lote_id, data FROM despesca WHERE id = :id"),
         {"id": despesca_id},
@@ -114,7 +119,10 @@ def resumo_despesca(despesca_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404, "despesca não encontrada")
 
     peso = db.execute(
-        text("SELECT COALESCE(SUM(peso_total_kg), 0) FROM despesca WHERE lote_id = :l AND data = :d"),
+        text("""
+            SELECT COALESCE(SUM(peso_total_kg), 0) FROM despesca
+            WHERE lote_id = :l AND data = :d AND destino = 'file'
+        """),
         {"l": base["lote_id"], "d": base["data"]},
     ).scalar_one()
 

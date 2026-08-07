@@ -33,12 +33,12 @@ export default function RegistrarPovoamento() {
   } | null>(null);
   const [salvandoEdicao, setSalvandoEdicao] = useState(false);
 
-  useEffect(() => {
-    listarViveiros()
+  function carregarViveiros(manterSelecoes: boolean) {
+    return listarViveiros()
       .then((lista) => {
         const vazios = lista.filter((v) => v.lote_atual === null && v.tipo !== "decantacao");
         setViveiros(vazios);
-        if (vazios.length > 0) setViveiroId(vazios[0].id);
+        if (!manterSelecoes && vazios.length > 0) setViveiroId(vazios[0].id);
         // lote já esvaziado (saldo zero ou negativo por mortalidade não
         // lançada) mas ainda "aberto" — trava o viveiro pro povoamento
         setViveirosZerados(lista.filter((v) => v.lote_atual !== null && v.lote_atual.saldo_un <= 0));
@@ -46,9 +46,14 @@ export default function RegistrarPovoamento() {
         // com saldo de peixes ainda de pé (vira mortalidade da fase)
         const ativos = lista.filter((v) => v.lote_atual !== null);
         setViveirosAtivos(ativos);
-        if (ativos.length > 0) setViveiroEncerrarId(ativos[0].id);
+        if (!manterSelecoes && ativos.length > 0) setViveiroEncerrarId(ativos[0].id);
       })
       .catch(() => setErroCarregar("Sem conexão e sem dados salvos deste aparelho ainda. Conecte-se ao menos uma vez."));
+  }
+
+  useEffect(() => {
+    carregarViveiros(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function encerrar(v: Viveiro) {
@@ -131,9 +136,10 @@ export default function RegistrarPovoamento() {
       setToast(`Povoamento do lote ${v.lote_atual.codigo} corrigido`);
       setViveiroEditarId(null);
       setFormEdicao(null);
-      setViveirosAtivos((vs) => vs.map((vv) => vv.id === v.id
-        ? { ...vv, lote_atual: { ...vv.lote_atual!, quantidade_inicial: qtd, peso_medio_inicial_g: peso, data_inicio: formEdicao.dataInicio } }
-        : vv));
+      // recarrega do servidor em vez de só remendar o estado local — o
+      // saldo (quantidade de peixes no tanque) é calculado a partir da
+      // quantidade inicial, então precisa vir recalculado de verdade
+      await carregarViveiros(true);
       setTimeout(() => setToast(null), 3200);
     } catch {
       setToast("Não foi possível salvar a correção — confira os valores e a conexão");

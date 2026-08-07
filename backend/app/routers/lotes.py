@@ -7,7 +7,17 @@ from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
 from ..db import get_db
-from ..schemas import EncerrarLoteIn, LoteOut, PovoamentoEditarIn, PovoamentoIn, RepicagemIn, RepicagemOut, UsuarioOut
+from ..schemas import (
+    EncerrarLoteIn,
+    LoteOut,
+    PovoamentoEditarIn,
+    PovoamentoIn,
+    RepicagemDetalheOut,
+    RepicagemEditarIn,
+    RepicagemIn,
+    RepicagemOut,
+    UsuarioOut,
+)
 
 router = APIRouter(tags=["lotes"])
 
@@ -194,6 +204,66 @@ def registrar_repicagem(
         raise HTTPException(422, f"dado inválido ou fora das regras: {exc.orig}") from exc
 
     return RepicagemOut(lote=LoteOut(**novo), lotes_origem_fechados=fechados)
+
+
+_QUERY_REPICAGEM_DETALHE = """
+    SELECT o.lote_id, o.lote_origem_id, o.data, o.quantidade, o.peso_medio_g,
+           ld.codigo AS lote_destino_codigo, vd.codigo AS viveiro_destino_codigo,
+           lo.codigo AS lote_origem_codigo, vo.codigo AS viveiro_origem_codigo,
+           (lo.data_fim IS NOT NULL) AS lote_origem_fechado
+    FROM lote_origem o
+    JOIN lote ld ON ld.id = o.lote_id
+    JOIN viveiro vd ON vd.id = ld.viveiro_id
+    JOIN lote lo ON lo.id = o.lote_origem_id
+    JOIN viveiro vo ON vo.id = lo.viveiro_id
+    WHERE o.lote_id = :lote_id AND o.lote_origem_id = :lote_origem_id
+"""
+
+
+@router.patch("/repicagens/{lote_id}/{lote_origem_id}", response_model=RepicagemDetalheOut)
+def editar_repicagem(
+    lote_id: int, lote_origem_id: int, body: RepicagemEditarIn, db: Session = Depends(get_db),
+    _usuario: UsuarioOut = Depends(get_current_user),
+):
+    """Corrige quantidade/peso/data de uma repicagem já lançada. A
+    quantidade_inicial do lote de destino foi somada no momento da
+    repicagem (não é recalculada ao vivo a partir de lote_origem) — se a
+    quantidade mudar, ajusta ela pela diferença pra manter o estoque de
+    peixe do tanque de destino correto (mesmo saldo vivo em
+    vw_saldo_lote, que já subtrai lote_origem.quantidade do tanque de
+    origem automaticamente). Não mexe em fechamento/reabertura de lote
+    (nem origem nem destino) — isso continua manual via outras telas."""
+    atual = db.execute(
+        text("SELECT quantidade FROM lote_origem WHERE lote_id = :l AND lote_origem_id = :lo"),
+        {"l": lote_id, "lo": lote_origem_id},
+    ).mappings().first()
+    if atual is None:
+        raise HTTPException(404, "repicagem não encontrada")
+
+    delta = body.quantidade - atual["quantidade"]
+
+    try:
+        db.execute(
+            text("""
+                UPDATE lote_origem SET quantidade = :quantidade, peso_medio_g = :peso_medio_g, data = :data
+                WHERE lote_id = :l AND lote_origem_id = :lo
+            """),
+            {"l": lote_id, "lo": lote_origem_id, **body.model_dump()},
+        )
+        if delta != 0:
+            db.execute(
+                text("UPDATE lote SET quantidade_inicial = quantidade_inicial + :delta WHERE id = :id"),
+                {"delta": delta, "id": lote_id},
+            )
+        db.commit()
+    except DBAPIError as exc:
+        db.rollback()
+        raise HTTPException(422, f"dado inválido ou fora das regras: {exc.orig}") from exc
+
+    row = db.execute(
+        text(_QUERY_REPICAGEM_DETALHE), {"lote_id": lote_id, "lote_origem_id": lote_origem_id}
+    ).mappings().first()
+    return RepicagemDetalheOut(**row)
 
 
 @router.patch("/lotes/{lote_id}/povoamento", response_model=LoteOut)

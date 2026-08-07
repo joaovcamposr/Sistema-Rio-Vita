@@ -266,8 +266,9 @@ export default function PainelProducao() {
         {mostrarDetalhe && (
           <>
             <p className={styles.hint}>
-              Cada linha é um lançamento de produção, com o tanque e a data de despesca de origem. O rendimento é do
-              lote despescado naquela data — igual pra todos os produtos que vieram da mesma despesca.
+              Cada linha é um lançamento de produção, com o tanque e a data de despesca de origem. O rendimento é por
+              família de produto (Filé, Postas, Tilápia limpa) contra o peso despescado daquela família — linhas da
+              mesma família e mesma despesca compartilham o valor, mas famílias diferentes têm rendimentos próprios.
             </p>
             {!detalhe && <p className={styles.hint}>Carregando…</p>}
             {detalhe && detalhe.length === 0 && <p className={styles.hint}>Nenhuma produção no período.</p>}

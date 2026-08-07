@@ -5,6 +5,7 @@
  * em offline-queue.ts.
  */
 import { authHeader, sessaoInvalida } from "./auth";
+import type { RepicagemDetalhe } from "./paineis";
 
 export interface LoteAtual {
   id: number;
@@ -145,6 +146,19 @@ export async function editarDespesca(despescaId: number, body: {
   if (r.status === 401) sessaoInvalida();
   if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
   return (await r.json()) as Despesca;
+}
+
+export async function editarRepicagem(loteId: number, loteOrigemId: number, body: {
+  data: string; quantidade: number; peso_medio_g: number;
+}): Promise<RepicagemDetalhe> {
+  const r = await fetch(`${apiBase()}/repicagens/${loteId}/${loteOrigemId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...authHeader() },
+    body: JSON.stringify(body),
+  });
+  if (r.status === 401) sessaoInvalida();
+  if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+  return (await r.json()) as RepicagemDetalhe;
 }
 export const listarClientes = () => cachedGet<Cliente[]>("cache:clientes", "/clientes");
 export const listarVendedoresDeVenda = () => cachedGet<string[]>("cache:vendas-vendedores", "/vendas/vendedores");
