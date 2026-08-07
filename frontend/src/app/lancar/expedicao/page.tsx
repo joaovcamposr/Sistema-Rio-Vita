@@ -88,7 +88,7 @@ export default function RegistrarExpedicao() {
       } else {
         await enfileirar("expedicao", {
           vendedor_id: vendedorId,
-          data_saida: hojeISO(),
+          data_saida: dataSaidaEdicao,
           itens,
         });
         setToast("Expedição registrada");
@@ -141,17 +141,15 @@ export default function RegistrarExpedicao() {
           </div>
         )}
 
-        {editandoId !== null && (
-          <div className={styles.field}>
-            <label>Data de saída</label>
-            <input
-              className={styles.inp}
-              type="date"
-              value={dataSaidaEdicao}
-              onChange={(e) => setDataSaidaEdicao(e.target.value)}
-            />
-          </div>
-        )}
+        <div className={styles.field}>
+          <label>Data de saída</label>
+          <input
+            className={styles.inp}
+            type="date"
+            value={dataSaidaEdicao}
+            onChange={(e) => setDataSaidaEdicao(e.target.value)}
+          />
+        </div>
 
         <div className={styles.field}>
           <label>Vendedor/entregador</label>

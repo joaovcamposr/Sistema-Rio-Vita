@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
 from ..db import get_db
-from ..schemas import UsuarioOut, VendaIn, VendaListaOut, VendaObservacoesIn, VendaOut, VendaPagamentoIn
+from ..schemas import UsuarioOut, VendaEditarIn, VendaIn, VendaListaOut, VendaObservacoesIn, VendaOut, VendaPagamentoIn
 
 router = APIRouter(prefix="/vendas", tags=["vendas"])
 _COLUNAS = (
@@ -46,8 +46,8 @@ def listar_vendas(
     de = de or (ate - timedelta(days=90))
     rows = db.execute(text("""
         SELECT v.id, v.data, v.cliente_id, COALESCE(c.nome, 'Consumidor final') AS cliente_nome,
-               c.prazo_dias AS cliente_prazo_dias, pr.nome AS produto_nome,
-               v.quantidade_kg, v.valor_total, v.forma_pgto, v.vendedor,
+               c.prazo_dias AS cliente_prazo_dias, v.produto_id, pr.nome AS produto_nome,
+               v.quantidade_un, v.quantidade_kg, v.preco_kg, v.valor_total, v.forma_pgto, v.vendedor,
                v.situacao, v.data_pagamento, v.observacoes
         FROM venda v
         JOIN produto pr ON pr.id = v.produto_id
@@ -133,3 +133,41 @@ def atualizar_observacoes(
     if row is None:
         raise HTTPException(404, "venda não encontrada")
     return VendaOut(**row)
+
+
+@router.patch("/{venda_id}", response_model=VendaOut)
+def editar_venda(
+    venda_id: int, body: VendaEditarIn, db: Session = Depends(get_db),
+    usuario: UsuarioOut = Depends(get_current_user),
+):
+    """Corrige uma venda já lançada — data, cliente, produto, quantidade,
+    preço ou forma. Não mexe em situação/data de pagamento (isso é o
+    PATCH /pagamento, separado, pra não desfazer uma baixa já confirmada)."""
+    try:
+        row = db.execute(
+            text(f"""
+                UPDATE venda SET data = :data, cliente_id = :cliente_id, vendedor = :vendedor,
+                                  produto_id = :produto_id, quantidade_un = :quantidade_un,
+                                  quantidade_kg = :quantidade_kg, preco_kg = :preco_kg, forma_pgto = :forma_pgto
+                WHERE id = :id
+                RETURNING {_COLUNAS}
+            """),
+            {"id": venda_id, **body.model_dump()},
+        ).mappings().first()
+        db.commit()
+    except DBAPIError as exc:
+        db.rollback()
+        raise HTTPException(422, f"cliente_id/produto_id inválido ou dado fora das regras: {exc.orig}") from exc
+    if row is None:
+        raise HTTPException(404, "venda não encontrada")
+    return VendaOut(**row)
+
+
+@router.delete("/{venda_id}", status_code=204)
+def excluir_venda(
+    venda_id: int, db: Session = Depends(get_db), _usuario: UsuarioOut = Depends(get_current_user),
+):
+    resultado = db.execute(text("DELETE FROM venda WHERE id = :id"), {"id": venda_id})
+    db.commit()
+    if resultado.rowcount == 0:
+        raise HTTPException(404, "venda não encontrada")

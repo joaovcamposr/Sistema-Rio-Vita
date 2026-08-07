@@ -14,6 +14,7 @@ export default function RegistrarBiometria() {
   const router = useRouter();
   const [viveiros, setViveiros] = useState<Viveiro[]>([]);
   const [erroCarregar, setErroCarregar] = useState<string | null>(null);
+  const [data, setData] = useState(hojeISO());
   const [valores, setValores] = useState<Record<number, string>>({});
   const [enviando, setEnviando] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -30,7 +31,6 @@ export default function RegistrarBiometria() {
   async function salvar() {
     setEnviando(true);
     try {
-      const data = hojeISO();
       for (const [viveiroId, valor] of preenchidos) {
         const v = viveiros.find((vv) => vv.id === Number(viveiroId));
         if (!v?.lote_atual) continue;
@@ -62,7 +62,13 @@ export default function RegistrarBiometria() {
 
       <div className={styles.body}>
         {erroCarregar && <div className={styles.error}>{erroCarregar}</div>}
-        <p className={styles.hint}>Preencha só os viveiros medidos hoje.</p>
+
+        <div className={styles.field}>
+          <label>Data</label>
+          <input className={styles.inp} type="date" value={data} onChange={(e) => setData(e.target.value)} />
+        </div>
+
+        <p className={styles.hint}>Preencha só os viveiros medidos nessa data.</p>
 
         {viveiros.length === 0 && <p className={styles.hint}>Nenhum viveiro com lote ativo.</p>}
         {viveiros.map((v) => (

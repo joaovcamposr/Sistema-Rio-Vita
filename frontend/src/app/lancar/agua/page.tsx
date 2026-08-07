@@ -24,6 +24,7 @@ export default function RegistrarAnaliseAgua() {
   const [viveiros, setViveiros] = useState<Viveiro[]>([]);
   const [erroCarregar, setErroCarregar] = useState<string | null>(null);
   const [viveiroId, setViveiroId] = useState<number | null>(null);
+  const [data, setData] = useState(hojeISO());
   const [valores, setValores] = useState<Record<string, string>>({});
   const [enviando, setEnviando] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -45,7 +46,7 @@ export default function RegistrarAnaliseAgua() {
     if (!viveiro) return;
     setEnviando(true);
     try {
-      const payload: Record<string, unknown> = { viveiro_id: viveiro.id, data: hojeISO() };
+      const payload: Record<string, unknown> = { viveiro_id: viveiro.id, data };
       for (const c of CAMPOS) {
         const v = valores[c.chave];
         payload[c.chave] = v ? parseFloat(v.replace(",", ".")) : null;
@@ -90,7 +91,12 @@ export default function RegistrarAnaliseAgua() {
           </select>
         </div>
 
-        <p className={styles.hint}>Preencha só os parâmetros medidos hoje.</p>
+        <div className={styles.field}>
+          <label>Data</label>
+          <input className={styles.inp} type="date" value={data} onChange={(e) => setData(e.target.value)} />
+        </div>
+
+        <p className={styles.hint}>Preencha só os parâmetros medidos nessa data.</p>
         {CAMPOS.map((c) => (
           <div key={c.chave} className={styles.lrow}>
             <div>

@@ -32,6 +32,7 @@ export default function RegistrarProducao() {
   const [despescas, setDespescas] = useState<Despesca[]>([]);
   const [erroCarregar, setErroCarregar] = useState<string | null>(null);
 
+  const [data, setData] = useState(hojeISO());
   const [produtoId, setProdutoId] = useState<number | null>(null);
   const [viveiroId, setViveiroId] = useState<number | null>(null);
   const [despescaId, setDespescaId] = useState<number | null>(null);
@@ -108,7 +109,7 @@ export default function RegistrarProducao() {
     setEnviando(true);
     try {
       await enfileirar("producao", {
-        data: hojeISO(),
+        data,
         produto_id: produto.id,
         quantidade_embalagens: produto.kg_digitado ? (qtdBandejasNum > 0 ? qtdBandejasNum : null) : qtdBandejasNum,
         quantidade_kg: produto.kg_digitado ? kgDigitadoNum : 0,
@@ -149,6 +150,11 @@ export default function RegistrarProducao() {
 
       <div className={styles.body}>
         {erroCarregar && <div className={styles.error}>{erroCarregar}</div>}
+
+        <div className={styles.field}>
+          <label>Data</label>
+          <input className={styles.inp} type="date" value={data} onChange={(e) => setData(e.target.value)} />
+        </div>
 
         <div className={styles.field}>
           <label>Produto</label>

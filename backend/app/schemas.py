@@ -411,6 +411,17 @@ class VendaIn(BaseModel):
     forma_pgto: str | None = None
 
 
+class VendaEditarIn(BaseModel):
+    data: date
+    cliente_id: int | None = None
+    vendedor: str | None = None
+    produto_id: int
+    quantidade_un: float | None = Field(default=None, ge=0)
+    quantidade_kg: float = Field(gt=0)
+    preco_kg: float = Field(ge=0)
+    forma_pgto: str | None = None
+
+
 class VendaOut(BaseModel):
     id: int
     client_id: uuid.UUID
@@ -434,8 +445,11 @@ class VendaListaOut(BaseModel):
     cliente_id: int | None
     cliente_nome: str
     cliente_prazo_dias: int | None
+    produto_id: int
     produto_nome: str
+    quantidade_un: float | None
     quantidade_kg: float
+    preco_kg: float
     valor_total: float
     forma_pgto: str | None
     vendedor: str | None

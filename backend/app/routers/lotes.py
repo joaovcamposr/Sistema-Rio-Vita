@@ -129,24 +129,42 @@ def registrar_repicagem(
 
     quantidade_total = sum(q for _, q, _ in origem_lotes)
     fase_destino = "pre_engorda" if destino["tipo"] == "pre_engorda" else "engorda"
-    codigo = _gerar_codigo(db, fase_destino, body.data)
+
+    # tanque de destino já povoado: junta a leva nova no lote que já está
+    # lá (soma em quantidade_inicial) em vez de criar um segundo lote no
+    # mesmo viveiro — só um lote aberto por viveiro, sempre
+    lote_destino_existente = db.execute(
+        text("SELECT id FROM lote WHERE viveiro_id = :v AND data_fim IS NULL"),
+        {"v": body.viveiro_destino_id},
+    ).mappings().first()
 
     try:
-        novo = db.execute(
-            text(f"""
-                INSERT INTO lote (client_id, codigo, fase, viveiro_id, viveiro_tipo, data_inicio,
-                                   quantidade_inicial, peso_medio_inicial_g, criado_por)
-                VALUES (:client_id, :codigo, :fase, :viveiro_id, :viveiro_tipo, :data,
-                        :quantidade_inicial, :peso_medio_g, :criado_por)
-                RETURNING {_COLUNAS_LOTE}
-            """),
-            {
-                "client_id": str(body.client_id), "codigo": codigo, "fase": fase_destino,
-                "viveiro_id": body.viveiro_destino_id, "viveiro_tipo": destino["tipo"],
-                "data": body.data, "quantidade_inicial": quantidade_total, "peso_medio_g": body.peso_medio_g,
-                "criado_por": usuario.nome,
-            },
-        ).mappings().first()
+        if lote_destino_existente is not None:
+            db.execute(
+                text("UPDATE lote SET quantidade_inicial = quantidade_inicial + :qtd WHERE id = :id"),
+                {"qtd": quantidade_total, "id": lote_destino_existente["id"]},
+            )
+            novo = db.execute(
+                text(f"SELECT {_COLUNAS_LOTE} FROM lote WHERE id = :id"),
+                {"id": lote_destino_existente["id"]},
+            ).mappings().first()
+        else:
+            codigo = _gerar_codigo(db, fase_destino, body.data)
+            novo = db.execute(
+                text(f"""
+                    INSERT INTO lote (client_id, codigo, fase, viveiro_id, viveiro_tipo, data_inicio,
+                                       quantidade_inicial, peso_medio_inicial_g, criado_por)
+                    VALUES (:client_id, :codigo, :fase, :viveiro_id, :viveiro_tipo, :data,
+                            :quantidade_inicial, :peso_medio_g, :criado_por)
+                    RETURNING {_COLUNAS_LOTE}
+                """),
+                {
+                    "client_id": str(body.client_id), "codigo": codigo, "fase": fase_destino,
+                    "viveiro_id": body.viveiro_destino_id, "viveiro_tipo": destino["tipo"],
+                    "data": body.data, "quantidade_inicial": quantidade_total, "peso_medio_g": body.peso_medio_g,
+                    "criado_por": usuario.nome,
+                },
+            ).mappings().first()
 
         fechados: list[int] = []
         for lote_origem_id, quantidade, saldo_atual in origem_lotes:

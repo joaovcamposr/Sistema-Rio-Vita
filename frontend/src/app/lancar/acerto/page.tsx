@@ -42,6 +42,7 @@ export default function AcertoExpedicao() {
   const [erroCarregar, setErroCarregar] = useState<string | null>(null);
 
   const [expedicaoId, setExpedicaoId] = useState<number | null>(null);
+  const [dataAcerto, setDataAcerto] = useState(hojeISO());
   const [vendas, setVendas] = useState<VendaLinha[]>([novaVenda(null)]);
   const [retornos, setRetornos] = useState<RetornoLinha[]>([{ produtoId: null, quantidade: "" }]);
   const [despesas, setDespesas] = useState<DespesaLinha[]>([]);
@@ -151,7 +152,7 @@ export default function AcertoExpedicao() {
 
       await enfileirar("expedicao_acerto", {
         expedicao_id: expedicaoId,
-        data_acerto: hojeISO(),
+        data_acerto: dataAcerto,
         vendas: vendasValidas.map((v) => {
           const produto = produtos.find((p) => p.id === v.produtoId);
           const qtd = parseFloat(v.quantidade.replace(",", "."));
@@ -204,6 +205,11 @@ export default function AcertoExpedicao() {
 
       <div className={styles.body}>
         {erroCarregar && <div className={styles.error}>{erroCarregar}</div>}
+
+        <div className={styles.field}>
+          <label>Data do acerto</label>
+          <input className={styles.inp} type="date" value={dataAcerto} onChange={(e) => setDataAcerto(e.target.value)} />
+        </div>
 
         <div className={styles.field}>
           <label>Expedição</label>

@@ -23,6 +23,7 @@ export default function RegistrarVenda() {
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [erroCarregar, setErroCarregar] = useState<string | null>(null);
 
+  const [data, setData] = useState(hojeISO());
   const [clienteId, setClienteId] = useState<number | null>(null);
   const [produtoId, setProdutoId] = useState<number | null>(null);
   const [quantidade, setQuantidade] = useState("");
@@ -75,7 +76,7 @@ export default function RegistrarVenda() {
     setEnviando(true);
     try {
       await enfileirar("venda", {
-        data: hojeISO(),
+        data,
         cliente_id: clienteId,
         produto_id: produto.id,
         quantidade_un: produto.kg_digitado ? null : qtdNum,
@@ -106,6 +107,11 @@ export default function RegistrarVenda() {
 
       <div className={styles.body}>
         {erroCarregar && <div className={styles.error}>{erroCarregar}</div>}
+
+        <div className={styles.field}>
+          <label>Data</label>
+          <input className={styles.inp} type="date" value={data} onChange={(e) => setData(e.target.value)} />
+        </div>
 
         <div className={styles.field}>
           <label>Cliente</label>

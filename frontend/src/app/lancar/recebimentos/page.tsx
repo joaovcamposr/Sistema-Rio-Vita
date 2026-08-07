@@ -4,16 +4,31 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   atualizarObservacoesVenda,
+  editarVenda,
+  excluirVenda,
   listarClientes,
+  listarProdutos,
   listarVendas,
   listarVendedoresDeVenda,
   marcarPagamentoVenda,
   type Cliente,
+  type Produto,
   type VendaLista,
 } from "@/lib/api";
 import styles from "../../cadastros/cadastros.module.css";
 
 const FORMAS_RECEBIMENTO = ["Pix", "Dinheiro", "Boleto", "Cheque"];
+const FORMAS_VENDA = ["Pix", "Dinheiro", "Prazo"];
+
+interface FormVenda {
+  data: string;
+  cliente_id: number | null;
+  vendedor: string;
+  produto_id: number;
+  quantidade: string;
+  preco_kg: string;
+  forma_pgto: string;
+}
 
 function hojeISO(): string {
   return new Date().toISOString().slice(0, 10);
@@ -49,6 +64,7 @@ export default function Recebimentos() {
   const [clienteFiltro, setClienteFiltro] = useState<number | null>(null);
   const [vendedores, setVendedores] = useState<string[]>([]);
   const [vendedorFiltro, setVendedorFiltro] = useState("");
+  const [produtos, setProdutos] = useState<Produto[]>([]);
   const [vendas, setVendas] = useState<VendaLista[] | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [editando, setEditando] = useState<number | null>(null);
@@ -58,6 +74,10 @@ export default function Recebimentos() {
   const [editandoObs, setEditandoObs] = useState<number | null>(null);
   const [obsValor, setObsValor] = useState("");
   const [salvandoObs, setSalvandoObs] = useState(false);
+  const [editandoVendaId, setEditandoVendaId] = useState<number | null>(null);
+  const [formVenda, setFormVenda] = useState<FormVenda | null>(null);
+  const [salvandoVenda, setSalvandoVenda] = useState(false);
+  const [excluindoId, setExcluindoId] = useState<number | null>(null);
 
   function carregar() {
     setErro(null);
@@ -79,6 +99,7 @@ export default function Recebimentos() {
   useEffect(() => {
     listarClientes().then(setClientes).catch(() => undefined);
     listarVendedoresDeVenda().then(setVendedores).catch(() => undefined);
+    listarProdutos().then(setProdutos).catch(() => undefined);
   }, []);
 
   const totalEmAberto = useMemo(() => {
@@ -120,6 +141,65 @@ export default function Recebimentos() {
       setErro("Não foi possível salvar a observação.");
     } finally {
       setSalvandoObs(false);
+    }
+  }
+
+  function iniciarEdicaoVenda(v: VendaLista) {
+    setEditandoVendaId(v.id);
+    setFormVenda({
+      data: v.data,
+      cliente_id: v.cliente_id,
+      vendedor: v.vendedor ?? "",
+      produto_id: v.produto_id,
+      quantidade: String(v.quantidade_un ?? v.quantidade_kg).replace(".", ","),
+      preco_kg: String(v.preco_kg).replace(".", ","),
+      forma_pgto: v.forma_pgto ?? FORMAS_VENDA[0],
+    });
+  }
+
+  async function salvarEdicaoVenda(vendaId: number) {
+    if (!formVenda) return;
+    const produto = produtos.find((p) => p.id === formVenda.produto_id);
+    if (!produto) return;
+    const qtdNum = parseFloat(formVenda.quantidade.replace(",", ".")) || 0;
+    const precoNum = parseFloat(formVenda.preco_kg.replace(",", ".")) || 0;
+    const kg = produto.kg_digitado ? qtdNum : qtdNum * (produto.fator_kg ?? 1);
+    setSalvandoVenda(true);
+    try {
+      await editarVenda(vendaId, {
+        data: formVenda.data,
+        cliente_id: formVenda.cliente_id,
+        vendedor: formVenda.vendedor.trim() || null,
+        produto_id: formVenda.produto_id,
+        quantidade_un: produto.kg_digitado ? null : qtdNum,
+        quantidade_kg: kg,
+        preco_kg: precoNum,
+        forma_pgto: formVenda.forma_pgto,
+      });
+      setEditandoVendaId(null);
+      setFormVenda(null);
+      carregar();
+    } catch {
+      setErro("Não foi possível salvar a venda — confira os valores.");
+    } finally {
+      setSalvandoVenda(false);
+    }
+  }
+
+  async function excluir(v: VendaLista) {
+    const confirmar = window.confirm(
+      `Excluir a venda de ${v.produto_nome} para ${v.cliente_nome} em ${dataBr(v.data)} (${moeda(v.valor_total)})?\n\n` +
+      "Essa ação não pode ser desfeita."
+    );
+    if (!confirmar) return;
+    setExcluindoId(v.id);
+    try {
+      await excluirVenda(v.id);
+      carregar();
+    } catch {
+      setErro("Não foi possível excluir a venda.");
+    } finally {
+      setExcluindoId(null);
     }
   }
 
@@ -189,7 +269,7 @@ export default function Recebimentos() {
               <thead>
                 <tr>
                   <th>Data</th><th>Cliente</th><th>Produto</th><th>Valor</th>
-                  <th>Forma</th><th>Vendedor</th><th>Situação</th><th>Observações</th><th></th>
+                  <th>Forma</th><th>Vendedor</th><th>Situação</th><th>Observações</th><th></th><th></th>
                 </tr>
               </thead>
               <tbody>
@@ -278,9 +358,116 @@ export default function Recebimentos() {
                           </div>
                         )}
                       </td>
+                      <td style={{ whiteSpace: "nowrap" }}>
+                        <button
+                          className={styles.btnLink}
+                          onClick={() => {
+                            if (editandoVendaId === v.id) {
+                              setEditandoVendaId(null);
+                              setFormVenda(null);
+                            } else {
+                              iniciarEdicaoVenda(v);
+                            }
+                          }}
+                        >
+                          {editandoVendaId === v.id ? "Fechar" : "Editar"}
+                        </button>
+                        {" · "}
+                        <button
+                          className={styles.btnLink}
+                          style={{ color: "var(--crit)" }}
+                          disabled={excluindoId === v.id}
+                          onClick={() => excluir(v)}
+                        >
+                          {excluindoId === v.id ? "Excluindo…" : "Excluir"}
+                        </button>
+                      </td>
                     </tr>
                   );
                 })}
+                {editandoVendaId !== null && formVenda && (() => {
+                  const vendaEditando = vendas.find((v) => v.id === editandoVendaId);
+                  const produtoSelecionado = produtos.find((p) => p.id === formVenda.produto_id);
+                  if (!vendaEditando) return null;
+                  return (
+                    <tr key={`editar-${editandoVendaId}`}>
+                      <td colSpan={10} style={{ background: "var(--surface-sunk)", padding: 14 }}>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end" }}>
+                          <div className={styles.field} style={{ margin: 0 }}>
+                            <label>Data</label>
+                            <input
+                              className={styles.inp} type="date" value={formVenda.data}
+                              onChange={(e) => setFormVenda({ ...formVenda, data: e.target.value })}
+                            />
+                          </div>
+                          <div className={styles.field} style={{ margin: 0 }}>
+                            <label>Cliente</label>
+                            <select
+                              className={styles.inp}
+                              value={formVenda.cliente_id ?? ""}
+                              onChange={(e) => setFormVenda({ ...formVenda, cliente_id: e.target.value ? Number(e.target.value) : null })}
+                            >
+                              <option value="">Consumidor final</option>
+                              {clientes.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                            </select>
+                          </div>
+                          <div className={styles.field} style={{ margin: 0 }}>
+                            <label>Produto</label>
+                            <select
+                              className={styles.inp}
+                              value={formVenda.produto_id}
+                              onChange={(e) => setFormVenda({ ...formVenda, produto_id: Number(e.target.value) })}
+                            >
+                              {produtos.map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}
+                            </select>
+                          </div>
+                          <div className={styles.field} style={{ margin: 0 }}>
+                            <label>{produtoSelecionado?.kg_digitado ? "Quantidade (Kg)" : "Quantidade (un)"}</label>
+                            <input
+                              className={styles.inp} style={{ width: 100 }} type="text" inputMode="decimal"
+                              value={formVenda.quantidade}
+                              onChange={(e) => setFormVenda({ ...formVenda, quantidade: e.target.value })}
+                            />
+                          </div>
+                          <div className={styles.field} style={{ margin: 0 }}>
+                            <label>Preço/Kg</label>
+                            <input
+                              className={styles.inp} style={{ width: 100 }} type="text" inputMode="decimal"
+                              value={formVenda.preco_kg}
+                              onChange={(e) => setFormVenda({ ...formVenda, preco_kg: e.target.value })}
+                            />
+                          </div>
+                          <div className={styles.field} style={{ margin: 0 }}>
+                            <label>Vendedor</label>
+                            <input
+                              className={styles.inp} style={{ width: 120 }}
+                              value={formVenda.vendedor}
+                              onChange={(e) => setFormVenda({ ...formVenda, vendedor: e.target.value })}
+                            />
+                          </div>
+                          <div className={styles.field} style={{ margin: 0 }}>
+                            <label>Forma</label>
+                            <select
+                              className={styles.inp}
+                              value={formVenda.forma_pgto}
+                              onChange={(e) => setFormVenda({ ...formVenda, forma_pgto: e.target.value })}
+                            >
+                              {FORMAS_VENDA.map((f) => <option key={f} value={f}>{f}</option>)}
+                            </select>
+                          </div>
+                          <button
+                            className={styles.btnPrimary}
+                            style={{ padding: "9px 16px" }}
+                            disabled={salvandoVenda}
+                            onClick={() => salvarEdicaoVenda(editandoVendaId)}
+                          >
+                            {salvandoVenda ? "Salvando…" : "Salvar"}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })()}
               </tbody>
             </table>
           </div>

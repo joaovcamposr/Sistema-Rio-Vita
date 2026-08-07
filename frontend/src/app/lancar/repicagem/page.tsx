@@ -15,6 +15,7 @@ export default function RegistrarRepicagem() {
   const [viveiros, setViveiros] = useState<Viveiro[]>([]);
   const [erroCarregar, setErroCarregar] = useState<string | null>(null);
 
+  const [data, setData] = useState(hojeISO());
   const [destinoId, setDestinoId] = useState<number | null>(null);
   const [pesoMedio, setPesoMedio] = useState("");
   const [selecionados, setSelecionados] = useState<Record<number, string>>({});
@@ -25,7 +26,7 @@ export default function RegistrarRepicagem() {
     listarViveiros()
       .then((lista) => {
         setViveiros(lista);
-        const destinos = lista.filter((v) => v.tipo !== "decantacao" && v.lote_atual === null);
+        const destinos = lista.filter((v) => v.tipo !== "decantacao");
         if (destinos.length > 0) setDestinoId(destinos[0].id);
       })
       .catch(() => setErroCarregar("Sem conexão e sem dados salvos deste aparelho ainda. Conecte-se ao menos uma vez."));
@@ -38,10 +39,13 @@ export default function RegistrarRepicagem() {
     () => viveiros.filter((v) => v.lote_atual !== null),
     [viveiros]
   );
+  // destino pode ser um viveiro vazio (cria lote novo) ou um já povoado
+  // (soma nesse lote existente) — só decantação fica de fora
   const destinosDisponiveis = useMemo(
-    () => viveiros.filter((v) => v.tipo !== "decantacao" && v.lote_atual === null),
+    () => viveiros.filter((v) => v.tipo !== "decantacao"),
     [viveiros]
   );
+  const destino = useMemo(() => destinosDisponiveis.find((v) => v.id === destinoId) ?? null, [destinosDisponiveis, destinoId]);
 
   function alternarOrigem(viveiroId: number, marcado: boolean) {
     setSelecionados((s) => {
@@ -66,7 +70,7 @@ export default function RegistrarRepicagem() {
     setEnviando(true);
     try {
       await enfileirar("repicagem", {
-        data: hojeISO(),
+        data,
         viveiro_destino_id: destinoId,
         peso_medio_g: pesoNum,
         origens: origensEscolhidas,
@@ -94,6 +98,12 @@ export default function RegistrarRepicagem() {
 
       <div className={styles.body}>
         {erroCarregar && <div className={styles.error}>{erroCarregar}</div>}
+
+        <div className={styles.field}>
+          <label>Data</label>
+          <input className={styles.inp} type="date" value={data} onChange={(e) => setData(e.target.value)} />
+        </div>
+
         <p className={styles.hint}>
           Marque um ou mais viveiros de origem (qualquer tanque com lote ativo) e informe quanto foi contado na
           repicagem de cada um.
@@ -140,13 +150,19 @@ export default function RegistrarRepicagem() {
             disabled={destinosDisponiveis.length === 0}
             onChange={(e) => setDestinoId(Number(e.target.value))}
           >
-            {destinosDisponiveis.length === 0 && <option>Nenhum viveiro vazio</option>}
+            {destinosDisponiveis.length === 0 && <option>Nenhum viveiro disponível</option>}
             {destinosDisponiveis.map((v) => (
               <option key={v.id} value={v.id}>
-                Viveiro {v.codigo}
+                Viveiro {v.codigo}{v.lote_atual ? ` — já povoado (lote ${v.lote_atual.codigo}, ${v.lote_atual.saldo_un.toLocaleString("pt-BR")} peixes)` : " — vazio"}
               </option>
             ))}
           </select>
+          {destino?.lote_atual && (
+            <p className={styles.hint} style={{ margin: "6px 0 0" }}>
+              Esse tanque já tem o lote {destino.lote_atual.codigo}, com {destino.lote_atual.saldo_un.toLocaleString("pt-BR")}{" "}
+              peixes — a repicagem vai somar a esse lote (não cria um lote novo).
+            </p>
+          )}
         </div>
 
         <div className={styles.field}>

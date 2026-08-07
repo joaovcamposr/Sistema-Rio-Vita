@@ -27,6 +27,7 @@ export default function RegistrarDespesca() {
   const [carregando, setCarregando] = useState(true);
   const [erroCarregar, setErroCarregar] = useState<string | null>(null);
 
+  const [data, setData] = useState(hojeISO());
   const [destino, setDestino] = useState<(typeof DESTINOS)[number]["valor"]>("file");
   const [viveiroId, setViveiroId] = useState<number | null>(null);
   const [quantidade, setQuantidade] = useState("");
@@ -62,7 +63,7 @@ export default function RegistrarDespesca() {
     try {
       await enfileirar("despesca", {
         lote_id: lote.id,
-        data: hojeISO(),
+        data,
         destino,
         quantidade_un: Math.round(qtdNum),
         peso_medio_g: pesoNum,
@@ -70,7 +71,7 @@ export default function RegistrarDespesca() {
       let msg = "Despesca registrada";
       if (encerrarTanque && saldoDepois !== null && saldoDepois <= 0) {
         try {
-          await encerrarLote(lote.id, hojeISO());
+          await encerrarLote(lote.id, data);
           msg = "Despesca registrada — lote encerrado";
         } catch {
           msg = "Despesca registrada — não deu pra encerrar o lote agora, tente de novo com conexão";
@@ -99,6 +100,11 @@ export default function RegistrarDespesca() {
 
       <div className={styles.body}>
         {erroCarregar && <div className={styles.error}>{erroCarregar}</div>}
+
+        <div className={styles.field}>
+          <label>Data</label>
+          <input className={styles.inp} type="date" value={data} onChange={(e) => setData(e.target.value)} />
+        </div>
 
         <div className={styles.field}>
           <label>Destino</label>

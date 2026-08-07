@@ -16,6 +16,7 @@ export default function RegistrarPovoamento() {
   const [erroCarregar, setErroCarregar] = useState<string | null>(null);
 
   const [viveiroId, setViveiroId] = useState<number | null>(null);
+  const [data, setData] = useState(hojeISO());
   const [quantidade, setQuantidade] = useState("");
   const [pesoMedio, setPesoMedio] = useState("");
   const [observacao, setObservacao] = useState("");
@@ -105,7 +106,7 @@ export default function RegistrarPovoamento() {
     try {
       await enfileirar("povoamento", {
         viveiro_id: viveiro.id,
-        data: hojeISO(),
+        data,
         quantidade_inicial: Math.round(qtdNum),
         peso_medio_inicial_g: pesoNum,
         observacao: observacao || null,
@@ -191,6 +192,11 @@ export default function RegistrarPovoamento() {
             </div>
           </div>
         )}
+
+        <div className={styles.field}>
+          <label>Data</label>
+          <input className={styles.inp} type="date" value={data} onChange={(e) => setData(e.target.value)} />
+        </div>
 
         <div className={styles.field}>
           <label>Viveiro</label>

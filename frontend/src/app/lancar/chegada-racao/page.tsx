@@ -15,6 +15,7 @@ export default function RegistrarChegadaRacao() {
   const [fornecedores, setFornecedores] = useState<FornecedorRacao[]>([]);
   const [erroCarregar, setErroCarregar] = useState<string | null>(null);
 
+  const [data, setData] = useState(hojeISO());
   const [fornecedorId, setFornecedorId] = useState<number | null>(null);
   const [valores, setValores] = useState<Record<number, string>>({});
   const [observacao, setObservacao] = useState("");
@@ -44,7 +45,7 @@ export default function RegistrarChegadaRacao() {
         quantidade_sacos: parseFloat(valor.replace(",", ".")),
       }));
       await enfileirar("chegada_racao", {
-        data: hojeISO(),
+        data,
         fornecedor_id: fornecedorId,
         observacao: observacao.trim() || null,
         itens,
@@ -72,6 +73,11 @@ export default function RegistrarChegadaRacao() {
 
       <div className={styles.body}>
         {erroCarregar && <div className={styles.error}>{erroCarregar}</div>}
+
+        <div className={styles.field}>
+          <label>Data</label>
+          <input className={styles.inp} type="date" value={data} onChange={(e) => setData(e.target.value)} />
+        </div>
 
         <div className={styles.field}>
           <label>Fornecedor</label>

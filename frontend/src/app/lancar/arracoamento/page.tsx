@@ -17,6 +17,7 @@ export default function RegistrarArracoamento() {
   const router = useRouter();
   const [viveiros, setViveiros] = useState<Viveiro[]>([]);
   const [erroCarregar, setErroCarregar] = useState<string | null>(null);
+  const [data, setData] = useState(hojeISO());
   const [trato, setTrato] = useState(TRATOS[0]);
   const [valores, setValores] = useState<Record<number, string>>({});
   const [enviando, setEnviando] = useState(false);
@@ -43,7 +44,6 @@ export default function RegistrarArracoamento() {
   async function salvar() {
     setEnviando(true);
     try {
-      const data = hojeISO();
       for (const [viveiroId, valor] of preenchidos) {
         const v = viveiros.find((vv) => vv.id === Number(viveiroId));
         if (!v?.lote_atual) continue;
@@ -88,6 +88,11 @@ export default function RegistrarArracoamento() {
 
       <div className={styles.body}>
         {erroCarregar && <div className={styles.error}>{erroCarregar}</div>}
+
+        <div className={styles.field}>
+          <label>Data</label>
+          <input className={styles.inp} type="date" value={data} onChange={(e) => setData(e.target.value)} />
+        </div>
 
         <div className={styles.field}>
           <label>Trato</label>

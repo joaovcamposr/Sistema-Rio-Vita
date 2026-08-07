@@ -68,8 +68,11 @@ export interface VendaLista {
   cliente_id: number | null;
   cliente_nome: string;
   cliente_prazo_dias: number | null;
+  produto_id: number;
   produto_nome: string;
+  quantidade_un: number | null;
   quantidade_kg: number;
+  preco_kg: number;
   valor_total: number;
   forma_pgto: string | null;
   vendedor: string | null;
@@ -233,6 +236,27 @@ export async function atualizarObservacoesVenda(vendaId: number, observacoes: st
     headers: { "Content-Type": "application/json", ...authHeader() },
     body: JSON.stringify({ observacoes }),
   });
+  if (r.status === 401) sessaoInvalida();
+  if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+}
+
+export interface VendaEditar {
+  data: string; cliente_id: number | null; vendedor: string | null; produto_id: number;
+  quantidade_un: number | null; quantidade_kg: number; preco_kg: number; forma_pgto: string | null;
+}
+
+export async function editarVenda(vendaId: number, body: VendaEditar): Promise<void> {
+  const r = await fetch(`${apiBase()}/vendas/${vendaId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...authHeader() },
+    body: JSON.stringify(body),
+  });
+  if (r.status === 401) sessaoInvalida();
+  if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+}
+
+export async function excluirVenda(vendaId: number): Promise<void> {
+  const r = await fetch(`${apiBase()}/vendas/${vendaId}`, { method: "DELETE", headers: authHeader() });
   if (r.status === 401) sessaoInvalida();
   if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
 }

@@ -14,6 +14,7 @@ function hojeISO(): string {
 
 export default function RegistrarDespesa() {
   const router = useRouter();
+  const [data, setData] = useState(hojeISO());
   const [categoria, setCategoria] = useState(CATEGORIAS[0]);
   const [valor, setValor] = useState("");
   const [forma, setForma] = useState(FORMAS[0]);
@@ -28,7 +29,7 @@ export default function RegistrarDespesa() {
     setEnviando(true);
     try {
       await enfileirar("despesa", {
-        data: hojeISO(),
+        data,
         categoria,
         valor: valorNum,
         forma_pgto: forma,
@@ -56,6 +57,11 @@ export default function RegistrarDespesa() {
       </div>
 
       <div className={styles.body}>
+        <div className={styles.field}>
+          <label>Data</label>
+          <input className={styles.inp} type="date" value={data} onChange={(e) => setData(e.target.value)} />
+        </div>
+
         <div className={styles.field}>
           <label>Categoria</label>
           <div className={styles.chips}>
