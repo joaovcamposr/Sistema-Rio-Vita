@@ -18,13 +18,15 @@ _QUERY = text("""
     LEFT JOIN lote l ON l.viveiro_id = v.id AND l.data_fim IS NULL
     LEFT JOIN vw_saldo_lote s ON s.lote_id = l.id
     WHERE v.ativo
-    ORDER BY v.codigo
 """)
 
 
 @router.get("", response_model=list[ViveiroOut])
 def listar_viveiros(db: Session = Depends(get_db)):
     rows = db.execute(_QUERY).mappings().all()
+    # ordem natural (PE1..PE5, depois 1, 2, ..., 24, DEC por último) — não a
+    # ordem alfabética do texto, que colocaria '10' antes de '2'
+    rows = sorted(rows, key=lambda r: _chave_ordem_viveiro(r["codigo"]))
     out = []
     for r in rows:
         lote_atual = None
