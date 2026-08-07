@@ -87,6 +87,8 @@ export default function Recebimentos() {
   const [vendedores, setVendedores] = useState<string[]>([]);
   const [vendedorFiltro, setVendedorFiltro] = useState("");
   const [produtos, setProdutos] = useState<Produto[]>([]);
+  const [produtoFiltro, setProdutoFiltro] = useState<number | "">("");
+  const [formaFiltro, setFormaFiltro] = useState("");
   const [vendas, setVendas] = useState<VendaLista[] | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [editando, setEditando] = useState<number | null>(null);
@@ -121,9 +123,11 @@ export default function Recebimentos() {
   const vendasFiltradas = useMemo(() => {
     if (!vendas) return null;
     const busca = normaliza(buscaCliente);
-    if (!busca) return vendas;
-    return vendas.filter((v) => normaliza(v.cliente_nome).includes(busca));
-  }, [vendas, buscaCliente]);
+    return vendas
+      .filter((v) => !busca || normaliza(v.cliente_nome).includes(busca))
+      .filter((v) => !produtoFiltro || v.produto_id === produtoFiltro)
+      .filter((v) => !formaFiltro || v.forma_pgto === formaFiltro);
+  }, [vendas, buscaCliente, produtoFiltro, formaFiltro]);
 
   useEffect(() => {
     listarClientes().then(setClientes).catch(() => undefined);
@@ -282,6 +286,24 @@ export default function Recebimentos() {
             <select className={styles.inp} value={vendedorFiltro} onChange={(e) => setVendedorFiltro(e.target.value)}>
               <option value="">Todos</option>
               {vendedores.map((v) => <option key={v} value={v}>{v}</option>)}
+            </select>
+          </div>
+          <div className={styles.field} style={{ margin: 0 }}>
+            <label>Produto</label>
+            <select
+              className={styles.inp}
+              value={produtoFiltro}
+              onChange={(e) => setProdutoFiltro(e.target.value ? Number(e.target.value) : "")}
+            >
+              <option value="">Todos</option>
+              {produtos.map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}
+            </select>
+          </div>
+          <div className={styles.field} style={{ margin: 0 }}>
+            <label>Forma de pagamento</label>
+            <select className={styles.inp} value={formaFiltro} onChange={(e) => setFormaFiltro(e.target.value)}>
+              <option value="">Todas</option>
+              {FORMAS_VENDA.map((f) => <option key={f} value={f}>{f}</option>)}
             </select>
           </div>
         </div>
