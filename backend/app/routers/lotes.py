@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
 from ..db import get_db
-from ..schemas import EncerrarLoteIn, LoteOut, PovoamentoIn, RepicagemIn, RepicagemOut, UsuarioOut
+from ..schemas import EncerrarLoteIn, LoteOut, PovoamentoEditarIn, PovoamentoIn, RepicagemIn, RepicagemOut, UsuarioOut
 
 router = APIRouter(tags=["lotes"])
 
@@ -194,6 +194,36 @@ def registrar_repicagem(
         raise HTTPException(422, f"dado inválido ou fora das regras: {exc.orig}") from exc
 
     return RepicagemOut(lote=LoteOut(**novo), lotes_origem_fechados=fechados)
+
+
+@router.patch("/lotes/{lote_id}/povoamento", response_model=LoteOut)
+def editar_povoamento(
+    lote_id: int, body: PovoamentoEditarIn, db: Session = Depends(get_db),
+    _usuario: UsuarioOut = Depends(get_current_user),
+):
+    """Corrige a quantidade/peso/data de povoamento inicial de um lote —
+    pra quando um erro em outro lançamento (ex.: repicagem feita errada)
+    deixou o saldo do tanque errado e não tem outro jeito de corrigir a
+    não ser ajustando a base. Não mexe em viveiro nem fase."""
+    lote = db.execute(text("SELECT id FROM lote WHERE id = :id"), {"id": lote_id}).mappings().first()
+    if lote is None:
+        raise HTTPException(404, "lote não encontrado")
+
+    try:
+        row = db.execute(
+            text(f"""
+                UPDATE lote SET data_inicio = :data_inicio, quantidade_inicial = :quantidade_inicial,
+                                 peso_medio_inicial_g = :peso_medio_inicial_g,
+                                 observacao = COALESCE(:observacao, observacao)
+                WHERE id = :id RETURNING {_COLUNAS_LOTE}
+            """),
+            {"id": lote_id, **body.model_dump()},
+        ).mappings().first()
+        db.commit()
+    except DBAPIError as exc:
+        db.rollback()
+        raise HTTPException(422, f"dado inválido ou fora das regras: {exc.orig}") from exc
+    return LoteOut(**row)
 
 
 @router.patch("/lotes/{lote_id}/encerrar", response_model=LoteOut)

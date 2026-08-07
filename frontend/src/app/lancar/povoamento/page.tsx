@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { encerrarLote, listarViveiros, type Viveiro } from "@/lib/api";
+import { editarPovoamento, encerrarLote, listarViveiros, type Viveiro } from "@/lib/api";
 import { enfileirar } from "@/lib/offline-queue";
 import styles from "../form.module.css";
 
@@ -27,6 +27,11 @@ export default function RegistrarPovoamento() {
   const [encerrandoId, setEncerrandoId] = useState<number | null>(null);
   const [viveiroEncerrarId, setViveiroEncerrarId] = useState<number | null>(null);
   const [encerrandoComSaldo, setEncerrandoComSaldo] = useState(false);
+  const [viveiroEditarId, setViveiroEditarId] = useState<number | null>(null);
+  const [formEdicao, setFormEdicao] = useState<{
+    dataInicio: string; quantidadeInicial: string; pesoMedioInicial: string;
+  } | null>(null);
+  const [salvandoEdicao, setSalvandoEdicao] = useState(false);
 
   useEffect(() => {
     listarViveiros()
@@ -92,6 +97,49 @@ export default function RegistrarPovoamento() {
       setTimeout(() => setToast(null), 2200);
     } finally {
       setEncerrandoComSaldo(false);
+    }
+  }
+
+  function iniciarEdicaoPovoamento(id: number | "") {
+    if (id === "") {
+      setViveiroEditarId(null);
+      setFormEdicao(null);
+      return;
+    }
+    const v = viveirosAtivos.find((vv) => vv.id === id);
+    if (!v?.lote_atual) return;
+    setViveiroEditarId(id);
+    setFormEdicao({
+      dataInicio: v.lote_atual.data_inicio,
+      quantidadeInicial: String(v.lote_atual.quantidade_inicial),
+      pesoMedioInicial: String(v.lote_atual.peso_medio_inicial_g).replace(".", ","),
+    });
+  }
+
+  async function salvarEdicaoPovoamento() {
+    const v = viveirosAtivos.find((vv) => vv.id === viveiroEditarId);
+    if (!v?.lote_atual || !formEdicao) return;
+    const qtd = Math.round(parseFloat(formEdicao.quantidadeInicial.replace(",", ".")) || 0);
+    const peso = parseFloat(formEdicao.pesoMedioInicial.replace(",", ".")) || 0;
+    if (qtd <= 0 || peso <= 0) return;
+    setSalvandoEdicao(true);
+    try {
+      await editarPovoamento(
+        v.lote_atual.id, formEdicao.dataInicio, qtd, peso,
+        `Povoamento inicial corrigido em ${hojeISO()} (era ${v.lote_atual.quantidade_inicial} peixes, ${v.lote_atual.peso_medio_inicial_g}g).`
+      );
+      setToast(`Povoamento do lote ${v.lote_atual.codigo} corrigido`);
+      setViveiroEditarId(null);
+      setFormEdicao(null);
+      setViveirosAtivos((vs) => vs.map((vv) => vv.id === v.id
+        ? { ...vv, lote_atual: { ...vv.lote_atual!, quantidade_inicial: qtd, peso_medio_inicial_g: peso, data_inicio: formEdicao.dataInicio } }
+        : vv));
+      setTimeout(() => setToast(null), 3200);
+    } catch {
+      setToast("Não foi possível salvar a correção — confira os valores e a conexão");
+      setTimeout(() => setToast(null), 3200);
+    } finally {
+      setSalvandoEdicao(false);
     }
   }
 
@@ -190,6 +238,68 @@ export default function RegistrarPovoamento() {
                 {encerrandoComSaldo ? "Encerrando…" : "Encerrar e registrar mortalidade"}
               </button>
             </div>
+          </div>
+        )}
+
+        {viveirosAtivos.length > 0 && (
+          <div className={styles.note} style={{ marginBottom: 18 }}>
+            <strong>Corrigir povoamento inicial</strong>
+            <p className={styles.hint} style={{ margin: "4px 0 10px" }}>
+              Pra quando um erro em outro lançamento (ex.: repicagem feita errada) deixou a quantidade ou o peso
+              inicial do lote errado, e não tem outro jeito de acertar o saldo do tanque a não ser corrigindo aqui.
+            </p>
+            <div className={styles.field} style={{ margin: "0 0 10px" }}>
+              <select
+                className={styles.inp}
+                value={viveiroEditarId ?? ""}
+                onChange={(e) => iniciarEdicaoPovoamento(e.target.value ? Number(e.target.value) : "")}
+              >
+                <option value="">Selecione um viveiro para corrigir</option>
+                {viveirosAtivos.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    Viveiro {v.codigo} — lote {v.lote_atual!.codigo} — hoje: {v.lote_atual!.quantidade_inicial.toLocaleString("pt-BR")} peixes,{" "}
+                    {v.lote_atual!.peso_medio_inicial_g}g, início {v.lote_atual!.data_inicio.split("-").reverse().join("/")}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {viveiroEditarId !== null && formEdicao && (
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
+                <div className={styles.field} style={{ margin: 0 }}>
+                  <label>Data de início</label>
+                  <input
+                    className={styles.inp} type="date" value={formEdicao.dataInicio}
+                    onChange={(e) => setFormEdicao({ ...formEdicao, dataInicio: e.target.value })}
+                  />
+                </div>
+                <div className={styles.field} style={{ margin: 0 }}>
+                  <label>Quantidade inicial (peixes)</label>
+                  <input
+                    className={`${styles.inp} ${styles.num}`} type="text" inputMode="numeric" style={{ width: 120 }}
+                    value={formEdicao.quantidadeInicial}
+                    onChange={(e) => setFormEdicao({ ...formEdicao, quantidadeInicial: e.target.value })}
+                  />
+                </div>
+                <div className={styles.field} style={{ margin: 0 }}>
+                  <label>Peso médio inicial (g)</label>
+                  <input
+                    className={`${styles.inp} ${styles.num}`} type="text" inputMode="decimal" style={{ width: 100 }}
+                    value={formEdicao.pesoMedioInicial}
+                    onChange={(e) => setFormEdicao({ ...formEdicao, pesoMedioInicial: e.target.value })}
+                  />
+                </div>
+                <button
+                  type="button"
+                  className={styles.btnPrimary}
+                  style={{ padding: "9px 14px", fontSize: "0.85rem" }}
+                  disabled={salvandoEdicao}
+                  onClick={salvarEdicaoPovoamento}
+                >
+                  {salvandoEdicao ? "Salvando…" : "Salvar correção"}
+                </button>
+              </div>
+            )}
           </div>
         )}
 

@@ -11,6 +11,9 @@ export interface LoteAtual {
   codigo: string;
   fase: string;
   saldo_un: number;
+  data_inicio: string;
+  quantidade_inicial: number;
+  peso_medio_inicial_g: number;
 }
 
 export interface Viveiro {
@@ -185,6 +188,21 @@ export async function lerFotoProducao(foto: File): Promise<LeituraProducao> {
   if (r.status === 401) sessaoInvalida();
   if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
   return (await r.json()) as LeituraProducao;
+}
+
+export async function editarPovoamento(
+  loteId: number, dataInicio: string, quantidadeInicial: number, pesoMedioInicialG: number, observacao?: string | null
+): Promise<void> {
+  const r = await fetch(`${apiBase()}/lotes/${loteId}/povoamento`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...authHeader() },
+    body: JSON.stringify({
+      data_inicio: dataInicio, quantidade_inicial: quantidadeInicial,
+      peso_medio_inicial_g: pesoMedioInicialG, observacao: observacao ?? null,
+    }),
+  });
+  if (r.status === 401) sessaoInvalida();
+  if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
 }
 
 export async function encerrarLote(loteId: number, data: string, observacao?: string | null): Promise<void> {

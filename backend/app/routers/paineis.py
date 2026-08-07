@@ -241,6 +241,8 @@ def painel_viveiros(db: Session = Depends(get_db)):
         if r["lote_id"] is not None:
             lote_atual = LoteAtual(
                 id=r["lote_id"], codigo=r["lote_codigo"], fase=r["lote_fase"], saldo_un=r["saldo_un"],
+                data_inicio=r["lote_data_inicio"], quantidade_inicial=r["quantidade_inicial"],
+                peso_medio_inicial_g=float(r["peso_medio_inicial_g"]),
             )
             idade_dias = (hoje - r["lote_data_inicio"]).days
             data_biometria = r["biometria_data"] or r["lote_data_inicio"]

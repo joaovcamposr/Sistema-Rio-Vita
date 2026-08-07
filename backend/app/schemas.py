@@ -54,6 +54,9 @@ class LoteAtual(BaseModel):
     codigo: str
     fase: str
     saldo_un: int
+    data_inicio: date
+    quantidade_inicial: int
+    peso_medio_inicial_g: float
 
 
 class ViveiroOut(BaseModel):
@@ -182,6 +185,13 @@ class PovoamentoIn(BaseModel):
     client_id: uuid.UUID
     viveiro_id: int
     data: date
+    quantidade_inicial: int = Field(gt=0)
+    peso_medio_inicial_g: float = Field(gt=0)
+    observacao: str | None = None
+
+
+class PovoamentoEditarIn(BaseModel):
+    data_inicio: date
     quantidade_inicial: int = Field(gt=0)
     peso_medio_inicial_g: float = Field(gt=0)
     observacao: str | None = None
