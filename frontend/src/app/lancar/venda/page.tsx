@@ -7,10 +7,15 @@ import { listarPrecosCliente } from "@/lib/cadastros";
 import { enfileirar } from "@/lib/offline-queue";
 import styles from "../form.module.css";
 
-const FORMAS = ["Pix", "Dinheiro", "Prazo"];
+const FORMAS = ["Pix", "Boleto", "Dinheiro", "Cheque"];
 
 function hojeISO(): string {
   return new Date().toISOString().slice(0, 10);
+}
+function somarDias(iso: string, dias: number): string {
+  const d = new Date(iso + "T00:00:00");
+  d.setDate(d.getDate() + dias);
+  return d.toISOString().slice(0, 10);
 }
 function nf(v: number, casas = 2): string {
   return v.toLocaleString("pt-BR", { minimumFractionDigits: casas, maximumFractionDigits: casas });
@@ -29,6 +34,8 @@ export default function RegistrarVenda() {
   const [quantidade, setQuantidade] = useState("");
   const [preco, setPreco] = useState("");
   const [forma, setForma] = useState(FORMAS[0]);
+  const [aVista, setAVista] = useState(true);
+  const [dataPrevista, setDataPrevista] = useState(hojeISO());
   const [enviando, setEnviando] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
@@ -63,13 +70,14 @@ export default function RegistrarVenda() {
     };
   }, [clienteId, produtoId]);
 
+  const cliente = useMemo(() => clientes.find((c) => c.id === clienteId) ?? null, [clientes, clienteId]);
   const produto = useMemo(() => produtos.find((p) => p.id === produtoId) ?? null, [produtos, produtoId]);
   const qtdNum = parseFloat(quantidade.replace(",", ".")) || 0;
   const precoNum = parseFloat(preco.replace(",", ".")) || 0;
   const kg = produto?.kg_digitado ? qtdNum : qtdNum * (produto?.fator_kg ?? 1);
   const total = kg * precoNum;
 
-  const podeSalvar = produto !== null && qtdNum > 0 && precoNum >= 0 && !enviando;
+  const podeSalvar = produto !== null && qtdNum > 0 && precoNum >= 0 && (aVista || !!dataPrevista) && !enviando;
 
   async function salvar() {
     if (!produto) return;
@@ -83,6 +91,8 @@ export default function RegistrarVenda() {
         quantidade_kg: kg,
         preco_kg: precoNum,
         forma_pgto: forma,
+        a_vista: aVista,
+        data_prevista_recebimento: aVista ? null : dataPrevista,
       });
       setToast("Venda registrada");
       setQuantidade("");
@@ -197,6 +207,43 @@ export default function RegistrarVenda() {
             ))}
           </div>
         </div>
+
+        <div className={styles.field}>
+          <label>À vista ou a prazo</label>
+          <div className={styles.chips}>
+            <button
+              type="button"
+              className={styles.chip}
+              aria-pressed={aVista}
+              onClick={() => setAVista(true)}
+            >
+              À vista
+            </button>
+            <button
+              type="button"
+              className={styles.chip}
+              aria-pressed={!aVista}
+              onClick={() => {
+                setAVista(false);
+                setDataPrevista(somarDias(data, cliente?.prazo_dias ?? 30));
+              }}
+            >
+              A prazo
+            </button>
+          </div>
+        </div>
+
+        {!aVista && (
+          <div className={styles.field}>
+            <label>Data prevista de recebimento</label>
+            <input
+              className={styles.inp}
+              type="date"
+              value={dataPrevista}
+              onChange={(e) => setDataPrevista(e.target.value)}
+            />
+          </div>
+        )}
       </div>
 
       <div className={styles.savebar}>

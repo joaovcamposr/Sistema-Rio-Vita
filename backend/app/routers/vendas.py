@@ -12,12 +12,9 @@ from ..schemas import UsuarioOut, VendaEditarIn, VendaIn, VendaListaOut, VendaOb
 router = APIRouter(prefix="/vendas", tags=["vendas"])
 _COLUNAS = (
     "id, client_id, data, cliente_id, vendedor, produto_id, quantidade_un, "
-    "quantidade_kg, preco_kg, valor_total, forma_pgto, situacao, data_pagamento, criado_em"
+    "quantidade_kg, preco_kg, valor_total, forma_pgto, situacao, data_pagamento, "
+    "data_prevista_recebimento, criado_em"
 )
-
-# Vendas à vista (Pix/Dinheiro) já entram como recebidas; só "Prazo" fica em
-# aberto até alguém confirmar o recebimento na tela de Recebimentos.
-_FORMAS_A_VISTA = {"Pix", "Dinheiro"}
 
 
 @router.get("/vendedores", response_model=list[str])
@@ -48,7 +45,7 @@ def listar_vendas(
         SELECT v.id, v.data, v.cliente_id, COALESCE(c.nome, 'Consumidor final') AS cliente_nome,
                c.prazo_dias AS cliente_prazo_dias, v.produto_id, pr.nome AS produto_nome,
                v.quantidade_un, v.quantidade_kg, v.preco_kg, v.valor_total, v.forma_pgto, v.vendedor,
-               v.situacao, v.data_pagamento, v.observacoes
+               v.situacao, v.data_pagamento, v.data_prevista_recebimento, v.observacoes
         FROM venda v
         JOIN produto pr ON pr.id = v.produto_id
         LEFT JOIN cliente c ON c.id = v.cliente_id
@@ -63,23 +60,22 @@ def listar_vendas(
 
 @router.post("", response_model=VendaOut, status_code=201)
 def criar_venda(body: VendaIn, db: Session = Depends(get_db), usuario: UsuarioOut = Depends(get_current_user)):
-    a_vista = body.forma_pgto in _FORMAS_A_VISTA
     try:
         row = db.execute(
             text(f"""
                 INSERT INTO venda (client_id, data, cliente_id, vendedor, produto_id,
                                     quantidade_un, quantidade_kg, preco_kg, forma_pgto,
-                                    situacao, data_pagamento, criado_por)
+                                    situacao, data_pagamento, data_prevista_recebimento, criado_por)
                 VALUES (:client_id, :data, :cliente_id, :vendedor, :produto_id,
                         :quantidade_un, :quantidade_kg, :preco_kg, :forma_pgto,
-                        :situacao, :data_pagamento, :criado_por)
+                        :situacao, :data_pagamento, :data_prevista_recebimento, :criado_por)
                 ON CONFLICT (client_id) DO NOTHING
                 RETURNING {_COLUNAS}
             """),
             {
                 **body.model_dump(),
-                "situacao": "Pago" if a_vista else "Em aberto",
-                "data_pagamento": body.data if a_vista else None,
+                "situacao": "Pago" if body.a_vista else "Em aberto",
+                "data_pagamento": body.data if body.a_vista else None,
                 "criado_por": usuario.nome,
             },
         ).mappings().first()
@@ -141,14 +137,16 @@ def editar_venda(
     usuario: UsuarioOut = Depends(get_current_user),
 ):
     """Corrige uma venda já lançada — data, cliente, produto, quantidade,
-    preço ou forma. Não mexe em situação/data de pagamento (isso é o
-    PATCH /pagamento, separado, pra não desfazer uma baixa já confirmada)."""
+    preço, forma ou prazo de recebimento. Não mexe em situação/data de
+    pagamento (isso é o PATCH /pagamento, separado, pra não desfazer uma
+    baixa já confirmada)."""
     try:
         row = db.execute(
             text(f"""
                 UPDATE venda SET data = :data, cliente_id = :cliente_id, vendedor = :vendedor,
                                   produto_id = :produto_id, quantidade_un = :quantidade_un,
-                                  quantidade_kg = :quantidade_kg, preco_kg = :preco_kg, forma_pgto = :forma_pgto
+                                  quantidade_kg = :quantidade_kg, preco_kg = :preco_kg, forma_pgto = :forma_pgto,
+                                  data_prevista_recebimento = :data_prevista_recebimento
                 WHERE id = :id
                 RETURNING {_COLUNAS}
             """),

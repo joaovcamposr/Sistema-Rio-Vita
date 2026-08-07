@@ -18,7 +18,7 @@ import {
 import styles from "../../cadastros/cadastros.module.css";
 
 const FORMAS_RECEBIMENTO = ["Pix", "Dinheiro", "Boleto", "Cheque"];
-const FORMAS_VENDA = ["Pix", "Dinheiro", "Prazo"];
+const FORMAS_VENDA = ["Pix", "Boleto", "Dinheiro", "Cheque"];
 
 interface FormVenda {
   data: string;
@@ -28,6 +28,8 @@ interface FormVenda {
   quantidade: string;
   preco_kg: string;
   forma_pgto: string;
+  aVista: boolean;
+  dataPrevista: string;
 }
 
 function hojeISO(): string {
@@ -58,11 +60,21 @@ function normaliza(s: string): string {
 function estaPago(situacao: string | null): boolean {
   return (situacao ?? "").trim().toLowerCase().startsWith("pag");
 }
+/** Data prevista de recebimento: usa a data própria da venda quando tem
+ * (lançamentos novos); pra vendas antigas, sem essa data, cai pro prazo
+ * padrão do cliente, como já era calculado antes. */
+function dataVencimento(v: VendaLista): string | null {
+  if (v.data_prevista_recebimento) return v.data_prevista_recebimento;
+  if (!v.cliente_prazo_dias) return null;
+  const d = new Date(v.data + "T00:00:00");
+  d.setDate(d.getDate() + v.cliente_prazo_dias);
+  return d.toISOString().slice(0, 10);
+}
 function estaVencida(v: VendaLista): boolean {
-  if (estaPago(v.situacao) || !v.cliente_prazo_dias) return false;
-  const vencimento = new Date(v.data);
-  vencimento.setDate(vencimento.getDate() + v.cliente_prazo_dias);
-  return vencimento < new Date(hojeISO());
+  if (estaPago(v.situacao)) return false;
+  const venc = dataVencimento(v);
+  if (!venc) return false;
+  return venc < hojeISO();
 }
 
 export default function Recebimentos() {
@@ -171,6 +183,8 @@ export default function Recebimentos() {
       quantidade: String(v.quantidade_un ?? v.quantidade_kg).replace(".", ","),
       preco_kg: String(v.preco_kg).replace(".", ","),
       forma_pgto: v.forma_pgto ?? FORMAS_VENDA[0],
+      aVista: !v.data_prevista_recebimento,
+      dataPrevista: v.data_prevista_recebimento ?? dataVencimento(v) ?? hojeISO(),
     });
   }
 
@@ -192,6 +206,8 @@ export default function Recebimentos() {
         quantidade_kg: kg,
         preco_kg: precoNum,
         forma_pgto: formVenda.forma_pgto,
+        a_vista: formVenda.aVista,
+        data_prevista_recebimento: formVenda.aVista ? null : formVenda.dataPrevista,
       });
       setEditandoVendaId(null);
       setFormVenda(null);
@@ -292,6 +308,7 @@ export default function Recebimentos() {
                 {vendasFiltradas.map((v) => {
                   const pago = estaPago(v.situacao);
                   const vencida = estaVencida(v);
+                  const venc = dataVencimento(v);
                   return (
                     <tr key={v.id} style={{ cursor: "default" }}>
                       <td>{dataBr(v.data)}</td>
@@ -307,7 +324,11 @@ export default function Recebimentos() {
                           background: pago ? "var(--ok-soft)" : vencida ? "var(--crit-soft)" : "var(--warn-soft)",
                           color: pago ? "var(--ok)" : vencida ? "var(--crit)" : "var(--warn)",
                         }}>
-                          {pago ? `Pago${v.data_pagamento ? ` em ${dataBr(v.data_pagamento)}` : ""}` : vencida ? "Vencida" : (v.situacao ?? "Em aberto")}
+                          {pago
+                            ? `Pago${v.data_pagamento ? ` em ${dataBr(v.data_pagamento)}` : ""}`
+                            : vencida
+                              ? `Vencida${venc ? ` (venceu em ${dataBr(venc)})` : ""}`
+                              : `A vencer${venc ? ` (${dataBr(venc)})` : ""}`}
                         </span>
                       </td>
                       <td style={{ minWidth: 160 }}>
@@ -472,6 +493,26 @@ export default function Recebimentos() {
                               {FORMAS_VENDA.map((f) => <option key={f} value={f}>{f}</option>)}
                             </select>
                           </div>
+                          <div className={styles.field} style={{ margin: 0 }}>
+                            <label>À vista / a prazo</label>
+                            <select
+                              className={styles.inp}
+                              value={formVenda.aVista ? "vista" : "prazo"}
+                              onChange={(e) => setFormVenda({ ...formVenda, aVista: e.target.value === "vista" })}
+                            >
+                              <option value="vista">À vista</option>
+                              <option value="prazo">A prazo</option>
+                            </select>
+                          </div>
+                          {!formVenda.aVista && (
+                            <div className={styles.field} style={{ margin: 0 }}>
+                              <label>Recebimento previsto</label>
+                              <input
+                                className={styles.inp} type="date" value={formVenda.dataPrevista}
+                                onChange={(e) => setFormVenda({ ...formVenda, dataPrevista: e.target.value })}
+                              />
+                            </div>
+                          )}
                           <button
                             className={styles.btnPrimary}
                             style={{ padding: "9px 16px" }}

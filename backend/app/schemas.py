@@ -419,6 +419,16 @@ class VendaIn(BaseModel):
     quantidade_kg: float = Field(gt=0)
     preco_kg: float = Field(ge=0)
     forma_pgto: str | None = None
+    a_vista: bool = True
+    data_prevista_recebimento: date | None = None
+
+    @model_validator(mode="after")
+    def prazo_tem_data(self) -> "VendaIn":
+        if not self.a_vista and self.data_prevista_recebimento is None:
+            raise ValueError("venda a prazo exige data_prevista_recebimento")
+        if self.a_vista:
+            self.data_prevista_recebimento = None
+        return self
 
 
 class VendaEditarIn(BaseModel):
@@ -430,6 +440,16 @@ class VendaEditarIn(BaseModel):
     quantidade_kg: float = Field(gt=0)
     preco_kg: float = Field(ge=0)
     forma_pgto: str | None = None
+    a_vista: bool = True
+    data_prevista_recebimento: date | None = None
+
+    @model_validator(mode="after")
+    def prazo_tem_data(self) -> "VendaEditarIn":
+        if not self.a_vista and self.data_prevista_recebimento is None:
+            raise ValueError("venda a prazo exige data_prevista_recebimento")
+        if self.a_vista:
+            self.data_prevista_recebimento = None
+        return self
 
 
 class VendaOut(BaseModel):
@@ -446,6 +466,7 @@ class VendaOut(BaseModel):
     forma_pgto: str | None
     situacao: str | None
     data_pagamento: date | None
+    data_prevista_recebimento: date | None
     criado_em: datetime
 
 
@@ -465,6 +486,7 @@ class VendaListaOut(BaseModel):
     vendedor: str | None
     situacao: str | None
     data_pagamento: date | None
+    data_prevista_recebimento: date | None
     observacoes: str | None
 
 
