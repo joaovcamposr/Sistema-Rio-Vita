@@ -347,8 +347,11 @@ def painel_producao_detalhe(
     db: Session = Depends(get_db),
 ):
     """Uma linha por lançamento de produção, com o rendimento e a despesca
-    de origem (mesma conta de vw_producao_detalhe — rendimento é do lote
-    despescado, não muda entre produtos do mesmo lote/data)."""
+    de origem — rendimento é por família de produto (Filé, Postas, Tilápia
+    limpa), cada uma contra o peso despescado do seu próprio destino;
+    linhas da mesma família e mesmo lote/data de despesca compartilham o
+    valor (é uma conta do lote, não da linha), mas famílias diferentes já
+    não têm mais o mesmo número."""
     ate = ate or date.today()
     de = de or (ate - timedelta(days=30))
     rows = db.execute(text("""
