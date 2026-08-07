@@ -45,6 +45,16 @@ function dataBr(iso: string): string {
 function moeda(v: number): string {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
+function nf(v: number, casas = 1): string {
+  return v.toLocaleString("pt-BR", { minimumFractionDigits: casas, maximumFractionDigits: casas });
+}
+function normaliza(s: string): string {
+  return s
+    .normalize("NFKD")
+    .replace(/[̀-ͯ]/g, "")
+    .trim()
+    .toLowerCase();
+}
 function estaPago(situacao: string | null): boolean {
   return (situacao ?? "").trim().toLowerCase().startsWith("pag");
 }
@@ -61,7 +71,7 @@ export default function Recebimentos() {
   const [ate, setAte] = useState(hojeISO());
   const [situacaoFiltro, setSituacaoFiltro] = useState("Em aberto");
   const [clientes, setClientes] = useState<Cliente[]>([]);
-  const [clienteFiltro, setClienteFiltro] = useState<number | null>(null);
+  const [buscaCliente, setBuscaCliente] = useState("");
   const [vendedores, setVendedores] = useState<string[]>([]);
   const [vendedorFiltro, setVendedorFiltro] = useState("");
   const [produtos, setProdutos] = useState<Produto[]>([]);
@@ -84,7 +94,7 @@ export default function Recebimentos() {
     listarVendas({
       de, ate,
       situacao: situacaoFiltro === "Todas" ? undefined : situacaoFiltro,
-      clienteId: clienteFiltro,
+      clienteId: null,
       vendedor: vendedorFiltro || null,
     })
       .then(setVendas)
@@ -94,7 +104,14 @@ export default function Recebimentos() {
   useEffect(() => {
     carregar();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [de, ate, situacaoFiltro, clienteFiltro, vendedorFiltro]);
+  }, [de, ate, situacaoFiltro, vendedorFiltro]);
+
+  const vendasFiltradas = useMemo(() => {
+    if (!vendas) return null;
+    const busca = normaliza(buscaCliente);
+    if (!busca) return vendas;
+    return vendas.filter((v) => normaliza(v.cliente_nome).includes(busca));
+  }, [vendas, buscaCliente]);
 
   useEffect(() => {
     listarClientes().then(setClientes).catch(() => undefined);
@@ -103,9 +120,9 @@ export default function Recebimentos() {
   }, []);
 
   const totalEmAberto = useMemo(() => {
-    if (!vendas) return 0;
-    return vendas.filter((v) => !estaPago(v.situacao)).reduce((s, v) => s + v.valor_total, 0);
-  }, [vendas]);
+    if (!vendasFiltradas) return 0;
+    return vendasFiltradas.filter((v) => !estaPago(v.situacao)).reduce((s, v) => s + v.valor_total, 0);
+  }, [vendasFiltradas]);
 
   function iniciarPagamento(v: VendaLista) {
     setEditando(v.id);
@@ -235,15 +252,14 @@ export default function Recebimentos() {
             </select>
           </div>
           <div className={styles.field} style={{ margin: 0 }}>
-            <label>Cliente</label>
-            <select
+            <label>Buscar cliente</label>
+            <input
               className={styles.inp}
-              value={clienteFiltro ?? ""}
-              onChange={(e) => setClienteFiltro(e.target.value ? Number(e.target.value) : null)}
-            >
-              <option value="">Todos os clientes</option>
-              {clientes.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
-            </select>
+              type="text"
+              placeholder="Qualquer parte do nome"
+              value={buscaCliente}
+              onChange={(e) => setBuscaCliente(e.target.value)}
+            />
           </div>
           <div className={styles.field} style={{ margin: 0 }}>
             <label>Vendedor</label>
@@ -254,26 +270,26 @@ export default function Recebimentos() {
           </div>
         </div>
 
-        {vendas && situacaoFiltro !== "Pago" && (
+        {vendasFiltradas && situacaoFiltro !== "Pago" && (
           <p className={styles.hint} style={{ fontSize: "0.95rem", fontWeight: 700, color: "var(--ink)" }}>
             Total em aberto no período: {moeda(totalEmAberto)}
           </p>
         )}
 
-        {!vendas && !erro && <p className={styles.hint}>Carregando…</p>}
-        {vendas && vendas.length === 0 && <p className={styles.hint}>Nenhuma venda encontrada com esses filtros.</p>}
+        {!vendasFiltradas && !erro && <p className={styles.hint}>Carregando…</p>}
+        {vendasFiltradas && vendasFiltradas.length === 0 && <p className={styles.hint}>Nenhuma venda encontrada com esses filtros.</p>}
 
-        {vendas && vendas.length > 0 && (
+        {vendasFiltradas && vendasFiltradas.length > 0 && (
           <div className={styles.tableWrap}>
             <table className={styles.tabela}>
               <thead>
                 <tr>
-                  <th>Data</th><th>Cliente</th><th>Produto</th><th>Valor</th>
+                  <th>Data</th><th>Cliente</th><th>Produto</th><th>Quantidade</th><th>Valor</th>
                   <th>Forma</th><th>Vendedor</th><th>Situação</th><th>Observações</th><th></th><th></th>
                 </tr>
               </thead>
               <tbody>
-                {vendas.map((v) => {
+                {vendasFiltradas.map((v) => {
                   const pago = estaPago(v.situacao);
                   const vencida = estaVencida(v);
                   return (
@@ -281,6 +297,7 @@ export default function Recebimentos() {
                       <td>{dataBr(v.data)}</td>
                       <td>{v.cliente_nome}</td>
                       <td>{v.produto_nome}</td>
+                      <td>{v.quantidade_un !== null ? `${nf(v.quantidade_un, 0)} un` : `${nf(v.quantidade_kg)} kg`}</td>
                       <td>{moeda(v.valor_total)}</td>
                       <td>{v.forma_pgto ?? "—"}</td>
                       <td>{v.vendedor ?? "—"}</td>
@@ -386,12 +403,12 @@ export default function Recebimentos() {
                   );
                 })}
                 {editandoVendaId !== null && formVenda && (() => {
-                  const vendaEditando = vendas.find((v) => v.id === editandoVendaId);
+                  const vendaEditando = vendas?.find((v) => v.id === editandoVendaId);
                   const produtoSelecionado = produtos.find((p) => p.id === formVenda.produto_id);
                   if (!vendaEditando) return null;
                   return (
                     <tr key={`editar-${editandoVendaId}`}>
-                      <td colSpan={10} style={{ background: "var(--surface-sunk)", padding: 14 }}>
+                      <td colSpan={11} style={{ background: "var(--surface-sunk)", padding: 14 }}>
                         <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end" }}>
                           <div className={styles.field} style={{ margin: 0 }}>
                             <label>Data</label>
