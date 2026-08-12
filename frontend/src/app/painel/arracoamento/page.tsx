@@ -2,19 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { editarDespesca, excluirDespesca, restaurarDespesca } from "@/lib/api";
-import { painelDespesca, type DespescaDetalhe } from "@/lib/paineis";
+import { editarArracoamento, excluirArracoamento, restaurarArracoamento } from "@/lib/api";
+import { painelArracoamento, type ArracoamentoDetalhe } from "@/lib/paineis";
+import { listarFornecedoresRacao, type FornecedorRacao } from "@/lib/cadastros";
 import styles from "../painel.module.css";
-
-const DESTINOS: { valor: DespescaDetalhe["destino"]; rotulo: string }[] = [
-  { valor: "file", rotulo: "Filé" },
-  { valor: "postas", rotulo: "Postas" },
-  { valor: "inteira_limpa", rotulo: "Inteira limpa" },
-  { valor: "inteira_suja", rotulo: "Inteira suja" },
-];
-const ROTULO_DESTINO: Record<DespescaDetalhe["destino"], string> = {
-  file: "Filé", postas: "Postas", inteira_limpa: "Inteira limpa", inteira_suja: "Inteira suja",
-};
 
 function hojeISO(): string {
   return new Date().toISOString().slice(0, 10);
@@ -38,17 +29,17 @@ function dataHoraBr(iso: string): string {
 
 interface EdicaoForm {
   data: string;
-  destino: DespescaDetalhe["destino"];
-  quantidade_un: string;
-  peso_medio_g: string;
+  sacos: string;
+  tipo_racao_id: number | null;
 }
 
-export default function PainelDespesca() {
+export default function PainelArracoamento() {
   const router = useRouter();
   const [de, setDe] = useState(diasAtras(30));
   const [ate, setAte] = useState(hojeISO());
-  const [dados, setDados] = useState<DespescaDetalhe[] | null>(null);
+  const [dados, setDados] = useState<ArracoamentoDetalhe[] | null>(null);
   const [erro, setErro] = useState<string | null>(null);
+  const [tiposRacao, setTiposRacao] = useState<{ id: number; codigo: string }[]>([]);
 
   const [editandoId, setEditandoId] = useState<number | null>(null);
   const [form, setForm] = useState<EdicaoForm | null>(null);
@@ -59,7 +50,7 @@ export default function PainelDespesca() {
 
   function carregar() {
     setDados(null);
-    painelDespesca(de, ate, mostrarExcluidos).then(setDados).catch(() => setErro("Sem conexão e sem dado salvo deste aparelho ainda."));
+    painelArracoamento(de, ate, mostrarExcluidos).then(setDados).catch(() => setErro("Sem conexão e sem dado salvo deste aparelho ainda."));
   }
 
   useEffect(() => {
@@ -67,63 +58,35 @@ export default function PainelDespesca() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mostrarExcluidos]);
 
+  useEffect(() => {
+    listarFornecedoresRacao()
+      .then((fs: FornecedorRacao[]) => setTiposRacao(fs.flatMap((f) => f.tipos.map((t) => ({ id: t.id, codigo: t.codigo })))))
+      .catch(() => {});
+  }, []);
+
   function recarregar() {
-    painelDespesca(de, ate, mostrarExcluidos).then(setDados).catch(() => {});
+    painelArracoamento(de, ate, mostrarExcluidos).then(setDados).catch(() => {});
   }
 
   function buscar() {
     carregar();
   }
 
-  async function excluir(d: DespescaDetalhe) {
-    if (!window.confirm(`Excluir a despesca de ${dataBr(d.data)} (${d.viveiro_codigo})? Pode ser restaurada depois.`)) return;
-    setProcessandoId(d.id);
-    try {
-      await excluirDespesca(d.id);
-      setToast("Despesca excluída");
-      recarregar();
-    } catch {
-      setToast("Não foi possível excluir");
-    } finally {
-      setProcessandoId(null);
-      setTimeout(() => setToast(null), 3000);
-    }
+  function iniciarEdicao(a: ArracoamentoDetalhe) {
+    setEditandoId(a.id);
+    setForm({ data: a.data, sacos: String(a.sacos).replace(".", ","), tipo_racao_id: a.tipo_racao_id });
   }
 
-  async function restaurar(d: DespescaDetalhe) {
-    setProcessandoId(d.id);
-    try {
-      await restaurarDespesca(d.id);
-      setToast("Despesca restaurada");
-      recarregar();
-    } catch {
-      setToast("Não foi possível restaurar");
-    } finally {
-      setProcessandoId(null);
-      setTimeout(() => setToast(null), 3000);
-    }
-  }
-
-  function iniciarEdicao(d: DespescaDetalhe) {
-    setEditandoId(d.id);
-    setForm({
-      data: d.data, destino: d.destino,
-      quantidade_un: String(d.quantidade_un), peso_medio_g: String(d.peso_medio_g).replace(".", ","),
-    });
-  }
-
-  async function salvarEdicao(d: DespescaDetalhe) {
+  async function salvarEdicao(a: ArracoamentoDetalhe) {
     if (!form) return;
     setSalvando(true);
     try {
-      await editarDespesca(d.id, {
-        lote_id: d.lote_id,
+      await editarArracoamento(a.id, {
         data: form.data,
-        destino: form.destino,
-        quantidade_un: Math.round(parseFloat(form.quantidade_un.replace(",", ".")) || 0),
-        peso_medio_g: parseFloat(form.peso_medio_g.replace(",", ".")) || 0,
+        sacos: parseFloat(form.sacos.replace(",", ".")) || 0,
+        tipo_racao_id: form.tipo_racao_id,
       });
-      setToast("Despesca corrigida");
+      setToast("Arraçoamento corrigido");
       setEditandoId(null);
       setForm(null);
       recarregar();
@@ -135,6 +98,35 @@ export default function PainelDespesca() {
     }
   }
 
+  async function excluir(a: ArracoamentoDetalhe) {
+    if (!window.confirm(`Excluir o arraçoamento de ${dataBr(a.data)} (${a.viveiro_codigo})? Pode ser restaurado depois.`)) return;
+    setProcessandoId(a.id);
+    try {
+      await excluirArracoamento(a.id);
+      setToast("Arraçoamento excluído");
+      recarregar();
+    } catch {
+      setToast("Não foi possível excluir");
+    } finally {
+      setProcessandoId(null);
+      setTimeout(() => setToast(null), 3000);
+    }
+  }
+
+  async function restaurar(a: ArracoamentoDetalhe) {
+    setProcessandoId(a.id);
+    try {
+      await restaurarArracoamento(a.id);
+      setToast("Arraçoamento restaurado");
+      recarregar();
+    } catch {
+      setToast("Não foi possível restaurar");
+    } finally {
+      setProcessandoId(null);
+      setTimeout(() => setToast(null), 3000);
+    }
+  }
+
   return (
     <div className={styles.page}>
       <div className={styles.appbar}>
@@ -142,7 +134,7 @@ export default function PainelDespesca() {
           ←
         </button>
         <div>
-          <h1>Despesca</h1>
+          <h1>Arraçoamento</h1>
           <div className={styles.sub}>Conferência dos lançamentos, com opção de corrigir</div>
         </div>
       </div>
@@ -176,14 +168,14 @@ export default function PainelDespesca() {
               fontWeight: 700, fontSize: "0.85rem", cursor: "pointer",
             }}
           >
-            {mostrarExcluidos ? "Vendo excluídas" : "Ver excluídas"}
+            {mostrarExcluidos ? "Vendo excluídos" : "Ver excluídos"}
           </button>
         </div>
 
         {erro && <div className={styles.erro}>{erro}</div>}
         {!dados && !erro && <div className={styles.carregando}>Carregando…</div>}
         {dados && dados.length === 0 && (
-          <p className={styles.hint}>{mostrarExcluidos ? "Nenhuma despesca excluída no período." : "Nenhuma despesca no período."}</p>
+          <p className={styles.hint}>{mostrarExcluidos ? "Nenhum arraçoamento excluído no período." : "Nenhum arraçoamento no período."}</p>
         )}
 
         {dados && dados.length > 0 && (
@@ -191,14 +183,13 @@ export default function PainelDespesca() {
             <table className={styles.tabela}>
               <thead>
                 <tr>
-                  <th>Data</th><th>Viveiro</th><th>Lote</th><th>Destino</th>
-                  <th>Quantidade</th><th>Peso médio (g)</th><th>Peso total (Kg)</th><th></th>
+                  <th>Data</th><th>Viveiro</th><th>Lote</th><th>Trato</th><th>Ração</th><th>Sacos</th><th></th>
                 </tr>
               </thead>
               <tbody>
-                {dados.map((d) => (
-                  <tr key={d.id}>
-                    {editandoId === d.id && form ? (
+                {dados.map((a) => (
+                  <tr key={a.id}>
+                    {editandoId === a.id && form ? (
                       <>
                         <td>
                           <input
@@ -208,34 +199,28 @@ export default function PainelDespesca() {
                             style={{ width: 130 }}
                           />
                         </td>
-                        <td>{d.viveiro_codigo}</td>
-                        <td>{d.lote_codigo}</td>
+                        <td>{a.viveiro_codigo}</td>
+                        <td>{a.lote_codigo}</td>
+                        <td>{a.trato ?? "Total do dia"}</td>
                         <td>
                           <select
-                            value={form.destino}
-                            onChange={(e) => setForm({ ...form, destino: e.target.value as DespescaDetalhe["destino"] })}
+                            value={form.tipo_racao_id ?? ""}
+                            onChange={(e) => setForm({ ...form, tipo_racao_id: e.target.value ? Number(e.target.value) : null })}
                           >
-                            {DESTINOS.map((o) => <option key={o.valor} value={o.valor}>{o.rotulo}</option>)}
+                            <option value="">Sem tipo</option>
+                            {tiposRacao.map((t) => <option key={t.id} value={t.id}>{t.codigo}</option>)}
                           </select>
                         </td>
                         <td>
                           <input
-                            type="number" inputMode="numeric" style={{ width: 80, textAlign: "right" }}
-                            value={form.quantidade_un}
-                            onChange={(e) => setForm({ ...form, quantidade_un: e.target.value })}
+                            type="number" inputMode="decimal" style={{ width: 80, textAlign: "right" }}
+                            value={form.sacos}
+                            onChange={(e) => setForm({ ...form, sacos: e.target.value })}
                           />
                         </td>
-                        <td>
-                          <input
-                            type="number" inputMode="decimal" style={{ width: 90, textAlign: "right" }}
-                            value={form.peso_medio_g}
-                            onChange={(e) => setForm({ ...form, peso_medio_g: e.target.value })}
-                          />
-                        </td>
-                        <td>—</td>
                         <td style={{ whiteSpace: "nowrap" }}>
                           <button
-                            type="button" disabled={salvando} onClick={() => salvarEdicao(d)}
+                            type="button" disabled={salvando} onClick={() => salvarEdicao(a)}
                             style={{
                               padding: "6px 12px", borderRadius: 8, border: "none", background: "var(--brand)",
                               color: "var(--brand-ink)", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer", marginRight: 6,
@@ -254,22 +239,21 @@ export default function PainelDespesca() {
                       </>
                     ) : (
                       <>
-                        <td>{dataBr(d.data)}</td>
-                        <td>{d.viveiro_codigo}</td>
-                        <td>{d.lote_codigo}</td>
-                        <td>{ROTULO_DESTINO[d.destino]}</td>
-                        <td>{nf(d.quantidade_un, 0)}</td>
-                        <td>{nf(d.peso_medio_g)}</td>
-                        <td>{nf(d.peso_total_kg)}</td>
+                        <td>{dataBr(a.data)}</td>
+                        <td>{a.viveiro_codigo}</td>
+                        <td>{a.lote_codigo}</td>
+                        <td>{a.trato ?? "Total do dia"}</td>
+                        <td>{a.tipo_racao_codigo ?? "—"}</td>
+                        <td>{nf(a.sacos)}</td>
                         <td style={{ whiteSpace: "nowrap" }}>
                           {mostrarExcluidos ? (
                             <>
                               <span className={styles.hint} style={{ display: "block", fontSize: "0.72rem" }}>
-                                {d.excluido_em ? `Excluída ${dataHoraBr(d.excluido_em)}` : ""}
-                                {d.excluido_por ? ` · ${d.excluido_por}` : ""}
+                                {a.excluido_em ? `Excluído ${dataHoraBr(a.excluido_em)}` : ""}
+                                {a.excluido_por ? ` · ${a.excluido_por}` : ""}
                               </span>
                               <button
-                                type="button" disabled={processandoId === d.id} onClick={() => restaurar(d)}
+                                type="button" disabled={processandoId === a.id} onClick={() => restaurar(a)}
                                 style={{ background: "none", border: "none", color: "var(--brand-deep)", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer" }}
                               >
                                 Restaurar
@@ -279,14 +263,14 @@ export default function PainelDespesca() {
                             <>
                               <button
                                 type="button"
-                                onClick={() => iniciarEdicao(d)}
+                                onClick={() => iniciarEdicao(a)}
                                 style={{ background: "none", border: "none", color: "var(--brand-deep)", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer" }}
                               >
                                 Editar
                               </button>
                               {" · "}
                               <button
-                                type="button" disabled={processandoId === d.id} onClick={() => excluir(d)}
+                                type="button" disabled={processandoId === a.id} onClick={() => excluir(a)}
                                 style={{ background: "none", border: "none", color: "var(--crit)", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer" }}
                               >
                                 Excluir

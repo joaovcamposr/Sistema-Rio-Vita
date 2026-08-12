@@ -34,6 +34,7 @@ def listar_vendas(
     situacao: str | None = Query(default=None),
     cliente_id: int | None = Query(default=None),
     vendedor: str | None = Query(default=None),
+    excluidos: bool = Query(default=False, description="true = só as excluídas (tela de restaurar)"),
     db: Session = Depends(get_db),
     _usuario: UsuarioOut = Depends(get_current_user),
 ):
@@ -41,15 +42,17 @@ def listar_vendas(
     é o POST), é a tela de controle de quais já foram pagas."""
     ate = ate or date.today()
     de = de or (ate - timedelta(days=90))
-    rows = db.execute(text("""
+    rows = db.execute(text(f"""
         SELECT v.id, v.data, v.cliente_id, COALESCE(c.nome, 'Consumidor final') AS cliente_nome,
                c.prazo_dias AS cliente_prazo_dias, v.produto_id, pr.nome AS produto_nome,
                v.quantidade_un, v.quantidade_kg, v.preco_kg, v.valor_total, v.forma_pgto, v.vendedor,
-               v.situacao, v.data_pagamento, v.data_prevista_recebimento, v.observacoes
+               v.situacao, v.data_pagamento, v.data_prevista_recebimento, v.observacoes,
+               v.excluido_em, v.excluido_por
         FROM venda v
         JOIN produto pr ON pr.id = v.produto_id
         LEFT JOIN cliente c ON c.id = v.cliente_id
         WHERE v.data BETWEEN :de AND :ate
+          AND {"v.excluido_em IS NOT NULL" if excluidos else "v.excluido_em IS NULL"}
           AND (CAST(:situacao AS text) IS NULL OR v.situacao = :situacao)
           AND (CAST(:cliente_id AS bigint) IS NULL OR v.cliente_id = :cliente_id)
           AND (CAST(:vendedor AS text) IS NULL OR v.vendedor = :vendedor)
@@ -147,7 +150,7 @@ def editar_venda(
                                   produto_id = :produto_id, quantidade_un = :quantidade_un,
                                   quantidade_kg = :quantidade_kg, preco_kg = :preco_kg, forma_pgto = :forma_pgto,
                                   data_prevista_recebimento = :data_prevista_recebimento
-                WHERE id = :id
+                WHERE id = :id AND excluido_em IS NULL
                 RETURNING {_COLUNAS}
             """),
             {"id": venda_id, **body.model_dump()},
@@ -157,15 +160,44 @@ def editar_venda(
         db.rollback()
         raise HTTPException(422, f"cliente_id/produto_id inválido ou dado fora das regras: {exc.orig}") from exc
     if row is None:
-        raise HTTPException(404, "venda não encontrada")
+        raise HTTPException(404, "venda não encontrada (ou excluída — restaure antes de editar)")
     return VendaOut(**row)
 
 
-@router.delete("/{venda_id}", status_code=204)
+@router.delete("/{venda_id}", response_model=VendaOut)
 def excluir_venda(
+    venda_id: int, db: Session = Depends(get_db), usuario: UsuarioOut = Depends(get_current_user),
+):
+    """Exclusão reversível — marca excluido_em/excluido_por em vez de
+    apagar a linha, pra poder restaurar (POST .../restaurar) se for
+    engano."""
+    row = db.execute(
+        text(f"""
+            UPDATE venda SET excluido_em = now(), excluido_por = :quem
+            WHERE id = :id AND excluido_em IS NULL
+            RETURNING {_COLUNAS}
+        """),
+        {"id": venda_id, "quem": usuario.nome},
+    ).mappings().first()
+    db.commit()
+    if row is None:
+        raise HTTPException(404, "venda não encontrada (ou já excluída)")
+    return VendaOut(**row)
+
+
+@router.post("/{venda_id}/restaurar", response_model=VendaOut)
+def restaurar_venda(
     venda_id: int, db: Session = Depends(get_db), _usuario: UsuarioOut = Depends(get_current_user),
 ):
-    resultado = db.execute(text("DELETE FROM venda WHERE id = :id"), {"id": venda_id})
+    row = db.execute(
+        text(f"""
+            UPDATE venda SET excluido_em = NULL, excluido_por = NULL
+            WHERE id = :id AND excluido_em IS NOT NULL
+            RETURNING {_COLUNAS}
+        """),
+        {"id": venda_id},
+    ).mappings().first()
     db.commit()
-    if resultado.rowcount == 0:
-        raise HTTPException(404, "venda não encontrada")
+    if row is None:
+        raise HTTPException(404, "venda não encontrada (ou não está excluída)")
+    return VendaOut(**row)

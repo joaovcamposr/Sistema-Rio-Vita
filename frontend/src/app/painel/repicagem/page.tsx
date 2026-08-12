@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { editarRepicagem } from "@/lib/api";
+import { editarRepicagem, excluirRepicagem, restaurarRepicagem } from "@/lib/api";
 import { painelRepicagem, type RepicagemDetalhe } from "@/lib/paineis";
 import styles from "../painel.module.css";
 
@@ -24,6 +24,10 @@ function dataBr(iso: string): string {
 function chave(r: RepicagemDetalhe): string {
   return `${r.lote_id}:${r.lote_origem_id}`;
 }
+function dataHoraBr(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
 
 interface EdicaoForm {
   data: string;
@@ -42,23 +46,54 @@ export default function PainelRepicagem() {
   const [form, setForm] = useState<EdicaoForm | null>(null);
   const [salvando, setSalvando] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [mostrarExcluidos, setMostrarExcluidos] = useState(false);
+  const [processandoChave, setProcessandoChave] = useState<string | null>(null);
 
   function carregar() {
     setDados(null);
-    painelRepicagem(de, ate).then(setDados).catch(() => setErro("Sem conexão e sem dado salvo deste aparelho ainda."));
+    painelRepicagem(de, ate, mostrarExcluidos).then(setDados).catch(() => setErro("Sem conexão e sem dado salvo deste aparelho ainda."));
   }
 
   useEffect(() => {
     carregar();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [mostrarExcluidos]);
 
   function recarregar() {
-    painelRepicagem(de, ate).then(setDados).catch(() => {});
+    painelRepicagem(de, ate, mostrarExcluidos).then(setDados).catch(() => {});
   }
 
   function buscar() {
     carregar();
+  }
+
+  async function excluir(r: RepicagemDetalhe) {
+    if (!window.confirm(`Excluir a repicagem de ${r.viveiro_origem_codigo} para ${r.viveiro_destino_codigo}? Pode ser restaurada depois.`)) return;
+    setProcessandoChave(chave(r));
+    try {
+      await excluirRepicagem(r.lote_id, r.lote_origem_id);
+      setToast("Repicagem excluída");
+      recarregar();
+    } catch {
+      setToast("Não foi possível excluir");
+    } finally {
+      setProcessandoChave(null);
+      setTimeout(() => setToast(null), 3000);
+    }
+  }
+
+  async function restaurar(r: RepicagemDetalhe) {
+    setProcessandoChave(chave(r));
+    try {
+      await restaurarRepicagem(r.lote_id, r.lote_origem_id);
+      setToast("Repicagem restaurada");
+      recarregar();
+    } catch {
+      setToast("Não foi possível restaurar");
+    } finally {
+      setProcessandoChave(null);
+      setTimeout(() => setToast(null), 3000);
+    }
   }
 
   function iniciarEdicao(r: RepicagemDetalhe) {
@@ -123,11 +158,25 @@ export default function PainelRepicagem() {
           >
             Buscar
           </button>
+          <button
+            type="button"
+            onClick={() => setMostrarExcluidos((v) => !v)}
+            style={{
+              padding: "9px 16px", borderRadius: 9, border: "1px solid var(--rule-strong)",
+              background: mostrarExcluidos ? "var(--brand)" : "var(--surface)",
+              color: mostrarExcluidos ? "var(--brand-ink)" : "var(--ink)",
+              fontWeight: 700, fontSize: "0.85rem", cursor: "pointer",
+            }}
+          >
+            {mostrarExcluidos ? "Vendo excluídas" : "Ver excluídas"}
+          </button>
         </div>
 
         {erro && <div className={styles.erro}>{erro}</div>}
         {!dados && !erro && <div className={styles.carregando}>Carregando…</div>}
-        {dados && dados.length === 0 && <p className={styles.hint}>Nenhuma repicagem no período.</p>}
+        {dados && dados.length === 0 && (
+          <p className={styles.hint}>{mostrarExcluidos ? "Nenhuma repicagem excluída no período." : "Nenhuma repicagem no período."}</p>
+        )}
 
         {dados && dados.length > 0 && (
           <div className={styles.tableWrap}>
@@ -195,14 +244,38 @@ export default function PainelRepicagem() {
                           <td>{r.viveiro_destino_codigo} ({r.lote_destino_codigo})</td>
                           <td>{nf(r.quantidade, 0)}</td>
                           <td>{nf(r.peso_medio_g)}</td>
-                          <td>
-                            <button
-                              type="button"
-                              onClick={() => iniciarEdicao(r)}
-                              style={{ background: "none", border: "none", color: "var(--brand-deep)", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer" }}
-                            >
-                              Editar
-                            </button>
+                          <td style={{ whiteSpace: "nowrap" }}>
+                            {mostrarExcluidos ? (
+                              <>
+                                <span className={styles.hint} style={{ display: "block", fontSize: "0.72rem" }}>
+                                  {r.excluido_em ? `Excluída ${dataHoraBr(r.excluido_em)}` : ""}
+                                  {r.excluido_por ? ` · ${r.excluido_por}` : ""}
+                                </span>
+                                <button
+                                  type="button" disabled={processandoChave === k} onClick={() => restaurar(r)}
+                                  style={{ background: "none", border: "none", color: "var(--brand-deep)", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer" }}
+                                >
+                                  Restaurar
+                                </button>
+                              </>
+                            ) : (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => iniciarEdicao(r)}
+                                  style={{ background: "none", border: "none", color: "var(--brand-deep)", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer" }}
+                                >
+                                  Editar
+                                </button>
+                                {" · "}
+                                <button
+                                  type="button" disabled={processandoChave === k} onClick={() => excluir(r)}
+                                  style={{ background: "none", border: "none", color: "var(--crit)", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer" }}
+                                >
+                                  Excluir
+                                </button>
+                              </>
+                            )}
                           </td>
                         </>
                       )}

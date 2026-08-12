@@ -408,11 +408,18 @@ export interface DespescaDetalhe {
   lote_codigo: string;
   viveiro_codigo: string;
   criado_em: string;
+  excluido_em: string | null;
+  excluido_por: string | null;
 }
 
-export const painelDespesca = (de?: string, ate?: string) => {
-  const qs = de && ate ? `?de=${de}&ate=${ate}` : "";
-  return cachedGet<DespescaDetalhe[]>(`cache:painel:despesca:${de ?? ""}:${ate ?? ""}`, `/paineis/despesca${qs}`);
+export const painelDespesca = (de?: string, ate?: string, excluidos?: boolean) => {
+  const qs = new URLSearchParams();
+  if (de && ate) { qs.set("de", de); qs.set("ate", ate); }
+  if (excluidos) qs.set("excluidos", "true");
+  return cachedGet<DespescaDetalhe[]>(
+    `cache:painel:despesca:${de ?? ""}:${ate ?? ""}:${excluidos ? "excluidos" : ""}`,
+    `/paineis/despesca?${qs}`
+  );
 };
 
 export interface RepicagemDetalhe {
@@ -426,11 +433,43 @@ export interface RepicagemDetalhe {
   lote_origem_codigo: string;
   viveiro_origem_codigo: string;
   lote_origem_fechado: boolean;
+  excluido_em: string | null;
+  excluido_por: string | null;
 }
 
-export const painelRepicagem = (de?: string, ate?: string) => {
-  const qs = de && ate ? `?de=${de}&ate=${ate}` : "";
-  return cachedGet<RepicagemDetalhe[]>(`cache:painel:repicagem:${de ?? ""}:${ate ?? ""}`, `/paineis/repicagem${qs}`);
+export const painelRepicagem = (de?: string, ate?: string, excluidos?: boolean) => {
+  const qs = new URLSearchParams();
+  if (de && ate) { qs.set("de", de); qs.set("ate", ate); }
+  if (excluidos) qs.set("excluidos", "true");
+  return cachedGet<RepicagemDetalhe[]>(
+    `cache:painel:repicagem:${de ?? ""}:${ate ?? ""}:${excluidos ? "excluidos" : ""}`,
+    `/paineis/repicagem?${qs}`
+  );
+};
+
+export interface ArracoamentoDetalhe {
+  id: number;
+  data: string;
+  trato: string | null;
+  sacos: number;
+  tipo_racao_id: number | null;
+  tipo_racao_codigo: string | null;
+  lote_id: number;
+  lote_codigo: string;
+  viveiro_codigo: string;
+  criado_em: string;
+  excluido_em: string | null;
+  excluido_por: string | null;
+}
+
+export const painelArracoamento = (de?: string, ate?: string, excluidos?: boolean) => {
+  const qs = new URLSearchParams();
+  if (de && ate) { qs.set("de", de); qs.set("ate", ate); }
+  if (excluidos) qs.set("excluidos", "true");
+  return cachedGet<ArracoamentoDetalhe[]>(
+    `cache:painel:arracoamento:${de ?? ""}:${ate ?? ""}:${excluidos ? "excluidos" : ""}`,
+    `/paineis/arracoamento?${qs}`
+  );
 };
 
 export const painelComercial = (de?: string, ate?: string, vendedor?: string | null) => {

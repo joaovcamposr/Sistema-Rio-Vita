@@ -15,6 +15,7 @@ from ..schemas import (
     AbateOut,
     AguaPontoOut,
     AguaViveiroOut,
+    ArracoamentoDetalheOut,
     ArracoamentoPrevistoDiaOut,
     CaixaDiaOut,
     CaixaResumoOut,
@@ -227,7 +228,7 @@ def painel_viveiros(db: Session = Depends(get_db)):
           FROM analise_agua WHERE viveiro_id = v.id ORDER BY data DESC LIMIT 1
         ) a ON true
         LEFT JOIN LATERAL (
-          SELECT SUM(sacos) * 25 AS sacos_total FROM arracoamento WHERE lote_id = l.id
+          SELECT SUM(sacos) * 25 AS sacos_total FROM arracoamento WHERE lote_id = l.id AND excluido_em IS NULL
         ) r ON true
         WHERE v.ativo
     """)).mappings().all()
@@ -333,7 +334,7 @@ def _rendimento_por_destino(db: Session, de: date, ate: date, like_padrao: str, 
           JOIN produto pr ON pr.id = p.produto_id
           JOIN LATERAL (
             SELECT SUM(peso_total_kg) AS kg_desp FROM despesca
-            WHERE lote_id = p.lote_id AND data = p.data_despesca AND destino = :destino
+            WHERE lote_id = p.lote_id AND data = p.data_despesca AND destino = :destino AND excluido_em IS NULL
           ) d ON true
           WHERE p.data_despesca BETWEEN :de AND :ate
           GROUP BY p.lote_id, p.data_despesca
@@ -373,19 +374,22 @@ def painel_producao_detalhe(
 def painel_despesca(
     de: date | None = Query(default=None),
     ate: date | None = Query(default=None),
+    excluidos: bool = Query(default=False, description="true = só as excluídas (tela de restaurar)"),
     db: Session = Depends(get_db),
 ):
     """Uma linha por lançamento de despesca — tela de conferência, com
     opção de corrigir cada lançamento (PATCH /despescas/{id})."""
     ate = ate or date.today()
     de = de or (ate - timedelta(days=30))
-    rows = db.execute(text("""
+    rows = db.execute(text(f"""
         SELECT d.id, d.data, d.destino, d.quantidade_un, d.peso_medio_g, d.peso_total_kg,
-               d.lote_id, l.codigo AS lote_codigo, v.codigo AS viveiro_codigo, d.criado_em
+               d.lote_id, l.codigo AS lote_codigo, v.codigo AS viveiro_codigo, d.criado_em,
+               d.excluido_em, d.excluido_por
         FROM despesca d
         JOIN lote l ON l.id = d.lote_id
         JOIN viveiro v ON v.id = l.viveiro_id
         WHERE d.data BETWEEN :de AND :ate
+          AND {"d.excluido_em IS NOT NULL" if excluidos else "d.excluido_em IS NULL"}
         ORDER BY d.data DESC, d.id DESC
     """), {"de": de, "ate": ate}).mappings().all()
     return [DespescaDetalheOut(**r) for r in rows]
@@ -395,26 +399,55 @@ def painel_despesca(
 def painel_repicagem(
     de: date | None = Query(default=None),
     ate: date | None = Query(default=None),
+    excluidos: bool = Query(default=False, description="true = só as excluídas (tela de restaurar)"),
     db: Session = Depends(get_db),
 ):
     """Uma linha por repicagem já lançada — tela de conferência, com
     opção de corrigir cada lançamento (PATCH /repicagens/{lote_id}/{lote_origem_id})."""
     ate = ate or date.today()
     de = de or (ate - timedelta(days=30))
-    rows = db.execute(text("""
+    rows = db.execute(text(f"""
         SELECT o.lote_id, o.lote_origem_id, o.data, o.quantidade, o.peso_medio_g,
                ld.codigo AS lote_destino_codigo, vd.codigo AS viveiro_destino_codigo,
                lo.codigo AS lote_origem_codigo, vo.codigo AS viveiro_origem_codigo,
-               (lo.data_fim IS NOT NULL) AS lote_origem_fechado
+               (lo.data_fim IS NOT NULL) AS lote_origem_fechado,
+               o.excluido_em, o.excluido_por
         FROM lote_origem o
         JOIN lote ld ON ld.id = o.lote_id
         JOIN viveiro vd ON vd.id = ld.viveiro_id
         JOIN lote lo ON lo.id = o.lote_origem_id
         JOIN viveiro vo ON vo.id = lo.viveiro_id
         WHERE o.data BETWEEN :de AND :ate
+          AND {"o.excluido_em IS NOT NULL" if excluidos else "o.excluido_em IS NULL"}
         ORDER BY o.data DESC, o.lote_id DESC
     """), {"de": de, "ate": ate}).mappings().all()
     return [RepicagemDetalheOut(**r) for r in rows]
+
+
+@router.get("/arracoamento", response_model=list[ArracoamentoDetalheOut])
+def painel_arracoamento(
+    de: date | None = Query(default=None),
+    ate: date | None = Query(default=None),
+    excluidos: bool = Query(default=False, description="true = só os excluídos (tela de restaurar)"),
+    db: Session = Depends(get_db),
+):
+    """Uma linha por lançamento de arraçoamento — tela de conferência, com
+    opção de corrigir cada lançamento (PATCH /arracoamento/{id})."""
+    ate = ate or date.today()
+    de = de or (ate - timedelta(days=30))
+    rows = db.execute(text(f"""
+        SELECT a.id, a.data, a.trato, a.sacos, a.tipo_racao_id, t.codigo AS tipo_racao_codigo,
+               a.lote_id, l.codigo AS lote_codigo, v.codigo AS viveiro_codigo, a.criado_em,
+               a.excluido_em, a.excluido_por
+        FROM arracoamento a
+        JOIN lote l ON l.id = a.lote_id
+        JOIN viveiro v ON v.id = l.viveiro_id
+        LEFT JOIN tipo_racao t ON t.id = a.tipo_racao_id
+        WHERE a.data BETWEEN :de AND :ate
+          AND {"a.excluido_em IS NOT NULL" if excluidos else "a.excluido_em IS NULL"}
+        ORDER BY a.data DESC, a.id DESC
+    """), {"de": de, "ate": ate}).mappings().all()
+    return [ArracoamentoDetalheOut(**r) for r in rows]
 
 
 @router.get("/producao", response_model=ProducaoResumoOut)
@@ -436,7 +469,7 @@ def painel_producao(
 
     peso_sujo = db.execute(text("""
         SELECT SUM(quantidade_un * peso_medio_g) / NULLIF(SUM(quantidade_un), 0) AS peso_medio_suja_g
-        FROM despesca WHERE data BETWEEN :de AND :ate
+        FROM despesca WHERE data BETWEEN :de AND :ate AND excluido_em IS NULL
     """), {"de": de, "ate": ate}).mappings().first()
 
     familias = db.execute(text("""
@@ -494,7 +527,7 @@ def painel_estoque(
         ) prod ON prod.produto_id = pr.id
         LEFT JOIN (
           SELECT produto_id, SUM(quantidade_un) AS un, SUM(quantidade_kg) AS kg
-          FROM venda WHERE data BETWEEN :de AND :ate GROUP BY produto_id
+          FROM venda WHERE data BETWEEN :de AND :ate AND excluido_em IS NULL GROUP BY produto_id
         ) vend ON vend.produto_id = pr.id
         LEFT JOIN (
           SELECT ei.produto_id, SUM(ei.quantidade_embalagens) AS embalagens, SUM(ei.quantidade_kg) AS kg
@@ -585,7 +618,7 @@ def painel_comercial(
     ate = ate or date.today()
     de = de or (ate - timedelta(days=30))
     params = {"de": de, "ate": ate, "vendedor": vendedor}
-    filtro_vendedor = "AND (CAST(:vendedor AS text) IS NULL OR v.vendedor = :vendedor)"
+    filtro_vendedor = "AND (CAST(:vendedor AS text) IS NULL OR v.vendedor = :vendedor) AND v.excluido_em IS NULL"
 
     por_produto = db.execute(text(f"""
         SELECT v.produto_id, pr.nome AS produto_nome,
@@ -689,6 +722,7 @@ def painel_comercial_serie(
         WHERE v.data BETWEEN :de AND :ate
           AND (CAST(:cliente_id AS bigint) IS NULL OR v.cliente_id = :cliente_id)
           AND (CAST(:vendedor AS text) IS NULL OR v.vendedor = :vendedor)
+          AND v.excluido_em IS NULL
         GROUP BY bucket, v.produto_id, pr.nome
         ORDER BY bucket, pr.nome
     """), {"de": de, "ate": ate, "cliente_id": cliente_id, "vendedor": vendedor}).mappings().all()
@@ -736,7 +770,7 @@ def painel_producao_serie(
     peso_sujo_rows = db.execute(text(f"""
         SELECT {bucket_despesca} AS bucket,
                SUM(quantidade_un * peso_medio_g) / NULLIF(SUM(quantidade_un), 0) AS peso_medio_suja_g
-        FROM despesca WHERE data BETWEEN :de AND :ate
+        FROM despesca WHERE data BETWEEN :de AND :ate AND excluido_em IS NULL
         GROUP BY bucket
     """), {"de": de, "ate": ate}).mappings().all()
 
@@ -751,7 +785,7 @@ def painel_producao_serie(
           JOIN produto pr ON pr.id = p.produto_id
           JOIN LATERAL (
             SELECT SUM(peso_total_kg) AS kg_desp FROM despesca
-            WHERE lote_id = p.lote_id AND data = p.data_despesca AND destino = 'file'
+            WHERE lote_id = p.lote_id AND data = p.data_despesca AND destino = 'file' AND excluido_em IS NULL
           ) d ON true
           WHERE p.data_despesca BETWEEN :de AND :ate
           GROUP BY bucket, p.lote_id, p.data_despesca
@@ -872,7 +906,7 @@ def painel_dashboard(
     vendas_tot = db.execute(text("""
         SELECT COALESCE(SUM(v.quantidade_kg), 0) AS kg, COALESCE(SUM(v.valor_total), 0) AS valor
         FROM venda v JOIN produto pr ON pr.id = v.produto_id
-        WHERE v.data BETWEEN :de AND :ate AND pr.nome LIKE 'Filé%'
+        WHERE v.data BETWEEN :de AND :ate AND pr.nome LIKE 'Filé%' AND v.excluido_em IS NULL
     """), {"de": de, "ate": ate}).mappings().first()
 
     serie_rows = db.execute(text("""
@@ -885,7 +919,7 @@ def painel_dashboard(
     vendas_diarias_rows = db.execute(text("""
         SELECT v.data, SUM(v.quantidade_kg) AS kg, SUM(v.valor_total) AS valor
         FROM venda v JOIN produto pr ON pr.id = v.produto_id
-        WHERE v.data BETWEEN :de AND :ate AND pr.nome LIKE 'Filé%'
+        WHERE v.data BETWEEN :de AND :ate AND pr.nome LIKE 'Filé%' AND v.excluido_em IS NULL
         GROUP BY v.data ORDER BY v.data
     """), {"de": de, "ate": ate}).mappings().all()
 
@@ -899,7 +933,7 @@ def painel_dashboard(
           JOIN produto pr ON pr.id = p.produto_id
           JOIN LATERAL (
             SELECT SUM(peso_total_kg) AS kg_desp FROM despesca
-            WHERE lote_id = p.lote_id AND data = p.data_despesca AND destino = 'file'
+            WHERE lote_id = p.lote_id AND data = p.data_despesca AND destino = 'file' AND excluido_em IS NULL
           ) d ON true
           WHERE p.data_despesca BETWEEN :de AND :ate
           GROUP BY p.lote_id, p.data_despesca
@@ -927,7 +961,7 @@ def painel_dashboard(
           JOIN produto pr ON pr.id = p.produto_id
           JOIN LATERAL (
             SELECT SUM(peso_total_kg) AS kg_desp FROM despesca
-            WHERE lote_id = p.lote_id AND data = p.data_despesca AND destino = 'file'
+            WHERE lote_id = p.lote_id AND data = p.data_despesca AND destino = 'file' AND excluido_em IS NULL
           ) d ON true
           WHERE p.data_despesca BETWEEN :de AND :ate
           GROUP BY p.lote_id, p.data_despesca
@@ -1144,7 +1178,7 @@ def painel_estoque_racao(db: Session = Depends(get_db)):
         r["tipo_racao_id"]: float(r["consumido"])
         for r in db.execute(text(
             "SELECT tipo_racao_id, SUM(sacos) AS consumido FROM arracoamento "
-            "WHERE tipo_racao_id IS NOT NULL GROUP BY tipo_racao_id"
+            "WHERE tipo_racao_id IS NOT NULL AND excluido_em IS NULL GROUP BY tipo_racao_id"
         )).mappings().all()
     }
 
@@ -1155,8 +1189,8 @@ def painel_estoque_racao(db: Session = Depends(get_db)):
         r["lote_id"]: r["tipo_racao_id"]
         for r in db.execute(text("""
             SELECT DISTINCT ON (lote_id) lote_id, tipo_racao_id
-            FROM arracoamento WHERE tipo_racao_id IS NOT NULL
-            ORDER BY lote_id, data DESC, trato DESC
+            FROM arracoamento WHERE tipo_racao_id IS NOT NULL AND excluido_em IS NULL
+            ORDER BY lote_id, data DESC, criado_em DESC
         """)).mappings().all()
     }
     consumo_dia_por_tipo: dict[int, float] = {}
@@ -1189,7 +1223,7 @@ def painel_estoque_racao(db: Session = Depends(get_db)):
 
     trinta_dias_atras = hoje - timedelta(days=30)
     sacos_sem_tipo_30d = float(db.execute(text(
-        "SELECT COALESCE(SUM(sacos), 0) FROM arracoamento WHERE tipo_racao_id IS NULL AND data >= :de"
+        "SELECT COALESCE(SUM(sacos), 0) FROM arracoamento WHERE tipo_racao_id IS NULL AND data >= :de AND excluido_em IS NULL"
     ), {"de": trinta_dias_atras}).scalar())
 
     dias_restantes_total = min(dias_restantes_candidatos) if dias_restantes_candidatos else None
@@ -1781,13 +1815,13 @@ def historico_lote(viveiro_id: int, db: Session = Depends(get_db)):
     # "prepared statements" que o psycopg cria sozinho pra texto de query
     # repetido)
     despesca_rows = db.execute(
-        text("SELECT data, quantidade_un FROM despesca WHERE lote_id = :l"), {"l": lote["id"]},
+        text("SELECT data, quantidade_un FROM despesca WHERE lote_id = :l AND excluido_em IS NULL"), {"l": lote["id"]},
     ).mappings().all()
     origem_rows = db.execute(
-        text("SELECT data, quantidade FROM lote_origem WHERE lote_origem_id = :l"), {"l": lote["id"]},
+        text("SELECT data, quantidade FROM lote_origem WHERE lote_origem_id = :l AND excluido_em IS NULL"), {"l": lote["id"]},
     ).mappings().all()
     arracoamento_rows = db.execute(
-        text("SELECT data, sacos FROM arracoamento WHERE lote_id = :l"), {"l": lote["id"]},
+        text("SELECT data, sacos FROM arracoamento WHERE lote_id = :l AND excluido_em IS NULL"), {"l": lote["id"]},
     ).mappings().all()
 
     area_m2 = float(lote["area_m2"])

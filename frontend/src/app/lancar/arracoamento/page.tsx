@@ -7,8 +7,6 @@ import { listarFornecedoresRacao, type FornecedorRacao } from "@/lib/cadastros";
 import { enfileirar } from "@/lib/offline-queue";
 import styles from "../form.module.css";
 
-const TRATOS = ["08:30", "10:30", "12:00", "15:30"];
-
 function hojeISO(): string {
   return new Date().toISOString().slice(0, 10);
 }
@@ -18,7 +16,6 @@ export default function RegistrarArracoamento() {
   const [viveiros, setViveiros] = useState<Viveiro[]>([]);
   const [erroCarregar, setErroCarregar] = useState<string | null>(null);
   const [data, setData] = useState(hojeISO());
-  const [trato, setTrato] = useState(TRATOS[0]);
   const [valores, setValores] = useState<Record<number, string>>({});
   const [enviando, setEnviando] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -66,12 +63,12 @@ export default function RegistrarArracoamento() {
         await enfileirar("arracoamento", {
           lote_id: v.lote_atual.id,
           data,
-          trato,
+          trato: null,
           sacos: parseFloat(valor.replace(",", ".")),
           tipo_racao_id: tipoRacaoPorViveiro[v.id] ?? null,
         });
       }
-      setToast(`Arraçoamento das ${trato} registrado`);
+      setToast("Arraçoamento do dia registrado");
       setValores({});
       setTimeout(() => setToast(null), 2200);
     } finally {
@@ -89,17 +86,30 @@ export default function RegistrarArracoamento() {
           <h1>Arraçoamento</h1>
           <div className={styles.sub}>{new Date().toLocaleDateString("pt-BR")} · sacos de 25 Kg</div>
         </div>
-        <button
-          type="button"
-          onClick={() => router.push("/lancar/arracoamento-foto")}
-          style={{
-            marginLeft: "auto", border: "1px solid var(--rule-strong)", background: "var(--surface)",
-            color: "var(--ink)", borderRadius: 10, padding: "8px 12px", fontSize: "0.8rem",
-            fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap",
-          }}
-        >
-          📸 Por foto
-        </button>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+          <button
+            type="button"
+            onClick={() => router.push("/painel/arracoamento")}
+            style={{
+              border: "1px solid var(--rule-strong)", background: "var(--surface)",
+              color: "var(--ink)", borderRadius: 10, padding: "8px 12px", fontSize: "0.8rem",
+              fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap",
+            }}
+          >
+            📋 Histórico
+          </button>
+          <button
+            type="button"
+            onClick={() => router.push("/lancar/arracoamento-foto")}
+            style={{
+              border: "1px solid var(--rule-strong)", background: "var(--surface)",
+              color: "var(--ink)", borderRadius: 10, padding: "8px 12px", fontSize: "0.8rem",
+              fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap",
+            }}
+          >
+            📸 Por foto
+          </button>
+        </div>
       </div>
 
       <div className={styles.body}>
@@ -108,33 +118,6 @@ export default function RegistrarArracoamento() {
         <div className={styles.field}>
           <label>Data</label>
           <input className={styles.inp} type="date" value={data} onChange={(e) => setData(e.target.value)} />
-        </div>
-
-        <div className={styles.field}>
-          <label>Trato</label>
-          <div className={styles.chips}>
-            {TRATOS.map((t) => (
-              <button
-                key={t}
-                type="button"
-                className={styles.chip}
-                aria-pressed={trato === t}
-                onClick={() => setTrato(t)}
-              >
-                {t}
-              </button>
-            ))}
-          </div>
-          <p className={styles.hint} style={{ margin: "6px 0 0" }}>
-            Os horários acima são os padrão — se o trato foi feito num horário diferente, ajuste aqui.
-          </p>
-          <input
-            className={styles.inp}
-            style={{ marginTop: 6, width: 140 }}
-            type="time"
-            value={trato}
-            onChange={(e) => setTrato(e.target.value)}
-          />
         </div>
 
         {tiposRacao.length === 0 && (
@@ -177,7 +160,7 @@ export default function RegistrarArracoamento() {
 
       <div className={styles.savebar}>
         <button className={styles.btnPrimary} disabled={!podeSalvar} onClick={salvar}>
-          {enviando ? "Salvando…" : `Salvar trato das ${trato}`}
+          {enviando ? "Salvando…" : "Salvar arraçoamento do dia"}
         </button>
       </div>
 

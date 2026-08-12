@@ -210,7 +210,8 @@ _QUERY_REPICAGEM_DETALHE = """
     SELECT o.lote_id, o.lote_origem_id, o.data, o.quantidade, o.peso_medio_g,
            ld.codigo AS lote_destino_codigo, vd.codigo AS viveiro_destino_codigo,
            lo.codigo AS lote_origem_codigo, vo.codigo AS viveiro_origem_codigo,
-           (lo.data_fim IS NOT NULL) AS lote_origem_fechado
+           (lo.data_fim IS NOT NULL) AS lote_origem_fechado,
+           o.excluido_em, o.excluido_por
     FROM lote_origem o
     JOIN lote ld ON ld.id = o.lote_id
     JOIN viveiro vd ON vd.id = ld.viveiro_id
@@ -234,11 +235,11 @@ def editar_repicagem(
     origem automaticamente). Não mexe em fechamento/reabertura de lote
     (nem origem nem destino) — isso continua manual via outras telas."""
     atual = db.execute(
-        text("SELECT quantidade FROM lote_origem WHERE lote_id = :l AND lote_origem_id = :lo"),
+        text("SELECT quantidade FROM lote_origem WHERE lote_id = :l AND lote_origem_id = :lo AND excluido_em IS NULL"),
         {"l": lote_id, "lo": lote_origem_id},
     ).mappings().first()
     if atual is None:
-        raise HTTPException(404, "repicagem não encontrada")
+        raise HTTPException(404, "repicagem não encontrada (ou excluída — restaure antes de editar)")
 
     delta = body.quantidade - atual["quantidade"]
 
@@ -259,6 +260,73 @@ def editar_repicagem(
     except DBAPIError as exc:
         db.rollback()
         raise HTTPException(422, f"dado inválido ou fora das regras: {exc.orig}") from exc
+
+    row = db.execute(
+        text(_QUERY_REPICAGEM_DETALHE), {"lote_id": lote_id, "lote_origem_id": lote_origem_id}
+    ).mappings().first()
+    return RepicagemDetalheOut(**row)
+
+
+@router.delete("/repicagens/{lote_id}/{lote_origem_id}", response_model=RepicagemDetalheOut)
+def excluir_repicagem(
+    lote_id: int, lote_origem_id: int, db: Session = Depends(get_db),
+    usuario: UsuarioOut = Depends(get_current_user),
+):
+    """Exclusão reversível (POST .../restaurar desfaz). Como a
+    quantidade_inicial do lote de destino foi somada na hora da
+    repicagem, excluir precisa tirar essa quantidade de volta — o
+    tanque de origem já recupera o saldo sozinho, porque vw_saldo_lote
+    ignora lote_origem excluído."""
+    atual = db.execute(
+        text("SELECT quantidade FROM lote_origem WHERE lote_id = :l AND lote_origem_id = :lo AND excluido_em IS NULL"),
+        {"l": lote_id, "lo": lote_origem_id},
+    ).mappings().first()
+    if atual is None:
+        raise HTTPException(404, "repicagem não encontrada (ou já excluída)")
+
+    db.execute(
+        text("""
+            UPDATE lote_origem SET excluido_em = now(), excluido_por = :quem
+            WHERE lote_id = :l AND lote_origem_id = :lo
+        """),
+        {"l": lote_id, "lo": lote_origem_id, "quem": usuario.nome},
+    )
+    db.execute(
+        text("UPDATE lote SET quantidade_inicial = quantidade_inicial - :qtd WHERE id = :id"),
+        {"qtd": atual["quantidade"], "id": lote_id},
+    )
+    db.commit()
+
+    row = db.execute(
+        text(_QUERY_REPICAGEM_DETALHE), {"lote_id": lote_id, "lote_origem_id": lote_origem_id}
+    ).mappings().first()
+    return RepicagemDetalheOut(**row)
+
+
+@router.post("/repicagens/{lote_id}/{lote_origem_id}/restaurar", response_model=RepicagemDetalheOut)
+def restaurar_repicagem(
+    lote_id: int, lote_origem_id: int, db: Session = Depends(get_db),
+    _usuario: UsuarioOut = Depends(get_current_user),
+):
+    atual = db.execute(
+        text("SELECT quantidade FROM lote_origem WHERE lote_id = :l AND lote_origem_id = :lo AND excluido_em IS NOT NULL"),
+        {"l": lote_id, "lo": lote_origem_id},
+    ).mappings().first()
+    if atual is None:
+        raise HTTPException(404, "repicagem não encontrada (ou não está excluída)")
+
+    db.execute(
+        text("""
+            UPDATE lote_origem SET excluido_em = NULL, excluido_por = NULL
+            WHERE lote_id = :l AND lote_origem_id = :lo
+        """),
+        {"l": lote_id, "lo": lote_origem_id},
+    )
+    db.execute(
+        text("UPDATE lote SET quantidade_inicial = quantidade_inicial + :qtd WHERE id = :id"),
+        {"qtd": atual["quantidade"], "id": lote_id},
+    )
+    db.commit()
 
     row = db.execute(
         text(_QUERY_REPICAGEM_DETALHE), {"lote_id": lote_id, "lote_origem_id": lote_origem_id}

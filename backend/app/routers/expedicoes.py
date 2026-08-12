@@ -228,7 +228,7 @@ def acertar_expedicao(
         JOIN produto p ON p.id = ei.produto_id
         LEFT JOIN (
           SELECT produto_id, SUM(quantidade_kg) AS kg FROM venda
-          WHERE expedicao_id = :id GROUP BY produto_id
+          WHERE expedicao_id = :id AND excluido_em IS NULL GROUP BY produto_id
         ) v ON v.produto_id = ei.produto_id
         LEFT JOIN (
           SELECT produto_id, SUM(quantidade_kg) AS kg FROM expedicao_retorno
@@ -240,7 +240,7 @@ def acertar_expedicao(
 
     totais = db.execute(text("""
         SELECT
-          COALESCE((SELECT SUM(valor_total) FROM venda WHERE expedicao_id = :id AND forma_pgto = 'Dinheiro'), 0)
+          COALESCE((SELECT SUM(valor_total) FROM venda WHERE expedicao_id = :id AND forma_pgto = 'Dinheiro' AND excluido_em IS NULL), 0)
             AS vendas_dinheiro,
           COALESCE((SELECT SUM(valor) FROM despesa WHERE expedicao_id = :id AND forma_pgto = 'Dinheiro'), 0)
             AS despesas_dinheiro

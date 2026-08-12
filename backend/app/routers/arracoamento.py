@@ -5,7 +5,15 @@ from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
 from ..db import get_db
-from ..schemas import ArracoamentoIn, ArracoamentoOut, LeituraArracoamentoLinhaOut, LeituraArracoamentoOut, UsuarioOut
+from ..schemas import (
+    ArracoamentoDetalheOut,
+    ArracoamentoEditarIn,
+    ArracoamentoIn,
+    ArracoamentoOut,
+    LeituraArracoamentoLinhaOut,
+    LeituraArracoamentoOut,
+    UsuarioOut,
+)
 from ..vision import ler_ficha
 
 router = APIRouter(prefix="/arracoamento", tags=["arracoamento"])
@@ -39,7 +47,7 @@ _SCHEMA_LEITURA = {
 
 def _linha(r) -> ArracoamentoOut:
     d = dict(r)
-    d["trato"] = d["trato"].strftime("%H:%M")
+    d["trato"] = d["trato"].strftime("%H:%M") if d["trato"] is not None else None
     return ArracoamentoOut(**d)
 
 
@@ -104,3 +112,65 @@ def ler_foto_arracoamento(
             ))
 
     return LeituraArracoamentoOut(data_lida=bruto.get("data"), linhas=linhas)
+
+
+@router.patch("/{arracoamento_id}", response_model=ArracoamentoOut)
+def editar_arracoamento(
+    arracoamento_id: int, body: ArracoamentoEditarIn, db: Session = Depends(get_db),
+    _usuario: UsuarioOut = Depends(get_current_user),
+):
+    """Corrige data, sacos ou tipo de ração de um lançamento já feito. Não
+    mexe em lote/trato — pra reatribuir a outro tanque, exclua e lance
+    de novo."""
+    try:
+        row = db.execute(
+            text(f"""
+                UPDATE arracoamento SET data = :data, sacos = :sacos, tipo_racao_id = :tipo_racao_id
+                WHERE id = :id AND excluido_em IS NULL
+                RETURNING {_COLUNAS}
+            """),
+            {"id": arracoamento_id, **body.model_dump()},
+        ).mappings().first()
+        db.commit()
+    except DBAPIError as exc:
+        db.rollback()
+        raise HTTPException(422, f"dado fora das regras: {exc.orig}") from exc
+    if row is None:
+        raise HTTPException(404, "lançamento não encontrado (ou excluído — restaure antes de editar)")
+    return _linha(row)
+
+
+@router.delete("/{arracoamento_id}", response_model=ArracoamentoOut)
+def excluir_arracoamento(
+    arracoamento_id: int, db: Session = Depends(get_db), usuario: UsuarioOut = Depends(get_current_user),
+):
+    row = db.execute(
+        text(f"""
+            UPDATE arracoamento SET excluido_em = now(), excluido_por = :quem
+            WHERE id = :id AND excluido_em IS NULL
+            RETURNING {_COLUNAS}
+        """),
+        {"id": arracoamento_id, "quem": usuario.nome},
+    ).mappings().first()
+    db.commit()
+    if row is None:
+        raise HTTPException(404, "lançamento não encontrado (ou já excluído)")
+    return _linha(row)
+
+
+@router.post("/{arracoamento_id}/restaurar", response_model=ArracoamentoOut)
+def restaurar_arracoamento(
+    arracoamento_id: int, db: Session = Depends(get_db), _usuario: UsuarioOut = Depends(get_current_user),
+):
+    row = db.execute(
+        text(f"""
+            UPDATE arracoamento SET excluido_em = NULL, excluido_por = NULL
+            WHERE id = :id AND excluido_em IS NOT NULL
+            RETURNING {_COLUNAS}
+        """),
+        {"id": arracoamento_id},
+    ).mappings().first()
+    db.commit()
+    if row is None:
+        raise HTTPException(404, "lançamento não encontrado (ou não está excluído)")
+    return _linha(row)

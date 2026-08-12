@@ -11,6 +11,7 @@ import {
   listarVendas,
   listarVendedoresDeVenda,
   marcarPagamentoVenda,
+  restaurarVenda,
   type Cliente,
   type Produto,
   type VendaLista,
@@ -76,6 +77,10 @@ function estaVencida(v: VendaLista): boolean {
   if (!venc) return false;
   return venc < hojeISO();
 }
+function dataHoraBr(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
 
 export default function Recebimentos() {
   const router = useRouter();
@@ -102,14 +107,17 @@ export default function Recebimentos() {
   const [formVenda, setFormVenda] = useState<FormVenda | null>(null);
   const [salvandoVenda, setSalvandoVenda] = useState(false);
   const [excluindoId, setExcluindoId] = useState<number | null>(null);
+  const [mostrarExcluidos, setMostrarExcluidos] = useState(false);
+  const [restaurandoId, setRestaurandoId] = useState<number | null>(null);
 
   function carregar() {
     setErro(null);
     listarVendas({
       de, ate,
-      situacao: situacaoFiltro === "Todas" ? undefined : situacaoFiltro,
+      situacao: mostrarExcluidos ? undefined : (situacaoFiltro === "Todas" ? undefined : situacaoFiltro),
       clienteId: null,
       vendedor: vendedorFiltro || null,
+      excluidos: mostrarExcluidos,
     })
       .then(setVendas)
       .catch(() => setErro("Não foi possível carregar as vendas."));
@@ -118,7 +126,7 @@ export default function Recebimentos() {
   useEffect(() => {
     carregar();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [de, ate, situacaoFiltro, vendedorFiltro]);
+  }, [de, ate, situacaoFiltro, vendedorFiltro, mostrarExcluidos]);
 
   const vendasFiltradas = useMemo(() => {
     if (!vendas) return null;
@@ -231,7 +239,7 @@ export default function Recebimentos() {
   async function excluir(v: VendaLista) {
     const confirmar = window.confirm(
       `Excluir a venda de ${v.produto_nome} para ${v.cliente_nome} em ${dataBr(v.data)} (${moeda(v.valor_total)})?\n\n` +
-      "Essa ação não pode ser desfeita."
+      "Pode ser restaurada depois em \"Ver excluídas\"."
     );
     if (!confirmar) return;
     setExcluindoId(v.id);
@@ -242,6 +250,18 @@ export default function Recebimentos() {
       setErro("Não foi possível excluir a venda.");
     } finally {
       setExcluindoId(null);
+    }
+  }
+
+  async function restaurar(v: VendaLista) {
+    setRestaurandoId(v.id);
+    try {
+      await restaurarVenda(v.id);
+      carregar();
+    } catch {
+      setErro("Não foi possível restaurar a venda.");
+    } finally {
+      setRestaurandoId(null);
     }
   }
 
@@ -311,16 +331,32 @@ export default function Recebimentos() {
               {FORMAS_VENDA.map((f) => <option key={f} value={f}>{f}</option>)}
             </select>
           </div>
+          <button
+            type="button"
+            onClick={() => setMostrarExcluidos((v) => !v)}
+            style={{
+              padding: "9px 16px", borderRadius: 9, border: "1px solid var(--rule-strong)",
+              background: mostrarExcluidos ? "var(--brand)" : "var(--surface)",
+              color: mostrarExcluidos ? "var(--brand-ink)" : "var(--ink)",
+              fontWeight: 700, fontSize: "0.85rem", cursor: "pointer",
+            }}
+          >
+            {mostrarExcluidos ? "Vendo excluídas" : "Ver excluídas"}
+          </button>
         </div>
 
-        {vendasFiltradas && situacaoFiltro !== "Pago" && (
+        {!mostrarExcluidos && vendasFiltradas && situacaoFiltro !== "Pago" && (
           <p className={styles.hint} style={{ fontSize: "0.95rem", fontWeight: 700, color: "var(--ink)" }}>
             Total em aberto no período: {moeda(totalEmAberto)}
           </p>
         )}
 
         {!vendasFiltradas && !erro && <p className={styles.hint}>Carregando…</p>}
-        {vendasFiltradas && vendasFiltradas.length === 0 && <p className={styles.hint}>Nenhuma venda encontrada com esses filtros.</p>}
+        {vendasFiltradas && vendasFiltradas.length === 0 && (
+          <p className={styles.hint}>
+            {mostrarExcluidos ? "Nenhuma venda excluída no período." : "Nenhuma venda encontrada com esses filtros."}
+          </p>
+        )}
 
         {vendasFiltradas && vendasFiltradas.length > 0 && (
           <div className={styles.tableWrap}>
@@ -389,63 +425,84 @@ export default function Recebimentos() {
                         )}
                       </td>
                       <td>
-                        {!pago && editando !== v.id && (
-                          <button className={styles.btnLink} onClick={() => iniciarPagamento(v)}>
-                            Marcar como pago
-                          </button>
-                        )}
-                        {!pago && editando === v.id && (
-                          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                            <input
-                              className={styles.inp}
-                              style={{ padding: "6px 8px", width: 130 }}
-                              type="date"
-                              value={dataPag}
-                              onChange={(e) => setDataPag(e.target.value)}
-                            />
-                            <select
-                              className={styles.inp}
-                              style={{ padding: "6px 8px", width: 100 }}
-                              value={formaPag}
-                              onChange={(e) => setFormaPag(e.target.value)}
-                            >
-                              {FORMAS_RECEBIMENTO.map((f) => <option key={f} value={f}>{f}</option>)}
-                            </select>
-                            <button
-                              className={styles.btnPrimary}
-                              style={{ padding: "6px 12px", fontSize: "0.8rem" }}
-                              disabled={salvando}
-                              onClick={() => confirmarPagamento(v.id)}
-                            >
-                              OK
-                            </button>
-                            <button className={styles.btnLink} onClick={() => setEditando(null)}>Cancelar</button>
-                          </div>
+                        {mostrarExcluidos ? (
+                          <span className={styles.hint} style={{ fontSize: "0.78rem" }}>
+                            {v.excluido_em ? `Excluída ${dataHoraBr(v.excluido_em)}` : ""}
+                            {v.excluido_por ? ` · ${v.excluido_por}` : ""}
+                          </span>
+                        ) : (
+                          <>
+                            {!pago && editando !== v.id && (
+                              <button className={styles.btnLink} onClick={() => iniciarPagamento(v)}>
+                                Marcar como pago
+                              </button>
+                            )}
+                            {!pago && editando === v.id && (
+                              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                                <input
+                                  className={styles.inp}
+                                  style={{ padding: "6px 8px", width: 130 }}
+                                  type="date"
+                                  value={dataPag}
+                                  onChange={(e) => setDataPag(e.target.value)}
+                                />
+                                <select
+                                  className={styles.inp}
+                                  style={{ padding: "6px 8px", width: 100 }}
+                                  value={formaPag}
+                                  onChange={(e) => setFormaPag(e.target.value)}
+                                >
+                                  {FORMAS_RECEBIMENTO.map((f) => <option key={f} value={f}>{f}</option>)}
+                                </select>
+                                <button
+                                  className={styles.btnPrimary}
+                                  style={{ padding: "6px 12px", fontSize: "0.8rem" }}
+                                  disabled={salvando}
+                                  onClick={() => confirmarPagamento(v.id)}
+                                >
+                                  OK
+                                </button>
+                                <button className={styles.btnLink} onClick={() => setEditando(null)}>Cancelar</button>
+                              </div>
+                            )}
+                          </>
                         )}
                       </td>
                       <td style={{ whiteSpace: "nowrap" }}>
-                        <button
-                          className={styles.btnLink}
-                          onClick={() => {
-                            if (editandoVendaId === v.id) {
-                              setEditandoVendaId(null);
-                              setFormVenda(null);
-                            } else {
-                              iniciarEdicaoVenda(v);
-                            }
-                          }}
-                        >
-                          {editandoVendaId === v.id ? "Fechar" : "Editar"}
-                        </button>
-                        {" · "}
-                        <button
-                          className={styles.btnLink}
-                          style={{ color: "var(--crit)" }}
-                          disabled={excluindoId === v.id}
-                          onClick={() => excluir(v)}
-                        >
-                          {excluindoId === v.id ? "Excluindo…" : "Excluir"}
-                        </button>
+                        {mostrarExcluidos ? (
+                          <button
+                            className={styles.btnLink}
+                            disabled={restaurandoId === v.id}
+                            onClick={() => restaurar(v)}
+                          >
+                            {restaurandoId === v.id ? "Restaurando…" : "Restaurar"}
+                          </button>
+                        ) : (
+                          <>
+                            <button
+                              className={styles.btnLink}
+                              onClick={() => {
+                                if (editandoVendaId === v.id) {
+                                  setEditandoVendaId(null);
+                                  setFormVenda(null);
+                                } else {
+                                  iniciarEdicaoVenda(v);
+                                }
+                              }}
+                            >
+                              {editandoVendaId === v.id ? "Fechar" : "Editar"}
+                            </button>
+                            {" · "}
+                            <button
+                              className={styles.btnLink}
+                              style={{ color: "var(--crit)" }}
+                              disabled={excluindoId === v.id}
+                              onClick={() => excluir(v)}
+                            >
+                              {excluindoId === v.id ? "Excluindo…" : "Excluir"}
+                            </button>
+                          </>
+                        )}
                       </td>
                     </tr>
                   );

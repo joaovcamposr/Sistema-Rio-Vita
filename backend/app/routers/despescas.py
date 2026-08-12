@@ -19,7 +19,11 @@ def listar_despescas(
 ):
     """Alimenta o seletor 'Despesca de origem' na tela de Produção."""
     rows = db.execute(
-        text(f"SELECT {_COLUNAS} FROM despesca WHERE lote_id = :lote_id ORDER BY data DESC, id DESC"),
+        text(f"""
+            SELECT {_COLUNAS} FROM despesca
+            WHERE lote_id = :lote_id AND excluido_em IS NULL
+            ORDER BY data DESC, id DESC
+        """),
         {"lote_id": lote_id},
     ).mappings().all()
     return [DespescaOut(**r) for r in rows]
@@ -78,13 +82,13 @@ def editar_despesca(
             text(f"""
                 UPDATE despesca SET lote_id = :lote_id, data = :data, destino = :destino,
                                      quantidade_un = :quantidade_un, peso_medio_g = :peso_medio_g
-                WHERE id = :id
+                WHERE id = :id AND excluido_em IS NULL
                 RETURNING {_COLUNAS}
             """),
             {"id": despesca_id, **body.model_dump()},
         ).mappings().first()
         if row is None:
-            raise HTTPException(404, "despesca não encontrada")
+            raise HTTPException(404, "despesca não encontrada (ou excluída — restaure antes de editar)")
 
         saldo = db.execute(
             text("SELECT saldo_un FROM vw_saldo_lote WHERE lote_id = :l"), {"l": row["lote_id"]}
@@ -121,7 +125,7 @@ def resumo_despesca(despesca_id: int, db: Session = Depends(get_db)):
     peso = db.execute(
         text("""
             SELECT COALESCE(SUM(peso_total_kg), 0) FROM despesca
-            WHERE lote_id = :l AND data = :d AND destino = 'file'
+            WHERE lote_id = :l AND data = :d AND destino = 'file' AND excluido_em IS NULL
         """),
         {"l": base["lote_id"], "d": base["data"]},
     ).scalar_one()
@@ -136,3 +140,43 @@ def resumo_despesca(despesca_id: int, db: Session = Depends(get_db)):
     ).scalar_one()
 
     return DespescaResumoOut(peso_despescado_kg=float(peso), kg_file_lancado=float(kg_file))
+
+
+@router.delete("/{despesca_id}", response_model=DespescaOut)
+def excluir_despesca(
+    despesca_id: int, db: Session = Depends(get_db), usuario: UsuarioOut = Depends(get_current_user),
+):
+    """Exclusão reversível — marca excluido_em/excluido_por em vez de
+    apagar a linha, pra poder restaurar (POST .../restaurar) se for
+    engano. vw_saldo_lote já ignora despesca excluída, então o peixe
+    volta pro saldo do tanque assim que isso é salvo."""
+    row = db.execute(
+        text(f"""
+            UPDATE despesca SET excluido_em = now(), excluido_por = :quem
+            WHERE id = :id AND excluido_em IS NULL
+            RETURNING {_COLUNAS}
+        """),
+        {"id": despesca_id, "quem": usuario.nome},
+    ).mappings().first()
+    db.commit()
+    if row is None:
+        raise HTTPException(404, "despesca não encontrada (ou já excluída)")
+    return DespescaOut(**row)
+
+
+@router.post("/{despesca_id}/restaurar", response_model=DespescaOut)
+def restaurar_despesca(
+    despesca_id: int, db: Session = Depends(get_db), _usuario: UsuarioOut = Depends(get_current_user),
+):
+    row = db.execute(
+        text(f"""
+            UPDATE despesca SET excluido_em = NULL, excluido_por = NULL
+            WHERE id = :id AND excluido_em IS NOT NULL
+            RETURNING {_COLUNAS}
+        """),
+        {"id": despesca_id},
+    ).mappings().first()
+    db.commit()
+    if row is None:
+        raise HTTPException(404, "despesca não encontrada (ou não está excluída)")
+    return DespescaOut(**row)

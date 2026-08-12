@@ -84,6 +84,8 @@ export interface VendaLista {
   data_pagamento: string | null;
   data_prevista_recebimento: string | null;
   observacoes: string | null;
+  excluido_em: string | null;
+  excluido_por: string | null;
 }
 
 function apiBase(): string {
@@ -148,6 +150,18 @@ export async function editarDespesca(despescaId: number, body: {
   return (await r.json()) as Despesca;
 }
 
+export async function excluirDespesca(despescaId: number): Promise<void> {
+  const r = await fetch(`${apiBase()}/despescas/${despescaId}`, { method: "DELETE", headers: authHeader() });
+  if (r.status === 401) sessaoInvalida();
+  if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+}
+
+export async function restaurarDespesca(despescaId: number): Promise<void> {
+  const r = await fetch(`${apiBase()}/despescas/${despescaId}/restaurar`, { method: "POST", headers: authHeader() });
+  if (r.status === 401) sessaoInvalida();
+  if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+}
+
 export async function editarRepicagem(loteId: number, loteOrigemId: number, body: {
   data: string; quantidade: number; peso_medio_g: number;
 }): Promise<RepicagemDetalhe> {
@@ -160,6 +174,45 @@ export async function editarRepicagem(loteId: number, loteOrigemId: number, body
   if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
   return (await r.json()) as RepicagemDetalhe;
 }
+
+export async function excluirRepicagem(loteId: number, loteOrigemId: number): Promise<void> {
+  const r = await fetch(`${apiBase()}/repicagens/${loteId}/${loteOrigemId}`, { method: "DELETE", headers: authHeader() });
+  if (r.status === 401) sessaoInvalida();
+  if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+}
+
+export async function restaurarRepicagem(loteId: number, loteOrigemId: number): Promise<void> {
+  const r = await fetch(`${apiBase()}/repicagens/${loteId}/${loteOrigemId}/restaurar`, {
+    method: "POST", headers: authHeader(),
+  });
+  if (r.status === 401) sessaoInvalida();
+  if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+}
+
+export async function editarArracoamento(id: number, body: {
+  data: string; sacos: number; tipo_racao_id: number | null;
+}): Promise<void> {
+  const r = await fetch(`${apiBase()}/arracoamento/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...authHeader() },
+    body: JSON.stringify(body),
+  });
+  if (r.status === 401) sessaoInvalida();
+  if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+}
+
+export async function excluirArracoamento(id: number): Promise<void> {
+  const r = await fetch(`${apiBase()}/arracoamento/${id}`, { method: "DELETE", headers: authHeader() });
+  if (r.status === 401) sessaoInvalida();
+  if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+}
+
+export async function restaurarArracoamento(id: number): Promise<void> {
+  const r = await fetch(`${apiBase()}/arracoamento/${id}/restaurar`, { method: "POST", headers: authHeader() });
+  if (r.status === 401) sessaoInvalida();
+  if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+}
+
 export const listarClientes = () => cachedGet<Cliente[]>("cache:clientes", "/clientes");
 export const listarVendedoresDeVenda = () => cachedGet<string[]>("cache:vendas-vendedores", "/vendas/vendedores");
 
@@ -236,6 +289,7 @@ export interface FiltroVendas {
   situacao?: string;
   clienteId?: number | null;
   vendedor?: string | null;
+  excluidos?: boolean;
 }
 
 export async function listarVendas(filtro: FiltroVendas): Promise<VendaLista[]> {
@@ -245,6 +299,7 @@ export async function listarVendas(filtro: FiltroVendas): Promise<VendaLista[]> 
   if (filtro.situacao) params.set("situacao", filtro.situacao);
   if (filtro.clienteId) params.set("cliente_id", String(filtro.clienteId));
   if (filtro.vendedor) params.set("vendedor", filtro.vendedor);
+  if (filtro.excluidos) params.set("excluidos", "true");
   const r = await fetch(`${apiBase()}/vendas?${params}`, { cache: "no-store", headers: authHeader() });
   if (r.status === 401) sessaoInvalida();
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -291,6 +346,12 @@ export async function editarVenda(vendaId: number, body: VendaEditar): Promise<v
 
 export async function excluirVenda(vendaId: number): Promise<void> {
   const r = await fetch(`${apiBase()}/vendas/${vendaId}`, { method: "DELETE", headers: authHeader() });
+  if (r.status === 401) sessaoInvalida();
+  if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+}
+
+export async function restaurarVenda(vendaId: number): Promise<void> {
+  const r = await fetch(`${apiBase()}/vendas/${vendaId}/restaurar`, { method: "POST", headers: authHeader() });
   if (r.status === 401) sessaoInvalida();
   if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
 }

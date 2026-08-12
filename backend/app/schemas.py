@@ -136,6 +136,8 @@ class DespescaDetalheOut(BaseModel):
     lote_codigo: str
     viveiro_codigo: str
     criado_em: datetime
+    excluido_em: datetime | None = None
+    excluido_por: str | None = None
 
 
 class ProducaoIn(BaseModel):
@@ -237,6 +239,8 @@ class RepicagemDetalheOut(BaseModel):
     lote_origem_codigo: str
     viveiro_origem_codigo: str
     lote_origem_fechado: bool
+    excluido_em: datetime | None = None
+    excluido_por: str | None = None
 
 
 # ---------- Biometria ----------
@@ -263,7 +267,7 @@ class ArracoamentoIn(BaseModel):
     client_id: uuid.UUID
     lote_id: int
     data: date
-    trato: str  # "08:30", "10:30", ...
+    trato: str | None = None  # "08:30", "10:30", ... — None = total do dia, sem dividir por horário
     sacos: float = Field(ge=0)
     tipo_racao_id: int | None = None
 
@@ -273,10 +277,31 @@ class ArracoamentoOut(BaseModel):
     client_id: uuid.UUID
     lote_id: int
     data: date
-    trato: str
+    trato: str | None
     sacos: float
     tipo_racao_id: int | None
     criado_em: datetime
+
+
+class ArracoamentoEditarIn(BaseModel):
+    data: date
+    sacos: float = Field(ge=0)
+    tipo_racao_id: int | None = None
+
+
+class ArracoamentoDetalheOut(BaseModel):
+    id: int
+    data: date
+    trato: str | None
+    sacos: float
+    tipo_racao_id: int | None
+    tipo_racao_codigo: str | None
+    lote_id: int
+    lote_codigo: str
+    viveiro_codigo: str
+    criado_em: datetime
+    excluido_em: datetime | None = None
+    excluido_por: str | None = None
 
 
 class LeituraArracoamentoLinhaOut(BaseModel):
@@ -507,6 +532,8 @@ class VendaListaOut(BaseModel):
     data_pagamento: date | None
     data_prevista_recebimento: date | None
     observacoes: str | None
+    excluido_em: datetime | None = None
+    excluido_por: str | None = None
 
 
 class VendaPagamentoIn(BaseModel):
