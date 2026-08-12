@@ -31,16 +31,17 @@ interface FormVenda {
   forma_pgto: string;
   aVista: boolean;
   dataPrevista: string;
+  situacao: string;
+  dataPagamento: string;
 }
 
 function hojeISO(): string {
   return new Date().toISOString().slice(0, 10);
 }
-function diasAtras(dias: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() - dias);
-  return d.toISOString().slice(0, 10);
-}
+// "De" começa sempre no início — não dá pra saber de antemão até quando
+// existe lançamento antigo, então o padrão traz tudo em vez de arriscar
+// esconder venda em aberto de fora do período
+const DESDE_SEMPRE = "2020-01-01";
 function dataBr(iso: string): string {
   const [a, m, d] = iso.split("-");
   return `${d}/${m}/${a}`;
@@ -84,7 +85,7 @@ function dataHoraBr(iso: string): string {
 
 export default function Recebimentos() {
   const router = useRouter();
-  const [de, setDe] = useState(diasAtras(90));
+  const [de, setDe] = useState(DESDE_SEMPRE);
   const [ate, setAte] = useState(hojeISO());
   const [situacaoFiltro, setSituacaoFiltro] = useState("Em aberto");
   const [clientes, setClientes] = useState<Cliente[]>([]);
@@ -197,6 +198,8 @@ export default function Recebimentos() {
       forma_pgto: v.forma_pgto ?? FORMAS_VENDA[0],
       aVista: !v.data_prevista_recebimento,
       dataPrevista: v.data_prevista_recebimento ?? dataVencimento(v) ?? hojeISO(),
+      situacao: estaPago(v.situacao) ? "Pago" : "Em aberto",
+      dataPagamento: v.data_pagamento ?? hojeISO(),
     });
   }
 
@@ -220,6 +223,8 @@ export default function Recebimentos() {
         forma_pgto: formVenda.forma_pgto,
         a_vista: formVenda.aVista,
         data_prevista_recebimento: formVenda.aVista ? null : formVenda.dataPrevista,
+        situacao: formVenda.situacao,
+        data_pagamento: formVenda.situacao === "Pago" ? formVenda.dataPagamento : null,
       });
       setEditandoVendaId(null);
       setFormVenda(null);
@@ -607,6 +612,26 @@ export default function Recebimentos() {
                               <input
                                 className={styles.inp} type="date" value={formVenda.dataPrevista}
                                 onChange={(e) => setFormVenda({ ...formVenda, dataPrevista: e.target.value })}
+                              />
+                            </div>
+                          )}
+                          <div className={styles.field} style={{ margin: 0 }}>
+                            <label>Situação</label>
+                            <select
+                              className={styles.inp}
+                              value={formVenda.situacao}
+                              onChange={(e) => setFormVenda({ ...formVenda, situacao: e.target.value })}
+                            >
+                              <option value="Em aberto">Em aberto</option>
+                              <option value="Pago">Pago</option>
+                            </select>
+                          </div>
+                          {formVenda.situacao === "Pago" && (
+                            <div className={styles.field} style={{ margin: 0 }}>
+                              <label>Data de pagamento</label>
+                              <input
+                                className={styles.inp} type="date" value={formVenda.dataPagamento}
+                                onChange={(e) => setFormVenda({ ...formVenda, dataPagamento: e.target.value })}
                               />
                             </div>
                           )}

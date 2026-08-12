@@ -332,6 +332,7 @@ export interface VendaEditar {
   data: string; cliente_id: number | null; vendedor: string | null; produto_id: number;
   quantidade_un: number | null; quantidade_kg: number; preco_kg: number; forma_pgto: string | null;
   a_vista: boolean; data_prevista_recebimento: string | null;
+  situacao: string; data_pagamento: string | null;
 }
 
 export async function editarVenda(vendaId: number, body: VendaEditar): Promise<void> {

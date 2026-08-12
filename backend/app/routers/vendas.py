@@ -53,7 +53,7 @@ def listar_vendas(
         LEFT JOIN cliente c ON c.id = v.cliente_id
         WHERE v.data BETWEEN :de AND :ate
           AND {"v.excluido_em IS NOT NULL" if excluidos else "v.excluido_em IS NULL"}
-          AND (CAST(:situacao AS text) IS NULL OR v.situacao = :situacao)
+          AND (CAST(:situacao AS text) IS NULL OR COALESCE(v.situacao, 'Em aberto') = :situacao)
           AND (CAST(:cliente_id AS bigint) IS NULL OR v.cliente_id = :cliente_id)
           AND (CAST(:vendedor AS text) IS NULL OR v.vendedor = :vendedor)
         ORDER BY v.data DESC, v.id DESC
@@ -139,17 +139,20 @@ def editar_venda(
     venda_id: int, body: VendaEditarIn, db: Session = Depends(get_db),
     usuario: UsuarioOut = Depends(get_current_user),
 ):
-    """Corrige uma venda já lançada — data, cliente, produto, quantidade,
-    preço, forma ou prazo de recebimento. Não mexe em situação/data de
-    pagamento (isso é o PATCH /pagamento, separado, pra não desfazer uma
-    baixa já confirmada)."""
+    """Corrige qualquer campo de uma venda já lançada — data, cliente,
+    produto, quantidade, preço, forma, prazo de recebimento e também
+    situação/data de pagamento (útil pra corrigir um lançamento antigo
+    sem situação definida, ou reverter uma baixa marcada por engano).
+    'Marcar como pago' (PATCH /pagamento) continua existindo como atalho
+    rápido pro caso comum, mas este endpoint edita tudo."""
     try:
         row = db.execute(
             text(f"""
                 UPDATE venda SET data = :data, cliente_id = :cliente_id, vendedor = :vendedor,
                                   produto_id = :produto_id, quantidade_un = :quantidade_un,
                                   quantidade_kg = :quantidade_kg, preco_kg = :preco_kg, forma_pgto = :forma_pgto,
-                                  data_prevista_recebimento = :data_prevista_recebimento
+                                  data_prevista_recebimento = :data_prevista_recebimento,
+                                  situacao = :situacao, data_pagamento = :data_pagamento
                 WHERE id = :id AND excluido_em IS NULL
                 RETURNING {_COLUNAS}
             """),

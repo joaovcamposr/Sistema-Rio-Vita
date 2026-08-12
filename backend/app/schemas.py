@@ -486,6 +486,8 @@ class VendaEditarIn(BaseModel):
     forma_pgto: str | None = None
     a_vista: bool = True
     data_prevista_recebimento: date | None = None
+    situacao: str = "Em aberto"
+    data_pagamento: date | None = None
 
     @model_validator(mode="after")
     def prazo_tem_data(self) -> "VendaEditarIn":
@@ -493,6 +495,10 @@ class VendaEditarIn(BaseModel):
             raise ValueError("venda a prazo exige data_prevista_recebimento")
         if self.a_vista:
             self.data_prevista_recebimento = None
+        if self.situacao == "Pago" and self.data_pagamento is None:
+            self.data_pagamento = self.data
+        if self.situacao != "Pago":
+            self.data_pagamento = None
         return self
 
 
