@@ -438,7 +438,7 @@ def painel_arracoamento(
     ate = ate or date.today()
     de = de or (ate - timedelta(days=30))
     rows = db.execute(text(f"""
-        SELECT a.id, a.data, a.trato, a.sacos, a.tipo_racao_id, t.codigo AS tipo_racao_codigo,
+        SELECT a.id, a.data, to_char(a.trato, 'HH24:MI') AS trato, a.sacos, a.tipo_racao_id, t.codigo AS tipo_racao_codigo,
                a.lote_id, l.codigo AS lote_codigo, v.codigo AS viveiro_codigo, a.criado_em,
                a.excluido_em, a.excluido_por
         FROM arracoamento a
