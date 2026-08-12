@@ -216,8 +216,13 @@ export default function Recebimentos() {
       setEditandoVendaId(null);
       setFormVenda(null);
       carregar();
-    } catch {
-      setErro("Não foi possível salvar a venda — confira os valores.");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "";
+      setErro(
+        msg.includes("venda_prevista_apos_venda")
+          ? "A data de recebimento previsto não pode ser antes da data da venda — ajuste o campo \"Recebimento previsto\" também."
+          : "Não foi possível salvar a venda — confira os valores."
+      );
     } finally {
       setSalvandoVenda(false);
     }
@@ -457,7 +462,20 @@ export default function Recebimentos() {
                             <label>Data</label>
                             <input
                               className={styles.inp} type="date" value={formVenda.data}
-                              onChange={(e) => setFormVenda({ ...formVenda, data: e.target.value })}
+                              onChange={(e) => {
+                                const novaData = e.target.value;
+                                setFormVenda({
+                                  ...formVenda,
+                                  data: novaData,
+                                  // recebimento previsto não pode ficar antes da data da venda — se
+                                  // só a data mudou (ex.: corrigindo um erro de digitação) e isso
+                                  // deixaria o previsto no passado, empurra o previsto junto
+                                  dataPrevista:
+                                    !formVenda.aVista && formVenda.dataPrevista < novaData
+                                      ? novaData
+                                      : formVenda.dataPrevista,
+                                });
+                              }}
                             />
                           </div>
                           <div className={styles.field} style={{ margin: 0 }}>
