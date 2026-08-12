@@ -18,6 +18,8 @@ from ..schemas import (
     ExpedicaoIn,
     ExpedicaoItemOut,
     ExpedicaoOut,
+    RetornoDetalheOut,
+    RetornoEditarIn,
     UsuarioOut,
 )
 
@@ -159,6 +161,50 @@ def listar_edicoes(expedicao_id: int, db: Session = Depends(get_db)):
         FROM expedicao_edicao WHERE expedicao_id = :id ORDER BY editado_em DESC
     """), {"id": expedicao_id}).mappings().all()
     return [ExpedicaoEdicaoOut(**r) for r in rows]
+
+
+@router.get("/{expedicao_id}/retornos", response_model=list[RetornoDetalheOut])
+def listar_retornos(
+    expedicao_id: int, db: Session = Depends(get_db), _usuario: UsuarioOut = Depends(get_current_user),
+):
+    """Alimenta o detalhe do relatório de acertos — retornos lançados
+    junto do acerto de uma expedição específica."""
+    rows = db.execute(text("""
+        SELECT r.id, r.expedicao_id, r.produto_id, p.nome AS produto_nome,
+               r.quantidade_embalagens, r.quantidade_kg
+        FROM expedicao_retorno r JOIN produto p ON p.id = r.produto_id
+        WHERE r.expedicao_id = :id ORDER BY p.nome
+    """), {"id": expedicao_id}).mappings().all()
+    return [RetornoDetalheOut(**r) for r in rows]
+
+
+@router.patch("/retornos/{retorno_id}", response_model=RetornoDetalheOut)
+def editar_retorno(
+    retorno_id: int, body: RetornoEditarIn, db: Session = Depends(get_db),
+    _usuario: UsuarioOut = Depends(get_current_user),
+):
+    """Corrige a quantidade de um retorno já lançado no acerto."""
+    try:
+        row = db.execute(text("""
+            UPDATE expedicao_retorno SET quantidade_embalagens = :quantidade_embalagens,
+                                          quantidade_kg = COALESCE(:quantidade_kg, quantidade_kg)
+            WHERE id = :id
+            RETURNING id
+        """), {"id": retorno_id, **body.model_dump()}).mappings().first()
+        db.commit()
+    except DBAPIError as exc:
+        db.rollback()
+        raise HTTPException(422, f"dado fora das regras: {exc.orig}") from exc
+    if row is None:
+        raise HTTPException(404, "retorno não encontrado")
+
+    atualizado = db.execute(text("""
+        SELECT r.id, r.expedicao_id, r.produto_id, p.nome AS produto_nome,
+               r.quantidade_embalagens, r.quantidade_kg
+        FROM expedicao_retorno r JOIN produto p ON p.id = r.produto_id
+        WHERE r.id = :id
+    """), {"id": retorno_id}).mappings().first()
+    return RetornoDetalheOut(**atualizado)
 
 
 @router.post("/{expedicao_id}/acerto", response_model=AcertoOut)

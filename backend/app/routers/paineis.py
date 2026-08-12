@@ -13,6 +13,8 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..schemas import (
     AbateOut,
+    AcertoDiferencaOut,
+    AcertoResumoOut,
     AguaPontoOut,
     AguaViveiroOut,
     ArracoamentoDetalheOut,
@@ -882,6 +884,74 @@ def painel_caixa(
             for a in abertas
         ],
     )
+
+
+@router.get("/acertos", response_model=list[AcertoResumoOut])
+def painel_acertos(
+    de: date | None = Query(default=None),
+    ate: date | None = Query(default=None),
+    vendedor_id: int | None = Query(default=None),
+    db: Session = Depends(get_db),
+):
+    """Relatório das expedições já acertadas — mesma conta de diferenças
+    (expedido × vendido × retornado) e totais em dinheiro do acerto ao
+    vivo (POST /expedicoes/{id}/acerto), pra conferência histórica."""
+    ate = ate or date.today()
+    de = de or (ate - timedelta(days=30))
+
+    expedicoes = db.execute(text("""
+        SELECT e.id, v.nome AS vendedor_nome, e.data_saida, e.data_acerto
+        FROM expedicao e JOIN vendedor v ON v.id = e.vendedor_id
+        WHERE e.data_acerto BETWEEN :de AND :ate
+          AND (CAST(:vendedor_id AS smallint) IS NULL OR e.vendedor_id = :vendedor_id)
+        ORDER BY e.data_acerto DESC, e.id DESC
+    """), {"de": de, "ate": ate, "vendedor_id": vendedor_id}).mappings().all()
+
+    out = []
+    for e in expedicoes:
+        diferencas = db.execute(text("""
+            SELECT ei.produto_id, p.nome AS produto_nome, ei.quantidade_kg AS expedida,
+                   COALESCE(v.kg, 0) AS vendida, COALESCE(r.kg, 0) AS retornada
+            FROM expedicao_item ei
+            JOIN produto p ON p.id = ei.produto_id
+            LEFT JOIN (
+              SELECT produto_id, SUM(quantidade_kg) AS kg FROM venda
+              WHERE expedicao_id = :id AND excluido_em IS NULL GROUP BY produto_id
+            ) v ON v.produto_id = ei.produto_id
+            LEFT JOIN (
+              SELECT produto_id, SUM(quantidade_kg) AS kg FROM expedicao_retorno
+              WHERE expedicao_id = :id GROUP BY produto_id
+            ) r ON r.produto_id = ei.produto_id
+            WHERE ei.expedicao_id = :id
+            ORDER BY p.nome
+        """), {"id": e["id"]}).mappings().all()
+
+        totais = db.execute(text("""
+            SELECT
+              COALESCE((SELECT SUM(valor_total) FROM venda WHERE expedicao_id = :id AND forma_pgto = 'Dinheiro' AND excluido_em IS NULL), 0)
+                AS vendas_dinheiro,
+              COALESCE((SELECT SUM(valor) FROM despesa WHERE expedicao_id = :id AND forma_pgto = 'Dinheiro'), 0)
+                AS despesas_dinheiro
+        """), {"id": e["id"]}).mappings().first()
+        vendas_dinheiro = float(totais["vendas_dinheiro"])
+        despesas_dinheiro = float(totais["despesas_dinheiro"])
+
+        out.append(AcertoResumoOut(
+            expedicao_id=e["id"], vendedor_nome=e["vendedor_nome"],
+            data_saida=e["data_saida"], data_acerto=e["data_acerto"],
+            total_vendas_dinheiro=vendas_dinheiro, total_despesas_dinheiro=despesas_dinheiro,
+            total_esperado_dinheiro=vendas_dinheiro - despesas_dinheiro,
+            diferencas=[
+                AcertoDiferencaOut(
+                    produto_id=d["produto_id"], produto_nome=d["produto_nome"],
+                    quantidade_expedida_kg=float(d["expedida"]), quantidade_vendida_kg=float(d["vendida"]),
+                    quantidade_retornada_kg=float(d["retornada"]),
+                    diferenca_kg=float(d["expedida"]) - float(d["vendida"]) - float(d["retornada"]),
+                )
+                for d in diferencas
+            ],
+        ))
+    return out
 
 
 @router.get("/dashboard", response_model=DashboardOut)

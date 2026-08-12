@@ -1010,11 +1010,53 @@ class AcertoOut(BaseModel):
     diferencas: list[AcertoDiferencaOut]
 
 
+class AcertoResumoOut(BaseModel):
+    """Uma linha por expedição já acertada — alimenta o relatório de
+    acertos (GET /paineis/acertos), mesma conta de AcertoOut mas pra
+    conferência histórica em vez do acerto ao vivo."""
+    expedicao_id: int
+    vendedor_nome: str
+    data_saida: date
+    data_acerto: date
+    total_vendas_dinheiro: float
+    total_despesas_dinheiro: float
+    total_esperado_dinheiro: float
+    diferencas: list[AcertoDiferencaOut]
+
+
+class RetornoDetalheOut(BaseModel):
+    id: int
+    expedicao_id: int
+    produto_id: int
+    produto_nome: str
+    quantidade_embalagens: float | None
+    quantidade_kg: float
+
+
+class RetornoEditarIn(BaseModel):
+    quantidade_embalagens: float | None = Field(default=None, ge=0)
+    quantidade_kg: float | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def um_dos_dois(self) -> "RetornoEditarIn":
+        if self.quantidade_embalagens is None and self.quantidade_kg is None:
+            raise ValueError("informe quantidade_embalagens ou quantidade_kg")
+        return self
+
+
 # ---------- Despesa (solta ou de expedição) ----------
 
 
 class DespesaIn(BaseModel):
     client_id: uuid.UUID
+    data: date
+    categoria: str
+    valor: float = Field(gt=0)
+    forma_pgto: str = "Dinheiro"
+    observacao: str | None = None
+
+
+class DespesaEditarIn(BaseModel):
     data: date
     categoria: str
     valor: float = Field(gt=0)

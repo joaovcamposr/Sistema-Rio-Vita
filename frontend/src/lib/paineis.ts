@@ -486,6 +486,36 @@ export const painelCaixa = (de?: string, ate?: string) => {
   return cachedGet<CaixaResumo>(`cache:painel:caixa:${de ?? ""}:${ate ?? ""}`, `/paineis/caixa${qs}`);
 };
 
+export interface AcertoDiferenca {
+  produto_id: number;
+  produto_nome: string;
+  quantidade_expedida_kg: number;
+  quantidade_vendida_kg: number;
+  quantidade_retornada_kg: number;
+  diferenca_kg: number;
+}
+
+export interface AcertoResumo {
+  expedicao_id: number;
+  vendedor_nome: string;
+  data_saida: string;
+  data_acerto: string;
+  total_vendas_dinheiro: number;
+  total_despesas_dinheiro: number;
+  total_esperado_dinheiro: number;
+  diferencas: AcertoDiferenca[];
+}
+
+export const painelAcertos = (de?: string, ate?: string, vendedorId?: number | null) => {
+  const qs = new URLSearchParams();
+  if (de && ate) { qs.set("de", de); qs.set("ate", ate); }
+  if (vendedorId) qs.set("vendedor_id", String(vendedorId));
+  return cachedGet<AcertoResumo[]>(
+    `cache:painel:acertos:${de ?? ""}:${ate ?? ""}:${vendedorId ?? ""}`,
+    `/paineis/acertos?${qs}`
+  );
+};
+
 export const painelComercialSerie = (
   granularidade: Granularidade, de?: string, ate?: string, clienteId?: number | null, vendedor?: string | null
 ) => {

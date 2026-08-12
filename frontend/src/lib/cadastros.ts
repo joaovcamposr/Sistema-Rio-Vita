@@ -158,6 +158,35 @@ export const editarExpedicao = (id: number, body: {
 export const listarEdicoesExpedicao = (id: number) =>
   cachedGet<ExpedicaoEdicao[]>(`cache:expedicao-edicoes:${id}`, `/expedicoes/${id}/edicoes`);
 
+export interface Despesa {
+  id: number;
+  data: string;
+  categoria: string;
+  valor: number;
+  forma_pgto: string;
+  expedicao_id: number | null;
+  observacao: string | null;
+  criado_em: string;
+}
+export const listarDespesasExpedicao = (expedicaoId: number) =>
+  cachedGet<Despesa[]>(`cache:despesas-expedicao:${expedicaoId}`, `/despesas?expedicao_id=${expedicaoId}`);
+export const editarDespesa = (id: number, body: {
+  data: string; categoria: string; valor: number; forma_pgto: string; observacao: string | null;
+}) => enviar<Despesa>(`/despesas/${id}`, "PATCH", body);
+
+export interface RetornoDetalhe {
+  id: number;
+  expedicao_id: number;
+  produto_id: number;
+  produto_nome: string;
+  quantidade_embalagens: number | null;
+  quantidade_kg: number;
+}
+export const listarRetornosExpedicao = (expedicaoId: number) =>
+  cachedGet<RetornoDetalhe[]>(`cache:retornos-expedicao:${expedicaoId}`, `/expedicoes/${expedicaoId}/retornos`);
+export const editarRetorno = (id: number, body: { quantidade_embalagens: number | null; quantidade_kg: number | null }) =>
+  enviar<RetornoDetalhe>(`/expedicoes/retornos/${id}`, "PATCH", body);
+
 export const obterCliente = (id: number) =>
   cachedGet<ClienteDetalhe>(`cache:cliente:${id}`, `/clientes/${id}`);
 export const criarCliente = (body: Omit<ClienteDetalhe, "id">) =>

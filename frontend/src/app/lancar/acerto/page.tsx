@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { listarClientes, listarProdutos, type Cliente, type Produto } from "@/lib/api";
-import { listarExpedicoesAbertas, listarPrecosCliente, type Expedicao } from "@/lib/cadastros";
+import { criarCliente, listarExpedicoesAbertas, listarPrecosCliente, type Expedicao } from "@/lib/cadastros";
 import { enfileirar } from "@/lib/offline-queue";
 import styles from "../form.module.css";
 
@@ -48,6 +48,9 @@ export default function AcertoExpedicao() {
   const [despesas, setDespesas] = useState<DespesaLinha[]>([]);
   const [enviando, setEnviando] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [criandoClienteIdx, setCriandoClienteIdx] = useState<number | null>(null);
+  const [novoClienteNome, setNovoClienteNome] = useState("");
+  const [salvandoCliente, setSalvandoCliente] = useState(false);
 
   useEffect(() => {
     Promise.all([listarExpedicoesAbertas(), listarClientes(), listarProdutos()])
@@ -89,6 +92,29 @@ export default function AcertoExpedicao() {
       } catch {
         /* sem preço cadastrado — operador digita na mão */
       }
+    }
+  }
+
+  function iniciarNovoCliente(idx: number) {
+    setCriandoClienteIdx(idx);
+    setNovoClienteNome("");
+  }
+
+  async function salvarNovoCliente(idx: number) {
+    const nome = novoClienteNome.trim();
+    if (!nome) return;
+    setSalvandoCliente(true);
+    try {
+      const cliente = await criarCliente({
+        nome, cnpj: null, contato: null, cidade: null, prazo_dias: null, emite_nf: false, emite_boleto: false,
+      });
+      setClientes((cs) => [...cs, cliente].sort((a, b) => a.nome.localeCompare(b.nome)));
+      setCriandoClienteIdx(null);
+      await aoEscolherCliente(idx, cliente.id);
+    } catch {
+      setErroCarregar("Não foi possível cadastrar o cliente — confira a conexão.");
+    } finally {
+      setSalvandoCliente(false);
     }
   }
 
@@ -248,12 +274,46 @@ export default function AcertoExpedicao() {
           <div key={idx} style={{ border: "1px solid var(--rule)", borderRadius: 11, padding: 12, marginBottom: 10 }}>
             <div className={styles.field} style={{ marginBottom: 10 }}>
               <label>Cliente</label>
-              <select className={styles.inp} value={v.clienteId ?? ""} onChange={(e) => aoEscolherCliente(idx, e.target.value ? Number(e.target.value) : null)}>
-                <option value="">Consumidor final</option>
-                {clientes.map((c) => (
-                  <option key={c.id} value={c.id}>{c.nome}</option>
-                ))}
-              </select>
+              {criandoClienteIdx === idx ? (
+                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <input
+                    className={styles.inp}
+                    placeholder="Nome do cliente novo"
+                    value={novoClienteNome}
+                    onChange={(e) => setNovoClienteNome(e.target.value)}
+                    autoFocus
+                  />
+                  <button
+                    type="button" className={styles.btnPrimary} style={{ padding: "9px 14px" }}
+                    disabled={salvandoCliente || !novoClienteNome.trim()}
+                    onClick={() => salvarNovoCliente(idx)}
+                  >
+                    {salvandoCliente ? "Salvando…" : "Criar"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCriandoClienteIdx(null)}
+                    style={{ background: "none", border: "none", color: "var(--ink-muted)", fontSize: ".85rem", cursor: "pointer" }}
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              ) : (
+                <select
+                  className={styles.inp}
+                  value={v.clienteId ?? ""}
+                  onChange={(e) => {
+                    if (e.target.value === "__novo__") { iniciarNovoCliente(idx); return; }
+                    aoEscolherCliente(idx, e.target.value ? Number(e.target.value) : null);
+                  }}
+                >
+                  <option value="">Consumidor final</option>
+                  {clientes.map((c) => (
+                    <option key={c.id} value={c.id}>{c.nome}</option>
+                  ))}
+                  <option value="__novo__">+ Novo cliente…</option>
+                </select>
+              )}
             </div>
             <div className={styles.field} style={{ marginBottom: 10 }}>
               <label>Produto</label>

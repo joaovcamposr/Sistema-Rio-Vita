@@ -18,6 +18,7 @@ const PAINEIS = [
   { href: "/painel/comercial", ico: "💰", nome: "Comercial", desc: "Vendas por período e funil de clientes" },
   { href: "/painel/agua", ico: "💧", nome: "Análise da água", desc: "Série dos últimos 60 dias, por viveiro" },
   { href: "/painel/caixa", ico: "🧮", nome: "Caixa", desc: "Conferência do dinheiro, por dia e por expedição" },
+  { href: "/painel/acertos", ico: "🚚", nome: "Acertos de expedição", desc: "Acertos já fechados, com opção de corrigir despesas e retornos" },
 ];
 
 export default function PainelHub() {
