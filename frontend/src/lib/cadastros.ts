@@ -157,6 +157,8 @@ export const editarExpedicao = (id: number, body: {
 }) => enviar<Expedicao>(`/expedicoes/${id}`, "PATCH", body);
 export const listarEdicoesExpedicao = (id: number) =>
   cachedGet<ExpedicaoEdicao[]>(`cache:expedicao-edicoes:${id}`, `/expedicoes/${id}/edicoes`);
+export const cancelarAcerto = (expedicaoId: number) =>
+  enviar<Expedicao>(`/expedicoes/${expedicaoId}/acerto/cancelar`, "POST", undefined);
 
 export interface Despesa {
   id: number;

@@ -310,3 +310,35 @@ def acertar_expedicao(
             for d in diferencas
         ],
     )
+
+
+@router.post("/{expedicao_id}/acerto/cancelar", response_model=ExpedicaoOut)
+def cancelar_acerto(
+    expedicao_id: int, db: Session = Depends(get_db), usuario: UsuarioOut = Depends(get_current_user),
+):
+    """Desfaz um acerto já fechado: cancela (exclusão reversível, igual
+    ao botão Excluir de Recebimentos) as vendas que ele gerou, remove as
+    despesas e retornos lançados junto do acerto — esses não têm
+    histórico, se precisar consultar algum valor antes de cancelar, veja
+    em /painel/acertos — e reabre a expedição pra poder ser acertada de
+    novo do zero."""
+    atual = db.execute(
+        text("SELECT data_acerto FROM expedicao WHERE id = :id"), {"id": expedicao_id}
+    ).mappings().first()
+    if atual is None:
+        raise HTTPException(404, "expedição não encontrada")
+    if atual["data_acerto"] is None:
+        raise HTTPException(422, "esta expedição ainda não foi acertada")
+
+    db.execute(text("""
+        UPDATE venda SET excluido_em = now(), excluido_por = :quem
+        WHERE expedicao_id = :id AND excluido_em IS NULL
+    """), {"id": expedicao_id, "quem": usuario.nome})
+    db.execute(text("DELETE FROM expedicao_retorno WHERE expedicao_id = :id"), {"id": expedicao_id})
+    db.execute(text("DELETE FROM despesa WHERE expedicao_id = :id"), {"id": expedicao_id})
+    db.execute(text("""
+        UPDATE expedicao SET data_acerto = NULL, acerto_client_id = NULL WHERE id = :id
+    """), {"id": expedicao_id})
+    db.commit()
+
+    return _carregar_expedicao(db, expedicao_id)

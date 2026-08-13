@@ -100,6 +100,14 @@ export async function contarPendentes(): Promise<number> {
   return comStore("readonly", (s) => s.count());
 }
 
+/** Remove um item da fila sem enviar — pra quando o lançamento não vai
+ * mais ser aceito do jeito que está (ex.: erro de validação que não some
+ * sozinho) e o operador prefere descartar e lançar de novo corrigido. */
+export async function descartarPendente(clientId: string): Promise<void> {
+  await comStore("readwrite", (s) => s.delete(clientId));
+  void avisarOuvintes();
+}
+
 /** Rota de cada tipo de lançamento. A maioria é fixa; o acerto de
  * expedição precisa do id da expedição embutido na própria URL, por isso
  * é uma função do payload em vez de uma string fixa. */

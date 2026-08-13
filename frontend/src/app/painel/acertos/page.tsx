@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { listarProdutos, type Produto } from "@/lib/api";
 import {
+  cancelarAcerto,
   editarDespesa,
   editarRetorno,
   listarDespesasExpedicao,
@@ -60,6 +61,7 @@ export default function PainelAcertos() {
   const [editandoRetornoId, setEditandoRetornoId] = useState<number | null>(null);
   const [formRetorno, setFormRetorno] = useState<FormRetorno | null>(null);
   const [salvando, setSalvando] = useState(false);
+  const [cancelandoId, setCancelandoId] = useState<number | null>(null);
 
   function carregar() {
     setDados(null);
@@ -169,6 +171,28 @@ export default function PainelAcertos() {
     }
   }
 
+  async function cancelar(a: AcertoResumo) {
+    const confirmar = window.confirm(
+      `Cancelar o acerto de ${a.vendedor_nome} (acertado em ${dataBr(a.data_acerto)})?\n\n` +
+      "As vendas geradas por esse acerto serão canceladas (dá pra restaurar depois em Recebimentos → Ver excluídas), " +
+      "as despesas e retornos lançados junto serão removidos, e a expedição volta a ficar em aberto pra ser " +
+      "acertada de novo."
+    );
+    if (!confirmar) return;
+    setCancelandoId(a.expedicao_id);
+    try {
+      await cancelarAcerto(a.expedicao_id);
+      setToast("Acerto cancelado — expedição reaberta");
+      setExpandidoId(null);
+      carregar();
+    } catch {
+      setToast("Não foi possível cancelar o acerto");
+    } finally {
+      setCancelandoId(null);
+      setTimeout(() => setToast(null), 3500);
+    }
+  }
+
   return (
     <div className={styles.page}>
       <div className={styles.appbar}>
@@ -243,6 +267,19 @@ export default function PainelAcertos() {
 
               {expandido && (
                 <div style={{ padding: 14, borderTop: "1px solid var(--rule)" }}>
+                  <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+                    <button
+                      type="button"
+                      disabled={cancelandoId === a.expedicao_id}
+                      onClick={() => cancelar(a)}
+                      style={{
+                        padding: "6px 14px", borderRadius: 8, border: "1px solid var(--crit)",
+                        background: "none", color: "var(--crit)", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer",
+                      }}
+                    >
+                      {cancelandoId === a.expedicao_id ? "Cancelando…" : "Cancelar acerto"}
+                    </button>
+                  </div>
                   <p className={styles.hint} style={{ fontWeight: 700, marginBottom: 8 }}>Diferenças (expedido × vendido × retornado)</p>
                   <div className={styles.tableWrap} style={{ marginBottom: 18 }}>
                     <table className={styles.tabela}>

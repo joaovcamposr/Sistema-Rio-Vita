@@ -396,7 +396,7 @@ export default function Recebimentos() {
                             ? `Pago${v.data_pagamento ? ` em ${dataBr(v.data_pagamento)}` : ""}`
                             : vencida
                               ? `Vencida${venc ? ` (venceu em ${dataBr(venc)})` : ""}`
-                              : `A vencer${venc ? ` (${dataBr(venc)})` : ""}`}
+                              : `Em aberto${venc ? ` (${dataBr(venc)})` : ""}`}
                         </span>
                       </td>
                       <td style={{ minWidth: 160 }}>
