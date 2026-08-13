@@ -90,9 +90,13 @@ def registrar_repicagem(
     body: RepicagemIn, db: Session = Depends(get_db), usuario: UsuarioOut = Depends(get_current_user),
 ):
     # idempotência: se este client_id já foi processado (retry offline),
-    # devolve o resultado anterior sem repetir a transação
+    # devolve o resultado anterior sem repetir a transação. Checa em
+    # lote_origem (não em lote): quando o destino já tinha lote ativo, a
+    # repicagem só soma em quantidade_inicial em vez de criar um lote
+    # novo, então o client_id nunca ficaria gravado em lote — só em
+    # lote_origem, um valor por leva de origem inserida.
     existente = db.execute(
-        text("SELECT id FROM lote WHERE client_id = :cid"), {"cid": str(body.client_id)}
+        text("SELECT lote_id FROM lote_origem WHERE client_id = :cid LIMIT 1"), {"cid": str(body.client_id)}
     ).mappings().first()
     if existente is not None:
         origem_ids = [
@@ -101,13 +105,13 @@ def registrar_repicagem(
                 text("""
                     SELECT o.lote_origem_id FROM lote_origem o
                     JOIN lote l ON l.id = o.lote_origem_id
-                    WHERE o.lote_id = :l AND l.data_fim IS NOT NULL
+                    WHERE o.client_id = :cid AND l.data_fim IS NOT NULL
                 """),
-                {"l": existente["id"]},
+                {"cid": str(body.client_id)},
             ).mappings().all()
         ]
         lote_row = db.execute(
-            text(f"SELECT {_COLUNAS_LOTE} FROM lote WHERE id = :id"), {"id": existente["id"]}
+            text(f"SELECT {_COLUNAS_LOTE} FROM lote WHERE id = :id"), {"id": existente["lote_id"]}
         ).mappings().first()
         return RepicagemOut(lote=LoteOut(**lote_row), lotes_origem_fechados=origem_ids)
 
@@ -180,12 +184,12 @@ def registrar_repicagem(
         for lote_origem_id, quantidade, saldo_atual in origem_lotes:
             db.execute(
                 text("""
-                    INSERT INTO lote_origem (lote_id, lote_origem_id, quantidade, peso_medio_g, data)
-                    VALUES (:lote_id, :lote_origem_id, :quantidade, :peso_medio_g, :data)
+                    INSERT INTO lote_origem (lote_id, lote_origem_id, quantidade, peso_medio_g, data, client_id)
+                    VALUES (:lote_id, :lote_origem_id, :quantidade, :peso_medio_g, :data, :client_id)
                 """),
                 {
                     "lote_id": novo["id"], "lote_origem_id": lote_origem_id, "quantidade": quantidade,
-                    "peso_medio_g": body.peso_medio_g, "data": body.data,
+                    "peso_medio_g": body.peso_medio_g, "data": body.data, "client_id": str(body.client_id),
                 },
             )
             # só fecha o lote de origem quando a repicagem esvazia ele por
@@ -207,7 +211,7 @@ def registrar_repicagem(
 
 
 _QUERY_REPICAGEM_DETALHE = """
-    SELECT o.lote_id, o.lote_origem_id, o.data, o.quantidade, o.peso_medio_g,
+    SELECT o.id, o.lote_id, o.lote_origem_id, o.data, o.quantidade, o.peso_medio_g,
            ld.codigo AS lote_destino_codigo, vd.codigo AS viveiro_destino_codigo,
            lo.codigo AS lote_origem_codigo, vo.codigo AS viveiro_origem_codigo,
            (lo.data_fim IS NOT NULL) AS lote_origem_fechado,
@@ -217,13 +221,13 @@ _QUERY_REPICAGEM_DETALHE = """
     JOIN viveiro vd ON vd.id = ld.viveiro_id
     JOIN lote lo ON lo.id = o.lote_origem_id
     JOIN viveiro vo ON vo.id = lo.viveiro_id
-    WHERE o.lote_id = :lote_id AND o.lote_origem_id = :lote_origem_id
+    WHERE o.id = :id
 """
 
 
-@router.patch("/repicagens/{lote_id}/{lote_origem_id}", response_model=RepicagemDetalheOut)
+@router.patch("/repicagens/{repicagem_id}", response_model=RepicagemDetalheOut)
 def editar_repicagem(
-    lote_id: int, lote_origem_id: int, body: RepicagemEditarIn, db: Session = Depends(get_db),
+    repicagem_id: int, body: RepicagemEditarIn, db: Session = Depends(get_db),
     _usuario: UsuarioOut = Depends(get_current_user),
 ):
     """Corrige quantidade/peso/data de uma repicagem já lançada. A
@@ -235,8 +239,8 @@ def editar_repicagem(
     origem automaticamente). Não mexe em fechamento/reabertura de lote
     (nem origem nem destino) — isso continua manual via outras telas."""
     atual = db.execute(
-        text("SELECT quantidade FROM lote_origem WHERE lote_id = :l AND lote_origem_id = :lo AND excluido_em IS NULL"),
-        {"l": lote_id, "lo": lote_origem_id},
+        text("SELECT lote_id, quantidade FROM lote_origem WHERE id = :id AND excluido_em IS NULL"),
+        {"id": repicagem_id},
     ).mappings().first()
     if atual is None:
         raise HTTPException(404, "repicagem não encontrada (ou excluída — restaure antes de editar)")
@@ -247,29 +251,27 @@ def editar_repicagem(
         db.execute(
             text("""
                 UPDATE lote_origem SET quantidade = :quantidade, peso_medio_g = :peso_medio_g, data = :data
-                WHERE lote_id = :l AND lote_origem_id = :lo
+                WHERE id = :id
             """),
-            {"l": lote_id, "lo": lote_origem_id, **body.model_dump()},
+            {"id": repicagem_id, **body.model_dump()},
         )
         if delta != 0:
             db.execute(
                 text("UPDATE lote SET quantidade_inicial = quantidade_inicial + :delta WHERE id = :id"),
-                {"delta": delta, "id": lote_id},
+                {"delta": delta, "id": atual["lote_id"]},
             )
         db.commit()
     except DBAPIError as exc:
         db.rollback()
         raise HTTPException(422, f"dado inválido ou fora das regras: {exc.orig}") from exc
 
-    row = db.execute(
-        text(_QUERY_REPICAGEM_DETALHE), {"lote_id": lote_id, "lote_origem_id": lote_origem_id}
-    ).mappings().first()
+    row = db.execute(text(_QUERY_REPICAGEM_DETALHE), {"id": repicagem_id}).mappings().first()
     return RepicagemDetalheOut(**row)
 
 
-@router.delete("/repicagens/{lote_id}/{lote_origem_id}", response_model=RepicagemDetalheOut)
+@router.delete("/repicagens/{repicagem_id}", response_model=RepicagemDetalheOut)
 def excluir_repicagem(
-    lote_id: int, lote_origem_id: int, db: Session = Depends(get_db),
+    repicagem_id: int, db: Session = Depends(get_db),
     usuario: UsuarioOut = Depends(get_current_user),
 ):
     """Exclusão reversível (POST .../restaurar desfaz). Como a
@@ -278,59 +280,49 @@ def excluir_repicagem(
     tanque de origem já recupera o saldo sozinho, porque vw_saldo_lote
     ignora lote_origem excluído."""
     atual = db.execute(
-        text("SELECT quantidade FROM lote_origem WHERE lote_id = :l AND lote_origem_id = :lo AND excluido_em IS NULL"),
-        {"l": lote_id, "lo": lote_origem_id},
+        text("SELECT lote_id, quantidade FROM lote_origem WHERE id = :id AND excluido_em IS NULL"),
+        {"id": repicagem_id},
     ).mappings().first()
     if atual is None:
         raise HTTPException(404, "repicagem não encontrada (ou já excluída)")
 
     db.execute(
-        text("""
-            UPDATE lote_origem SET excluido_em = now(), excluido_por = :quem
-            WHERE lote_id = :l AND lote_origem_id = :lo
-        """),
-        {"l": lote_id, "lo": lote_origem_id, "quem": usuario.nome},
+        text("UPDATE lote_origem SET excluido_em = now(), excluido_por = :quem WHERE id = :id"),
+        {"id": repicagem_id, "quem": usuario.nome},
     )
     db.execute(
         text("UPDATE lote SET quantidade_inicial = quantidade_inicial - :qtd WHERE id = :id"),
-        {"qtd": atual["quantidade"], "id": lote_id},
+        {"qtd": atual["quantidade"], "id": atual["lote_id"]},
     )
     db.commit()
 
-    row = db.execute(
-        text(_QUERY_REPICAGEM_DETALHE), {"lote_id": lote_id, "lote_origem_id": lote_origem_id}
-    ).mappings().first()
+    row = db.execute(text(_QUERY_REPICAGEM_DETALHE), {"id": repicagem_id}).mappings().first()
     return RepicagemDetalheOut(**row)
 
 
-@router.post("/repicagens/{lote_id}/{lote_origem_id}/restaurar", response_model=RepicagemDetalheOut)
+@router.post("/repicagens/{repicagem_id}/restaurar", response_model=RepicagemDetalheOut)
 def restaurar_repicagem(
-    lote_id: int, lote_origem_id: int, db: Session = Depends(get_db),
+    repicagem_id: int, db: Session = Depends(get_db),
     _usuario: UsuarioOut = Depends(get_current_user),
 ):
     atual = db.execute(
-        text("SELECT quantidade FROM lote_origem WHERE lote_id = :l AND lote_origem_id = :lo AND excluido_em IS NOT NULL"),
-        {"l": lote_id, "lo": lote_origem_id},
+        text("SELECT lote_id, quantidade FROM lote_origem WHERE id = :id AND excluido_em IS NOT NULL"),
+        {"id": repicagem_id},
     ).mappings().first()
     if atual is None:
         raise HTTPException(404, "repicagem não encontrada (ou não está excluída)")
 
     db.execute(
-        text("""
-            UPDATE lote_origem SET excluido_em = NULL, excluido_por = NULL
-            WHERE lote_id = :l AND lote_origem_id = :lo
-        """),
-        {"l": lote_id, "lo": lote_origem_id},
+        text("UPDATE lote_origem SET excluido_em = NULL, excluido_por = NULL WHERE id = :id"),
+        {"id": repicagem_id},
     )
     db.execute(
         text("UPDATE lote SET quantidade_inicial = quantidade_inicial + :qtd WHERE id = :id"),
-        {"qtd": atual["quantidade"], "id": lote_id},
+        {"qtd": atual["quantidade"], "id": atual["lote_id"]},
     )
     db.commit()
 
-    row = db.execute(
-        text(_QUERY_REPICAGEM_DETALHE), {"lote_id": lote_id, "lote_origem_id": lote_origem_id}
-    ).mappings().first()
+    row = db.execute(text(_QUERY_REPICAGEM_DETALHE), {"id": repicagem_id}).mappings().first()
     return RepicagemDetalheOut(**row)
 
 

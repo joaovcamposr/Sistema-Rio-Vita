@@ -407,11 +407,11 @@ def painel_repicagem(
     db: Session = Depends(get_db),
 ):
     """Uma linha por repicagem já lançada — tela de conferência, com
-    opção de corrigir cada lançamento (PATCH /repicagens/{lote_id}/{lote_origem_id})."""
+    opção de corrigir cada lançamento (PATCH /repicagens/{repicagem_id})."""
     ate = ate or date.today()
     de = de or (ate - timedelta(days=30))
     rows = db.execute(text(f"""
-        SELECT o.lote_id, o.lote_origem_id, o.data, o.quantidade, o.peso_medio_g,
+        SELECT o.id, o.lote_id, o.lote_origem_id, o.data, o.quantidade, o.peso_medio_g,
                ld.codigo AS lote_destino_codigo, vd.codigo AS viveiro_destino_codigo,
                lo.codigo AS lote_origem_codigo, vo.codigo AS viveiro_origem_codigo,
                (lo.data_fim IS NOT NULL) AS lote_origem_fechado,

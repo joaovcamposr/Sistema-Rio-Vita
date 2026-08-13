@@ -432,6 +432,7 @@ export const painelDespesca = (de?: string, ate?: string, excluidos?: boolean) =
 };
 
 export interface RepicagemDetalhe {
+  id: number;
   lote_id: number;
   lote_origem_id: number;
   data: string;

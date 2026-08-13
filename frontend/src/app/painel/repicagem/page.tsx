@@ -21,9 +21,6 @@ function dataBr(iso: string): string {
   const [a, m, d] = iso.split("-");
   return `${d}/${m}/${a}`;
 }
-function chave(r: RepicagemDetalhe): string {
-  return `${r.lote_id}:${r.lote_origem_id}`;
-}
 function dataHoraBr(iso: string): string {
   const d = new Date(iso);
   return d.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
@@ -42,12 +39,12 @@ export default function PainelRepicagem() {
   const [dados, setDados] = useState<RepicagemDetalhe[] | null>(null);
   const [erro, setErro] = useState<string | null>(null);
 
-  const [editandoChave, setEditandoChave] = useState<string | null>(null);
+  const [editandoId, setEditandoId] = useState<number | null>(null);
   const [form, setForm] = useState<EdicaoForm | null>(null);
   const [salvando, setSalvando] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [mostrarExcluidos, setMostrarExcluidos] = useState(false);
-  const [processandoChave, setProcessandoChave] = useState<string | null>(null);
+  const [processandoId, setProcessandoId] = useState<number | null>(null);
 
   function carregar() {
     setDados(null);
@@ -69,35 +66,35 @@ export default function PainelRepicagem() {
 
   async function excluir(r: RepicagemDetalhe) {
     if (!window.confirm(`Excluir a repicagem de ${r.viveiro_origem_codigo} para ${r.viveiro_destino_codigo}? Pode ser restaurada depois.`)) return;
-    setProcessandoChave(chave(r));
+    setProcessandoId(r.id);
     try {
-      await excluirRepicagem(r.lote_id, r.lote_origem_id);
+      await excluirRepicagem(r.id);
       setToast("Repicagem excluída");
       recarregar();
     } catch {
       setToast("Não foi possível excluir");
     } finally {
-      setProcessandoChave(null);
+      setProcessandoId(null);
       setTimeout(() => setToast(null), 3000);
     }
   }
 
   async function restaurar(r: RepicagemDetalhe) {
-    setProcessandoChave(chave(r));
+    setProcessandoId(r.id);
     try {
-      await restaurarRepicagem(r.lote_id, r.lote_origem_id);
+      await restaurarRepicagem(r.id);
       setToast("Repicagem restaurada");
       recarregar();
     } catch {
       setToast("Não foi possível restaurar");
     } finally {
-      setProcessandoChave(null);
+      setProcessandoId(null);
       setTimeout(() => setToast(null), 3000);
     }
   }
 
   function iniciarEdicao(r: RepicagemDetalhe) {
-    setEditandoChave(chave(r));
+    setEditandoId(r.id);
     setForm({
       data: r.data, quantidade: String(r.quantidade), peso_medio_g: String(r.peso_medio_g).replace(".", ","),
     });
@@ -107,13 +104,13 @@ export default function PainelRepicagem() {
     if (!form) return;
     setSalvando(true);
     try {
-      await editarRepicagem(r.lote_id, r.lote_origem_id, {
+      await editarRepicagem(r.id, {
         data: form.data,
         quantidade: Math.round(parseFloat(form.quantidade.replace(",", ".")) || 0),
         peso_medio_g: parseFloat(form.peso_medio_g.replace(",", ".")) || 0,
       });
       setToast(`Repicagem de ${r.viveiro_origem_codigo} para ${r.viveiro_destino_codigo} corrigida`);
-      setEditandoChave(null);
+      setEditandoId(null);
       setForm(null);
       // recarrega do servidor em vez de remendar o estado local — o
       // estoque de peixe dos dois tanques (origem e destino) depende de
@@ -189,10 +186,9 @@ export default function PainelRepicagem() {
               </thead>
               <tbody>
                 {dados.map((r) => {
-                  const k = chave(r);
                   return (
-                    <tr key={k}>
-                      {editandoChave === k && form ? (
+                    <tr key={r.id}>
+                      {editandoId === r.id && form ? (
                         <>
                           <td>
                             <input
@@ -230,7 +226,7 @@ export default function PainelRepicagem() {
                             </button>
                             <button
                               type="button"
-                              onClick={() => { setEditandoChave(null); setForm(null); }}
+                              onClick={() => { setEditandoId(null); setForm(null); }}
                               style={{ background: "none", border: "none", color: "var(--ink-muted)", fontSize: "0.78rem", cursor: "pointer" }}
                             >
                               Cancelar
@@ -252,7 +248,7 @@ export default function PainelRepicagem() {
                                   {r.excluido_por ? ` · ${r.excluido_por}` : ""}
                                 </span>
                                 <button
-                                  type="button" disabled={processandoChave === k} onClick={() => restaurar(r)}
+                                  type="button" disabled={processandoId === r.id} onClick={() => restaurar(r)}
                                   style={{ background: "none", border: "none", color: "var(--brand-deep)", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer" }}
                                 >
                                   Restaurar
@@ -269,7 +265,7 @@ export default function PainelRepicagem() {
                                 </button>
                                 {" · "}
                                 <button
-                                  type="button" disabled={processandoChave === k} onClick={() => excluir(r)}
+                                  type="button" disabled={processandoId === r.id} onClick={() => excluir(r)}
                                   style={{ background: "none", border: "none", color: "var(--crit)", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer" }}
                                 >
                                   Excluir

@@ -244,6 +244,7 @@ class RepicagemEditarIn(BaseModel):
 
 
 class RepicagemDetalheOut(BaseModel):
+    id: int
     lote_id: int
     lote_origem_id: int
     data: date

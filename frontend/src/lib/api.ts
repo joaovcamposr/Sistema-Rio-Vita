@@ -162,10 +162,10 @@ export async function restaurarDespesca(despescaId: number): Promise<void> {
   if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
 }
 
-export async function editarRepicagem(loteId: number, loteOrigemId: number, body: {
+export async function editarRepicagem(id: number, body: {
   data: string; quantidade: number; peso_medio_g: number;
 }): Promise<RepicagemDetalhe> {
-  const r = await fetch(`${apiBase()}/repicagens/${loteId}/${loteOrigemId}`, {
+  const r = await fetch(`${apiBase()}/repicagens/${id}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json", ...authHeader() },
     body: JSON.stringify(body),
@@ -175,14 +175,14 @@ export async function editarRepicagem(loteId: number, loteOrigemId: number, body
   return (await r.json()) as RepicagemDetalhe;
 }
 
-export async function excluirRepicagem(loteId: number, loteOrigemId: number): Promise<void> {
-  const r = await fetch(`${apiBase()}/repicagens/${loteId}/${loteOrigemId}`, { method: "DELETE", headers: authHeader() });
+export async function excluirRepicagem(id: number): Promise<void> {
+  const r = await fetch(`${apiBase()}/repicagens/${id}`, { method: "DELETE", headers: authHeader() });
   if (r.status === 401) sessaoInvalida();
   if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
 }
 
-export async function restaurarRepicagem(loteId: number, loteOrigemId: number): Promise<void> {
-  const r = await fetch(`${apiBase()}/repicagens/${loteId}/${loteOrigemId}/restaurar`, {
+export async function restaurarRepicagem(id: number): Promise<void> {
+  const r = await fetch(`${apiBase()}/repicagens/${id}/restaurar`, {
     method: "POST", headers: authHeader(),
   });
   if (r.status === 401) sessaoInvalida();
