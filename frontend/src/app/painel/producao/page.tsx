@@ -6,6 +6,7 @@ import {
   painelProducao, painelProducaoDetalhe, painelProducaoSerie,
   type Granularidade, type ProducaoDetalheLinha, type ProducaoResumo, type ProducaoSerie,
 } from "@/lib/paineis";
+import { editarProducao, excluirProducao, listarProdutos, restaurarProducao, type Produto } from "@/lib/api";
 import Chart, { type SeriePonto } from "@/components/Chart";
 import styles from "../painel.module.css";
 
@@ -24,6 +25,10 @@ function dataBr(iso: string): string {
   const [a, m, d] = iso.split("-");
   return `${d}/${m}/${a}`;
 }
+function dataHoraBr(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
 function formatarBucket(b: string): string {
   if (b.length === 4) return b;
   if (b.length === 7) {
@@ -40,6 +45,13 @@ const GRANULARIDADES: { valor: Granularidade; rotulo: string }[] = [
   { valor: "ano", rotulo: "Ano" },
 ];
 
+interface FormProducao {
+  data: string;
+  produto_id: number;
+  quantidade: string;
+  data_despesca: string;
+}
+
 export default function PainelProducao() {
   const router = useRouter();
   const [de, setDe] = useState(diasAtras(30));
@@ -52,16 +64,32 @@ export default function PainelProducao() {
   const [comoTabela, setComoTabela] = useState(false);
   const [detalhe, setDetalhe] = useState<ProducaoDetalheLinha[] | null>(null);
   const [mostrarDetalhe, setMostrarDetalhe] = useState(false);
+  const [mostrarExcluidos, setMostrarExcluidos] = useState(false);
+  const [produtosCadastro, setProdutosCadastro] = useState<Produto[]>([]);
+  const [editandoId, setEditandoId] = useState<number | null>(null);
+  const [form, setForm] = useState<FormProducao | null>(null);
+  const [salvando, setSalvando] = useState(false);
+  const [processandoId, setProcessandoId] = useState<number | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
     setDados(null);
     painelProducao(de, ate).then(setDados).catch(() => setErro("Sem conexão e sem dado salvo deste aparelho ainda."));
   }, [de, ate]);
 
-  useEffect(() => {
+  function carregarDetalhe() {
     setDetalhe(null);
-    painelProducaoDetalhe(de, ate).then(setDetalhe).catch(() => undefined);
-  }, [de, ate]);
+    painelProducaoDetalhe(de, ate, mostrarExcluidos).then(setDetalhe).catch(() => undefined);
+  }
+
+  useEffect(() => {
+    carregarDetalhe();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [de, ate, mostrarExcluidos]);
+
+  useEffect(() => {
+    listarProdutos().then(setProdutosCadastro).catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     setSerie(null);
@@ -98,6 +126,73 @@ export default function PainelProducao() {
       valores: { "Peso sujo médio (g)": b.peso_medio_suja_ponderado_g },
     }));
   }, [serie]);
+
+  function iniciarEdicao(d: ProducaoDetalheLinha) {
+    const produto = produtosCadastro.find((p) => p.id === d.produto_id);
+    const valor = produto?.kg_digitado ? d.quantidade_kg : (d.quantidade_embalagens ?? d.quantidade_kg);
+    setEditandoId(d.id);
+    setForm({
+      data: d.data, produto_id: d.produto_id,
+      quantidade: String(valor).replace(".", ","),
+      data_despesca: d.data_despesca ?? "",
+    });
+  }
+
+  async function salvarEdicao(d: ProducaoDetalheLinha) {
+    if (!form) return;
+    const produto = produtosCadastro.find((p) => p.id === form.produto_id);
+    if (!produto) return;
+    const qtd = parseFloat(form.quantidade.replace(",", ".")) || 0;
+    setSalvando(true);
+    try {
+      await editarProducao(d.id, {
+        data: form.data,
+        produto_id: form.produto_id,
+        quantidade_embalagens: produto.kg_digitado ? null : qtd,
+        quantidade_kg: produto.kg_digitado ? qtd : null,
+        lote_id: d.lote_id,
+        data_despesca: form.data_despesca || null,
+      });
+      setToast("Produção corrigida");
+      setEditandoId(null);
+      setForm(null);
+      carregarDetalhe();
+    } catch {
+      setToast("Não foi possível salvar — confira os valores e a conexão");
+    } finally {
+      setSalvando(false);
+      setTimeout(() => setToast(null), 3000);
+    }
+  }
+
+  async function excluir(d: ProducaoDetalheLinha) {
+    if (!window.confirm(`Excluir a produção de ${d.produto_nome} de ${dataBr(d.data)}? Pode ser restaurada depois.`)) return;
+    setProcessandoId(d.id);
+    try {
+      await excluirProducao(d.id);
+      setToast("Produção excluída");
+      carregarDetalhe();
+    } catch {
+      setToast("Não foi possível excluir");
+    } finally {
+      setProcessandoId(null);
+      setTimeout(() => setToast(null), 3000);
+    }
+  }
+
+  async function restaurar(d: ProducaoDetalheLinha) {
+    setProcessandoId(d.id);
+    try {
+      await restaurarProducao(d.id);
+      setToast("Produção restaurada");
+      carregarDetalhe();
+    } catch {
+      setToast("Não foi possível restaurar");
+    } finally {
+      setProcessandoId(null);
+      setTimeout(() => setToast(null), 3000);
+    }
+  }
 
   return (
     <div className={styles.page}>
@@ -252,16 +347,32 @@ export default function PainelProducao() {
 
         <div className={styles.section} style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <span>Detalhe por lançamento</span>
-          <button
-            type="button"
-            onClick={() => setMostrarDetalhe((v) => !v)}
-            style={{
-              padding: "6px 12px", borderRadius: 9, border: "1px solid var(--rule-strong)",
-              background: "var(--surface)", color: "var(--ink-muted)", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer",
-            }}
-          >
-            {mostrarDetalhe ? "Ocultar" : "Mostrar"}
-          </button>
+          <div style={{ display: "flex", gap: 8 }}>
+            {mostrarDetalhe && (
+              <button
+                type="button"
+                onClick={() => setMostrarExcluidos((v) => !v)}
+                style={{
+                  padding: "6px 12px", borderRadius: 9, border: "1px solid var(--rule-strong)",
+                  background: mostrarExcluidos ? "var(--brand)" : "var(--surface)",
+                  color: mostrarExcluidos ? "var(--brand-ink)" : "var(--ink-muted)",
+                  fontWeight: 700, fontSize: "0.78rem", cursor: "pointer",
+                }}
+              >
+                {mostrarExcluidos ? "Vendo excluídas" : "Ver excluídas"}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setMostrarDetalhe((v) => !v)}
+              style={{
+                padding: "6px 12px", borderRadius: 9, border: "1px solid var(--rule-strong)",
+                background: "var(--surface)", color: "var(--ink-muted)", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer",
+              }}
+            >
+              {mostrarDetalhe ? "Ocultar" : "Mostrar"}
+            </button>
+          </div>
         </div>
         {mostrarDetalhe && (
           <>
@@ -271,26 +382,116 @@ export default function PainelProducao() {
               mesma família e mesma despesca compartilham o valor, mas famílias diferentes têm rendimentos próprios.
             </p>
             {!detalhe && <p className={styles.hint}>Carregando…</p>}
-            {detalhe && detalhe.length === 0 && <p className={styles.hint}>Nenhuma produção no período.</p>}
+            {detalhe && detalhe.length === 0 && (
+              <p className={styles.hint}>{mostrarExcluidos ? "Nenhuma produção excluída no período." : "Nenhuma produção no período."}</p>
+            )}
             {detalhe && detalhe.length > 0 && (
               <div className={styles.tableWrap}>
                 <table className={styles.tabela}>
                   <thead>
                     <tr>
                       <th>Data</th><th>Produto</th><th>Kg</th><th>Tanque</th>
-                      <th>Despesca de origem</th><th>Peso sujo médio</th><th>Rendimento</th>
+                      <th>Despesca de origem</th><th>Peso sujo médio</th><th>Rendimento</th><th></th>
                     </tr>
                   </thead>
                   <tbody>
-                    {detalhe.map((d, i) => (
-                      <tr key={i}>
-                        <td>{dataBr(d.data)}</td>
-                        <td>{d.produto_nome}</td>
-                        <td>{nf(d.quantidade_kg, 1)}</td>
-                        <td>{d.viveiro_codigo ?? "—"}{d.lote_codigo ? ` (${d.lote_codigo})` : ""}</td>
-                        <td>{d.data_despesca ? dataBr(d.data_despesca) : "—"}</td>
-                        <td>{d.peso_medio_suja_g !== null ? `${nf(d.peso_medio_suja_g)} g` : "—"}</td>
-                        <td>{d.rendimento !== null ? `${nf(d.rendimento * 100)}%` : "—"}</td>
+                    {detalhe.map((d) => (
+                      <tr key={d.id}>
+                        {editandoId === d.id && form ? (
+                          <>
+                            <td>
+                              <input
+                                type="date" value={form.data} style={{ width: 130 }}
+                                onChange={(e) => setForm({ ...form, data: e.target.value })}
+                              />
+                            </td>
+                            <td>
+                              <select
+                                value={form.produto_id}
+                                onChange={(e) => setForm({ ...form, produto_id: Number(e.target.value) })}
+                              >
+                                {produtosCadastro.map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}
+                              </select>
+                            </td>
+                            <td>
+                              <input
+                                type="number" inputMode="decimal" style={{ width: 80, textAlign: "right" }}
+                                value={form.quantidade}
+                                onChange={(e) => setForm({ ...form, quantidade: e.target.value })}
+                              />
+                            </td>
+                            <td>{d.viveiro_codigo ?? "—"}{d.lote_codigo ? ` (${d.lote_codigo})` : ""}</td>
+                            <td>
+                              <input
+                                type="date" value={form.data_despesca} style={{ width: 130 }}
+                                onChange={(e) => setForm({ ...form, data_despesca: e.target.value })}
+                              />
+                            </td>
+                            <td>—</td>
+                            <td>—</td>
+                            <td style={{ whiteSpace: "nowrap" }}>
+                              <button
+                                type="button" disabled={salvando} onClick={() => salvarEdicao(d)}
+                                style={{
+                                  padding: "6px 12px", borderRadius: 8, border: "none", background: "var(--brand)",
+                                  color: "var(--brand-ink)", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer", marginRight: 6,
+                                }}
+                              >
+                                OK
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => { setEditandoId(null); setForm(null); }}
+                                style={{ background: "none", border: "none", color: "var(--ink-muted)", fontSize: "0.78rem", cursor: "pointer" }}
+                              >
+                                Cancelar
+                              </button>
+                            </td>
+                          </>
+                        ) : (
+                          <>
+                            <td>{dataBr(d.data)}</td>
+                            <td>{d.produto_nome}</td>
+                            <td>{nf(d.quantidade_kg, 1)}</td>
+                            <td>{d.viveiro_codigo ?? "—"}{d.lote_codigo ? ` (${d.lote_codigo})` : ""}</td>
+                            <td>{d.data_despesca ? dataBr(d.data_despesca) : "—"}</td>
+                            <td>{d.peso_medio_suja_g !== null ? `${nf(d.peso_medio_suja_g)} g` : "—"}</td>
+                            <td>{d.rendimento !== null ? `${nf(d.rendimento * 100)}%` : "—"}</td>
+                            <td style={{ whiteSpace: "nowrap" }}>
+                              {mostrarExcluidos ? (
+                                <>
+                                  <span className={styles.hint} style={{ display: "block", fontSize: "0.72rem" }}>
+                                    {d.excluido_em ? `Excluída ${dataHoraBr(d.excluido_em)}` : ""}
+                                    {d.excluido_por ? ` · ${d.excluido_por}` : ""}
+                                  </span>
+                                  <button
+                                    type="button" disabled={processandoId === d.id} onClick={() => restaurar(d)}
+                                    style={{ background: "none", border: "none", color: "var(--brand-deep)", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer" }}
+                                  >
+                                    Restaurar
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => iniciarEdicao(d)}
+                                    style={{ background: "none", border: "none", color: "var(--brand-deep)", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer" }}
+                                  >
+                                    Editar
+                                  </button>
+                                  {" · "}
+                                  <button
+                                    type="button" disabled={processandoId === d.id} onClick={() => excluir(d)}
+                                    style={{ background: "none", border: "none", color: "var(--crit)", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer" }}
+                                  >
+                                    Excluir
+                                  </button>
+                                </>
+                              )}
+                            </td>
+                          </>
+                        )}
                       </tr>
                     ))}
                   </tbody>
@@ -300,6 +501,16 @@ export default function PainelProducao() {
           </>
         )}
       </div>
+
+      {toast && (
+        <div style={{
+          position: "fixed", bottom: 20, left: "50%", transform: "translateX(-50%)",
+          background: "var(--ink)", color: "var(--ground)", padding: "10px 18px", borderRadius: 10,
+          fontSize: "0.85rem", fontWeight: 600, zIndex: 50,
+        }}>
+          {toast}
+        </div>
+      )}
     </div>
   );
 }

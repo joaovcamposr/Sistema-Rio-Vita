@@ -338,7 +338,7 @@ def _rendimento_por_destino(db: Session, de: date, ate: date, like_padrao: str, 
             SELECT SUM(peso_total_kg) AS kg_desp FROM despesca
             WHERE lote_id = p.lote_id AND data = p.data_despesca AND destino = :destino AND excluido_em IS NULL
           ) d ON true
-          WHERE p.data_despesca BETWEEN :de AND :ate
+          WHERE p.data_despesca BETWEEN :de AND :ate AND p.excluido_em IS NULL
           GROUP BY p.lote_id, p.data_despesca
         ) batch
     """), {"de": de, "ate": ate, "like_padrao": like_padrao, "destino": destino}).scalar()
@@ -348,6 +348,7 @@ def _rendimento_por_destino(db: Session, de: date, ate: date, like_padrao: str, 
 def painel_producao_detalhe(
     de: date | None = Query(default=None),
     ate: date | None = Query(default=None),
+    excluidos: bool = Query(default=False, description="true = só os excluídos (tela de restaurar)"),
     db: Session = Depends(get_db),
 ):
     """Uma linha por lançamento de produção, com o rendimento e a despesca
@@ -358,15 +359,16 @@ def painel_producao_detalhe(
     não têm mais o mesmo número."""
     ate = ate or date.today()
     de = de or (ate - timedelta(days=30))
-    rows = db.execute(text("""
-        SELECT d.data, pr.nome AS produto_nome, d.quantidade_kg,
-               l.codigo AS lote_codigo, v.codigo AS viveiro_codigo,
-               d.data_despesca, d.peso_medio_suja_g, d.rendimento
+    rows = db.execute(text(f"""
+        SELECT d.id, d.data, d.produto_id, pr.nome AS produto_nome, d.quantidade_embalagens, d.quantidade_kg,
+               d.lote_id, l.codigo AS lote_codigo, v.codigo AS viveiro_codigo,
+               d.data_despesca, d.peso_medio_suja_g, d.rendimento, d.excluido_em, d.excluido_por
         FROM vw_producao_detalhe d
         JOIN produto pr ON pr.id = d.produto_id
         LEFT JOIN lote l ON l.id = d.lote_id
         LEFT JOIN viveiro v ON v.id = l.viveiro_id
         WHERE d.data BETWEEN :de AND :ate
+          AND {"d.excluido_em IS NOT NULL" if excluidos else "d.excluido_em IS NULL"}
         ORDER BY d.data DESC, d.id DESC
     """), {"de": de, "ate": ate}).mappings().all()
     return [ProducaoDetalheOut(**r) for r in rows]
@@ -464,7 +466,7 @@ def painel_producao(
     por_produto = db.execute(text("""
         SELECT p.produto_id, pr.nome AS produto_nome, SUM(p.quantidade_kg) AS quantidade_kg
         FROM producao p JOIN produto pr ON pr.id = p.produto_id
-        WHERE p.data BETWEEN :de AND :ate
+        WHERE p.data BETWEEN :de AND :ate AND p.excluido_em IS NULL
         GROUP BY p.produto_id, pr.nome
         ORDER BY pr.nome
     """), {"de": de, "ate": ate}).mappings().all()
@@ -480,7 +482,7 @@ def painel_producao(
           COALESCE(SUM(quantidade_kg) FILTER (WHERE pr.nome LIKE 'Postas%'), 0) AS postas_kg,
           COALESCE(SUM(quantidade_kg) FILTER (WHERE pr.nome LIKE 'Tilápia limpa%'), 0) AS limpa_kg
         FROM producao p JOIN produto pr ON pr.id = p.produto_id
-        WHERE p.data BETWEEN :de AND :ate
+        WHERE p.data BETWEEN :de AND :ate AND p.excluido_em IS NULL
     """), {"de": de, "ate": ate}).mappings().first()
 
     rendimento_file = _rendimento_por_destino(db, de, ate, "Filé%", "file")
@@ -525,7 +527,7 @@ def painel_estoque(
         FROM produto pr
         LEFT JOIN (
           SELECT produto_id, SUM(quantidade_embalagens) AS embalagens, SUM(quantidade_kg) AS kg
-          FROM producao WHERE data BETWEEN :de AND :ate GROUP BY produto_id
+          FROM producao WHERE data BETWEEN :de AND :ate AND excluido_em IS NULL GROUP BY produto_id
         ) prod ON prod.produto_id = pr.id
         LEFT JOIN (
           SELECT produto_id, SUM(quantidade_un) AS un, SUM(quantidade_kg) AS kg
@@ -763,7 +765,7 @@ def painel_producao_serie(
         SELECT {bucket_producao} AS bucket, p.produto_id, pr.nome AS produto_nome,
                SUM(p.quantidade_kg) AS quantidade_kg
         FROM producao p JOIN produto pr ON pr.id = p.produto_id
-        WHERE p.data BETWEEN :de AND :ate
+        WHERE p.data BETWEEN :de AND :ate AND p.excluido_em IS NULL
         GROUP BY bucket, p.produto_id, pr.nome
         ORDER BY bucket, pr.nome
     """), {"de": de, "ate": ate}).mappings().all()
@@ -789,7 +791,7 @@ def painel_producao_serie(
             SELECT SUM(peso_total_kg) AS kg_desp FROM despesca
             WHERE lote_id = p.lote_id AND data = p.data_despesca AND destino = 'file' AND excluido_em IS NULL
           ) d ON true
-          WHERE p.data_despesca BETWEEN :de AND :ate
+          WHERE p.data_despesca BETWEEN :de AND :ate AND p.excluido_em IS NULL
           GROUP BY bucket, p.lote_id, p.data_despesca
         ) batch
         GROUP BY bucket
@@ -969,7 +971,7 @@ def painel_dashboard(
     producao_tot = db.execute(text("""
         SELECT COALESCE(SUM(p.quantidade_kg), 0) AS kg, COUNT(DISTINCT p.data) AS dias
         FROM producao p JOIN produto pr ON pr.id = p.produto_id
-        WHERE p.data BETWEEN :de AND :ate AND pr.nome LIKE 'Filé%'
+        WHERE p.data BETWEEN :de AND :ate AND pr.nome LIKE 'Filé%' AND p.excluido_em IS NULL
     """), {"de": de, "ate": ate}).mappings().first()
 
     # "Vendas" no dashboard também olha só Filé, mesmo critério da Produção
@@ -982,7 +984,7 @@ def painel_dashboard(
     serie_rows = db.execute(text("""
         SELECT p.data, SUM(p.quantidade_kg) AS kg
         FROM producao p JOIN produto pr ON pr.id = p.produto_id
-        WHERE p.data BETWEEN :de AND :ate AND pr.nome LIKE 'Filé%'
+        WHERE p.data BETWEEN :de AND :ate AND pr.nome LIKE 'Filé%' AND p.excluido_em IS NULL
         GROUP BY p.data ORDER BY p.data
     """), {"de": de, "ate": ate}).mappings().all()
 
@@ -1005,7 +1007,7 @@ def painel_dashboard(
             SELECT SUM(peso_total_kg) AS kg_desp FROM despesca
             WHERE lote_id = p.lote_id AND data = p.data_despesca AND destino = 'file' AND excluido_em IS NULL
           ) d ON true
-          WHERE p.data_despesca BETWEEN :de AND :ate
+          WHERE p.data_despesca BETWEEN :de AND :ate AND p.excluido_em IS NULL
           GROUP BY p.lote_id, p.data_despesca
         ) batch
         GROUP BY data_despesca ORDER BY data_despesca
@@ -1033,7 +1035,7 @@ def painel_dashboard(
             SELECT SUM(peso_total_kg) AS kg_desp FROM despesca
             WHERE lote_id = p.lote_id AND data = p.data_despesca AND destino = 'file' AND excluido_em IS NULL
           ) d ON true
-          WHERE p.data_despesca BETWEEN :de AND :ate
+          WHERE p.data_despesca BETWEEN :de AND :ate AND p.excluido_em IS NULL
           GROUP BY p.lote_id, p.data_despesca
         ) batch
     """), {"de": de, "ate": ate}).scalar()

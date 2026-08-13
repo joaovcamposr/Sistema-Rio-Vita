@@ -168,6 +168,21 @@ class ProducaoOut(BaseModel):
     criado_em: datetime
 
 
+class ProducaoEditarIn(BaseModel):
+    data: date
+    produto_id: int
+    quantidade_embalagens: float | None = Field(default=None, ge=0)
+    quantidade_kg: float | None = Field(default=None, ge=0)
+    lote_id: int | None = None
+    data_despesca: date | None = None
+
+    @model_validator(mode="after")
+    def um_dos_dois_informado(self) -> "ProducaoEditarIn":
+        if self.quantidade_embalagens is None and self.quantidade_kg is None:
+            raise ValueError("informe quantidade_embalagens ou quantidade_kg")
+        return self
+
+
 # ---------- Povoamento / Repicagem (lote) ----------
 
 class LoteOut(BaseModel):
@@ -650,14 +665,20 @@ class ProducaoPorProdutoOut(BaseModel):
 
 
 class ProducaoDetalheOut(BaseModel):
+    id: int
     data: date
+    produto_id: int
     produto_nome: str
+    quantidade_embalagens: float | None
     quantidade_kg: float
+    lote_id: int | None
     lote_codigo: str | None
     viveiro_codigo: str | None
     data_despesca: date | None
     peso_medio_suja_g: float | None
     rendimento: float | None
+    excluido_em: datetime | None = None
+    excluido_por: str | None = None
 
 
 class ProducaoResumoOut(BaseModel):

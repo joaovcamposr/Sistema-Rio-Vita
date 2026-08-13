@@ -213,6 +213,31 @@ export async function restaurarArracoamento(id: number): Promise<void> {
   if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
 }
 
+export async function editarProducao(id: number, body: {
+  data: string; produto_id: number; quantidade_embalagens: number | null; quantidade_kg: number | null;
+  lote_id: number | null; data_despesca: string | null;
+}): Promise<void> {
+  const r = await fetch(`${apiBase()}/producao/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...authHeader() },
+    body: JSON.stringify(body),
+  });
+  if (r.status === 401) sessaoInvalida();
+  if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+}
+
+export async function excluirProducao(id: number): Promise<void> {
+  const r = await fetch(`${apiBase()}/producao/${id}`, { method: "DELETE", headers: authHeader() });
+  if (r.status === 401) sessaoInvalida();
+  if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+}
+
+export async function restaurarProducao(id: number): Promise<void> {
+  const r = await fetch(`${apiBase()}/producao/${id}/restaurar`, { method: "POST", headers: authHeader() });
+  if (r.status === 401) sessaoInvalida();
+  if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+}
+
 export const listarClientes = () => cachedGet<Cliente[]>("cache:clientes", "/clientes");
 export const listarVendedoresDeVenda = () => cachedGet<string[]>("cache:vendas-vendedores", "/vendas/vendedores");
 

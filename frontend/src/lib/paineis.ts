@@ -81,14 +81,20 @@ export interface ProducaoResumo {
 }
 
 export interface ProducaoDetalheLinha {
+  id: number;
   data: string;
+  produto_id: number;
   produto_nome: string;
+  quantidade_embalagens: number | null;
   quantidade_kg: number;
+  lote_id: number | null;
   lote_codigo: string | null;
   viveiro_codigo: string | null;
   data_despesca: string | null;
   peso_medio_suja_g: number | null;
   rendimento: number | null;
+  excluido_em: string | null;
+  excluido_por: string | null;
 }
 
 export interface EstoqueItem {
@@ -387,10 +393,13 @@ export const painelProducao = (de?: string, ate?: string) => {
   return cachedGet<ProducaoResumo>(`cache:painel:producao:${de ?? ""}:${ate ?? ""}`, `/paineis/producao${qs}`);
 };
 
-export const painelProducaoDetalhe = (de?: string, ate?: string) => {
-  const qs = de && ate ? `?de=${de}&ate=${ate}` : "";
+export const painelProducaoDetalhe = (de?: string, ate?: string, excluidos?: boolean) => {
+  const qs = new URLSearchParams();
+  if (de && ate) { qs.set("de", de); qs.set("ate", ate); }
+  if (excluidos) qs.set("excluidos", "true");
   return cachedGet<ProducaoDetalheLinha[]>(
-    `cache:painel:producao-detalhe:${de ?? ""}:${ate ?? ""}`, `/paineis/producao/detalhe${qs}`
+    `cache:painel:producao-detalhe:${de ?? ""}:${ate ?? ""}:${excluidos ? "excluidos" : ""}`,
+    `/paineis/producao/detalhe?${qs}`
   );
 };
 

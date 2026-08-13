@@ -134,7 +134,7 @@ def resumo_despesca(despesca_id: int, db: Session = Depends(get_db)):
         text("""
             SELECT COALESCE(SUM(p.quantidade_kg), 0)
             FROM producao p JOIN produto pr ON pr.id = p.produto_id
-            WHERE p.lote_id = :l AND p.data_despesca = :d AND pr.nome LIKE 'Filé%'
+            WHERE p.lote_id = :l AND p.data_despesca = :d AND pr.nome LIKE 'Filé%' AND p.excluido_em IS NULL
         """),
         {"l": base["lote_id"], "d": base["data"]},
     ).scalar_one()

@@ -5,7 +5,14 @@ from sqlalchemy.orm import Session
 
 from ..auth import get_current_user
 from ..db import get_db
-from ..schemas import LeituraProducaoItemOut, LeituraProducaoOut, ProducaoIn, ProducaoOut, UsuarioOut
+from ..schemas import (
+    LeituraProducaoItemOut,
+    LeituraProducaoOut,
+    ProducaoEditarIn,
+    ProducaoIn,
+    ProducaoOut,
+    UsuarioOut,
+)
 from ..vision import ler_ficha
 
 router = APIRouter(prefix="/producao", tags=["producao"])
@@ -94,6 +101,89 @@ def criar_producao(body: ProducaoIn, db: Session = Depends(get_db), usuario: Usu
             text(f"SELECT {_COLUNAS} FROM producao WHERE client_id = :cid"),
             {"cid": str(body.client_id)},
         ).mappings().first()
+    return ProducaoOut(**row)
+
+
+@router.patch("/{producao_id}", response_model=ProducaoOut)
+def editar_producao(
+    producao_id: int, body: ProducaoEditarIn, db: Session = Depends(get_db),
+    _usuario: UsuarioOut = Depends(get_current_user),
+):
+    """Corrige qualquer campo de um lançamento de produção já feito
+    (produto, quantidade, tanque/data de despesca de origem)."""
+    try:
+        produto = db.execute(
+            text("SELECT kg_digitado FROM produto WHERE id = :id"), {"id": body.produto_id}
+        ).mappings().first()
+    except DBAPIError as exc:
+        db.rollback()
+        raise HTTPException(422, "produto_id inválido") from exc
+    if produto is None:
+        raise HTTPException(422, "produto_id inválido")
+    if produto["kg_digitado"] and body.quantidade_kg is None:
+        raise HTTPException(422, "este produto exige quantidade_kg (peso digitado por peixe)")
+    if not produto["kg_digitado"] and body.quantidade_embalagens is None:
+        raise HTTPException(422, "este produto exige quantidade_embalagens — o Kg é convertido automaticamente")
+
+    payload = {
+        "id": producao_id, "data": body.data, "produto_id": body.produto_id,
+        "quantidade_embalagens": body.quantidade_embalagens,
+        "quantidade_kg": body.quantidade_kg if body.quantidade_kg is not None else 0,
+        "lote_id": body.lote_id, "data_despesca": body.data_despesca,
+    }
+    try:
+        row = db.execute(
+            text(f"""
+                UPDATE producao SET data = :data, produto_id = :produto_id,
+                                     quantidade_embalagens = :quantidade_embalagens, quantidade_kg = :quantidade_kg,
+                                     lote_id = :lote_id, data_despesca = :data_despesca
+                WHERE id = :id AND excluido_em IS NULL
+                RETURNING {_COLUNAS}
+            """),
+            payload,
+        ).mappings().first()
+        db.commit()
+    except DBAPIError as exc:
+        db.rollback()
+        raise HTTPException(422, f"lote_id inválido ou dado fora das regras: {exc.orig}") from exc
+    if row is None:
+        raise HTTPException(404, "lançamento não encontrado (ou excluído — restaure antes de editar)")
+    return ProducaoOut(**row)
+
+
+@router.delete("/{producao_id}", response_model=ProducaoOut)
+def excluir_producao(
+    producao_id: int, db: Session = Depends(get_db), usuario: UsuarioOut = Depends(get_current_user),
+):
+    row = db.execute(
+        text(f"""
+            UPDATE producao SET excluido_em = now(), excluido_por = :quem
+            WHERE id = :id AND excluido_em IS NULL
+            RETURNING {_COLUNAS}
+        """),
+        {"id": producao_id, "quem": usuario.nome},
+    ).mappings().first()
+    db.commit()
+    if row is None:
+        raise HTTPException(404, "lançamento não encontrado (ou já excluído)")
+    return ProducaoOut(**row)
+
+
+@router.post("/{producao_id}/restaurar", response_model=ProducaoOut)
+def restaurar_producao(
+    producao_id: int, db: Session = Depends(get_db), _usuario: UsuarioOut = Depends(get_current_user),
+):
+    row = db.execute(
+        text(f"""
+            UPDATE producao SET excluido_em = NULL, excluido_por = NULL
+            WHERE id = :id AND excluido_em IS NOT NULL
+            RETURNING {_COLUNAS}
+        """),
+        {"id": producao_id},
+    ).mappings().first()
+    db.commit()
+    if row is None:
+        raise HTTPException(404, "lançamento não encontrado (ou não está excluído)")
     return ProducaoOut(**row)
 
 
