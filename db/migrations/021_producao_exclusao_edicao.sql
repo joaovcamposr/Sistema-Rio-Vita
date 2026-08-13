@@ -10,11 +10,16 @@ ALTER TABLE producao ADD COLUMN excluido_por text;
 -- igual já é feito pra despesca/venda/etc. Os LATERAL joins internos
 -- (kg_despescado, kg_familia) continuam ignorando linha excluída, senão
 -- o "excluído" continuaria contando no rendimento.
+-- As colunas já existentes ficam na MESMA ordem/posição de antes — o
+-- Postgres não deixa reordenar coluna de view com CREATE OR REPLACE, só
+-- adicionar no final (por isso quantidade_embalagens/excluido_em/
+-- excluido_por vêm depois de rendimento, e não junto dos outros campos
+-- de producao onde fariam mais sentido de leitura).
 CREATE OR REPLACE VIEW vw_producao_detalhe AS
-SELECT p.id, p.data, p.produto_id, p.quantidade_embalagens, p.quantidade_kg, p.lote_id, p.data_despesca,
-       p.excluido_em, p.excluido_por,
+SELECT p.id, p.data, p.produto_id, p.quantidade_kg, p.lote_id, p.data_despesca,
        d.peso_medio_suja_g,
-       CASE WHEN d.kg_despescado > 0 THEN f.kg_familia / d.kg_despescado END AS rendimento
+       CASE WHEN d.kg_despescado > 0 THEN f.kg_familia / d.kg_despescado END AS rendimento,
+       p.quantidade_embalagens, p.excluido_em, p.excluido_por
 FROM producao p
 JOIN produto pr ON pr.id = p.produto_id
 CROSS JOIN LATERAL (
