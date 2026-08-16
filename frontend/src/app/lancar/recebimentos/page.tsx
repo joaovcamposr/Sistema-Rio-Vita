@@ -358,16 +358,16 @@ export default function Recebimentos() {
           <div className={styles.tableWrap}>
             <table className={styles.tabela} style={{ fontSize: "0.78rem", tableLayout: "fixed", width: "100%" }}>
               <colgroup>
-                <col style={{ width: "7%" }} />
-                <col style={{ width: "12%" }} />
-                <col style={{ width: "14%" }} />
-                <col style={{ width: "7%" }} />
-                <col style={{ width: "8%" }} />
-                <col style={{ width: "7%" }} />
                 <col style={{ width: "9%" }} />
-                <col style={{ width: "13%" }} />
+                <col style={{ width: "11%" }} />
+                <col style={{ width: "12%" }} />
+                <col style={{ width: "6%" }} />
+                <col style={{ width: "8%" }} />
+                <col style={{ width: "6%" }} />
+                <col style={{ width: "8%" }} />
                 <col style={{ width: "12%" }} />
                 <col style={{ width: "11%" }} />
+                <col style={{ width: "17%" }} />
               </colgroup>
               <thead>
                 <tr>
@@ -390,7 +390,7 @@ export default function Recebimentos() {
                   const venc = dataVencimento(v);
                   return (
                     <tr key={v.id} style={{ cursor: "default" }}>
-                      <td style={{ padding: "6px" }}>{dataBr(v.data)}</td>
+                      <td style={{ padding: "6px", whiteSpace: "nowrap" }}>{dataBr(v.data)}</td>
                       <td style={{ padding: "6px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={v.cliente_nome}>
                         {v.cliente_nome}
                       </td>
