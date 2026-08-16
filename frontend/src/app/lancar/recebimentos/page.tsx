@@ -262,7 +262,7 @@ export default function Recebimentos() {
   }
 
   return (
-    <div className={styles.page}>
+    <div className={styles.page} style={{ maxWidth: 1360 }}>
       <div className={styles.appbar}>
         <button className={styles.backbtn} aria-label="Voltar" onClick={() => router.push("/")}>
           ←
