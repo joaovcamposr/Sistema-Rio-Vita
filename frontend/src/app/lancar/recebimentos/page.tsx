@@ -97,10 +97,7 @@ export default function Recebimentos() {
   const [formaFiltro, setFormaFiltro] = useState("");
   const [vendas, setVendas] = useState<VendaLista[] | null>(null);
   const [erro, setErro] = useState<string | null>(null);
-  const [editando, setEditando] = useState<number | null>(null);
-  const [dataPag, setDataPag] = useState(hojeISO());
-  const [formaPag, setFormaPag] = useState(FORMAS_RECEBIMENTO[0]);
-  const [salvando, setSalvando] = useState(false);
+  const [marcandoPagoId, setMarcandoPagoId] = useState<number | null>(null);
   const [editandoObs, setEditandoObs] = useState<number | null>(null);
   const [obsValor, setObsValor] = useState("");
   const [salvandoObs, setSalvandoObs] = useState(false);
@@ -149,22 +146,16 @@ export default function Recebimentos() {
     return vendasFiltradas.filter((v) => !estaPago(v.situacao)).reduce((s, v) => s + v.valor_total, 0);
   }, [vendasFiltradas]);
 
-  function iniciarPagamento(v: VendaLista) {
-    setEditando(v.id);
-    setDataPag(hojeISO());
-    setFormaPag(v.forma_pgto && FORMAS_RECEBIMENTO.includes(v.forma_pgto) ? v.forma_pgto : FORMAS_RECEBIMENTO[0]);
-  }
-
-  async function confirmarPagamento(vendaId: number) {
-    setSalvando(true);
+  async function marcarComoPago(v: VendaLista) {
+    setMarcandoPagoId(v.id);
     try {
-      await marcarPagamentoVenda(vendaId, "Pago", dataPag, formaPag);
-      setEditando(null);
+      const forma = v.forma_pgto && FORMAS_RECEBIMENTO.includes(v.forma_pgto) ? v.forma_pgto : FORMAS_RECEBIMENTO[0];
+      await marcarPagamentoVenda(v.id, "Pago", hojeISO(), forma);
       carregar();
     } catch {
       setErro("Não foi possível salvar o pagamento.");
     } finally {
-      setSalvando(false);
+      setMarcandoPagoId(null);
     }
   }
 
@@ -365,11 +356,31 @@ export default function Recebimentos() {
 
         {vendasFiltradas && vendasFiltradas.length > 0 && (
           <div className={styles.tableWrap}>
-            <table className={styles.tabela}>
+            <table className={styles.tabela} style={{ fontSize: "0.78rem", tableLayout: "fixed", width: "100%" }}>
+              <colgroup>
+                <col style={{ width: "7%" }} />
+                <col style={{ width: "12%" }} />
+                <col style={{ width: "14%" }} />
+                <col style={{ width: "7%" }} />
+                <col style={{ width: "8%" }} />
+                <col style={{ width: "7%" }} />
+                <col style={{ width: "9%" }} />
+                <col style={{ width: "13%" }} />
+                <col style={{ width: "12%" }} />
+                <col style={{ width: "11%" }} />
+              </colgroup>
               <thead>
                 <tr>
-                  <th>Data</th><th>Cliente</th><th>Produto</th><th>Quantidade</th><th>Valor</th>
-                  <th>Forma</th><th>Vendedor</th><th>Situação</th><th>Observações</th><th></th><th></th>
+                  <th style={{ padding: "8px 6px" }}>Data</th>
+                  <th style={{ padding: "8px 6px" }}>Cliente</th>
+                  <th style={{ padding: "8px 6px" }}>Produto</th>
+                  <th style={{ padding: "8px 6px" }}>Qtd.</th>
+                  <th style={{ padding: "8px 6px" }}>Valor</th>
+                  <th style={{ padding: "8px 6px" }}>Forma</th>
+                  <th style={{ padding: "8px 6px" }}>Vendedor</th>
+                  <th style={{ padding: "8px 6px" }}>Situação</th>
+                  <th style={{ padding: "8px 6px" }}>Obs.</th>
+                  <th style={{ padding: "8px 6px" }}></th>
                 </tr>
               </thead>
               <tbody>
@@ -379,113 +390,99 @@ export default function Recebimentos() {
                   const venc = dataVencimento(v);
                   return (
                     <tr key={v.id} style={{ cursor: "default" }}>
-                      <td>{dataBr(v.data)}</td>
-                      <td>{v.cliente_nome}</td>
-                      <td>{v.produto_nome}</td>
-                      <td>{v.quantidade_un !== null ? `${nf(v.quantidade_un, 0)} un` : `${nf(v.quantidade_kg)} kg`}</td>
-                      <td>{moeda(v.valor_total)}</td>
-                      <td>{v.forma_pgto ?? "—"}</td>
-                      <td>{v.vendedor ?? "—"}</td>
-                      <td>
+                      <td style={{ padding: "6px" }}>{dataBr(v.data)}</td>
+                      <td style={{ padding: "6px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={v.cliente_nome}>
+                        {v.cliente_nome}
+                      </td>
+                      <td style={{ padding: "6px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={v.produto_nome}>
+                        {v.produto_nome}
+                      </td>
+                      <td style={{ padding: "6px" }}>{v.quantidade_un !== null ? `${nf(v.quantidade_un, 0)} un` : `${nf(v.quantidade_kg)} kg`}</td>
+                      <td style={{ padding: "6px" }}>{moeda(v.valor_total)}</td>
+                      <td style={{ padding: "6px" }}>{v.forma_pgto ?? "—"}</td>
+                      <td style={{ padding: "6px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={v.vendedor ?? ""}>
+                        {v.vendedor ?? "—"}
+                      </td>
+                      <td style={{ padding: "6px" }}>
                         <span style={{
-                          padding: "3px 9px", borderRadius: 999, fontSize: "0.72rem", fontWeight: 700,
+                          display: "inline-block", padding: "2px 7px", borderRadius: 999, fontSize: "0.68rem", fontWeight: 700,
                           background: pago ? "var(--ok-soft)" : vencida ? "var(--crit-soft)" : "var(--warn-soft)",
                           color: pago ? "var(--ok)" : vencida ? "var(--crit)" : "var(--warn)",
                         }}>
                           {pago
-                            ? `Pago${v.data_pagamento ? ` em ${dataBr(v.data_pagamento)}` : ""}`
+                            ? `Pago${v.data_pagamento ? ` ${dataBr(v.data_pagamento)}` : ""}`
                             : vencida
-                              ? `Vencida${venc ? ` (venceu em ${dataBr(venc)})` : ""}`
+                              ? `Vencida${venc ? ` (${dataBr(venc)})` : ""}`
                               : `Em aberto${venc ? ` (${dataBr(venc)})` : ""}`}
                         </span>
                       </td>
-                      <td style={{ minWidth: 160 }}>
+                      <td style={{ padding: "6px" }}>
                         {editandoObs === v.id ? (
-                          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                             <input
                               className={styles.inp}
-                              style={{ padding: "6px 8px", width: 160 }}
+                              style={{ padding: "5px 6px", fontSize: "0.78rem", width: "100%" }}
                               value={obsValor}
                               onChange={(e) => setObsValor(e.target.value)}
                               placeholder="Observação"
                             />
-                            <button
-                              className={styles.btnPrimary}
-                              style={{ padding: "6px 12px", fontSize: "0.8rem" }}
-                              disabled={salvandoObs}
-                              onClick={() => salvarObs(v.id)}
-                            >
-                              OK
-                            </button>
-                            <button className={styles.btnLink} onClick={() => setEditandoObs(null)}>Cancelar</button>
+                            <div>
+                              <button
+                                className={styles.btnPrimary}
+                                style={{ padding: "4px 10px", fontSize: "0.72rem" }}
+                                disabled={salvandoObs}
+                                onClick={() => salvarObs(v.id)}
+                              >
+                                OK
+                              </button>
+                              {" "}
+                              <button className={styles.btnLink} style={{ fontSize: "0.72rem" }} onClick={() => setEditandoObs(null)}>Cancelar</button>
+                            </div>
                           </div>
                         ) : (
                           <button
                             className={styles.btnLink}
-                            style={{ textAlign: "left", whiteSpace: "normal" }}
+                            style={{
+                              textAlign: "left", fontSize: "0.76rem", display: "block", width: "100%",
+                              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                            }}
+                            title={v.observacoes ?? ""}
                             onClick={() => iniciarEdicaoObs(v)}
                           >
                             {v.observacoes || "+ adicionar"}
                           </button>
                         )}
                       </td>
-                      <td>
+                      <td style={{ padding: "6px", fontSize: "0.76rem" }}>
                         {mostrarExcluidos ? (
-                          <span className={styles.hint} style={{ fontSize: "0.78rem" }}>
-                            {v.excluido_em ? `Excluída ${dataHoraBr(v.excluido_em)}` : ""}
-                            {v.excluido_por ? ` · ${v.excluido_por}` : ""}
-                          </span>
-                        ) : (
                           <>
-                            {!pago && editando !== v.id && (
-                              <button className={styles.btnLink} onClick={() => iniciarPagamento(v)}>
-                                Marcar como pago
-                              </button>
-                            )}
-                            {!pago && editando === v.id && (
-                              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                                <input
-                                  className={styles.inp}
-                                  style={{ padding: "6px 8px", width: 130 }}
-                                  type="date"
-                                  value={dataPag}
-                                  onChange={(e) => setDataPag(e.target.value)}
-                                />
-                                <select
-                                  className={styles.inp}
-                                  style={{ padding: "6px 8px", width: 100 }}
-                                  value={formaPag}
-                                  onChange={(e) => setFormaPag(e.target.value)}
-                                >
-                                  {FORMAS_RECEBIMENTO.map((f) => <option key={f} value={f}>{f}</option>)}
-                                </select>
-                                <button
-                                  className={styles.btnPrimary}
-                                  style={{ padding: "6px 12px", fontSize: "0.8rem" }}
-                                  disabled={salvando}
-                                  onClick={() => confirmarPagamento(v.id)}
-                                >
-                                  OK
-                                </button>
-                                <button className={styles.btnLink} onClick={() => setEditando(null)}>Cancelar</button>
-                              </div>
-                            )}
-                          </>
-                        )}
-                      </td>
-                      <td style={{ whiteSpace: "nowrap" }}>
-                        {mostrarExcluidos ? (
-                          <button
-                            className={styles.btnLink}
-                            disabled={restaurandoId === v.id}
-                            onClick={() => restaurar(v)}
-                          >
-                            {restaurandoId === v.id ? "Restaurando…" : "Restaurar"}
-                          </button>
-                        ) : (
-                          <>
+                            <span className={styles.hint} style={{ display: "block", fontSize: "0.7rem" }}>
+                              {v.excluido_em ? `Excl. ${dataHoraBr(v.excluido_em)}` : ""}
+                              {v.excluido_por ? ` · ${v.excluido_por}` : ""}
+                            </span>
                             <button
                               className={styles.btnLink}
+                              style={{ fontSize: "0.76rem" }}
+                              disabled={restaurandoId === v.id}
+                              onClick={() => restaurar(v)}
+                            >
+                              {restaurandoId === v.id ? "Restaurando…" : "Restaurar"}
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            {!pago && (
+                              <button
+                                className={styles.btnLink} style={{ fontSize: "0.76rem", display: "block" }}
+                                disabled={marcandoPagoId === v.id}
+                                onClick={() => marcarComoPago(v)}
+                              >
+                                {marcandoPagoId === v.id ? "Marcando…" : "Marcar pago"}
+                              </button>
+                            )}
+                            <button
+                              className={styles.btnLink}
+                              style={{ fontSize: "0.76rem" }}
                               onClick={() => iniciarEdicaoVenda(v)}
                             >
                               Editar
@@ -493,7 +490,7 @@ export default function Recebimentos() {
                             {" · "}
                             <button
                               className={styles.btnLink}
-                              style={{ color: "var(--crit)" }}
+                              style={{ fontSize: "0.76rem", color: "var(--crit)" }}
                               disabled={excluindoId === v.id}
                               onClick={() => excluir(v)}
                             >
