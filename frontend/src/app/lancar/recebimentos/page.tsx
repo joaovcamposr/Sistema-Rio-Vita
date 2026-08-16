@@ -486,16 +486,9 @@ export default function Recebimentos() {
                           <>
                             <button
                               className={styles.btnLink}
-                              onClick={() => {
-                                if (editandoVendaId === v.id) {
-                                  setEditandoVendaId(null);
-                                  setFormVenda(null);
-                                } else {
-                                  iniciarEdicaoVenda(v);
-                                }
-                              }}
+                              onClick={() => iniciarEdicaoVenda(v)}
                             >
-                              {editandoVendaId === v.id ? "Fechar" : "Editar"}
+                              Editar
                             </button>
                             {" · "}
                             <button
@@ -512,147 +505,181 @@ export default function Recebimentos() {
                     </tr>
                   );
                 })}
-                {editandoVendaId !== null && formVenda && (() => {
-                  const vendaEditando = vendas?.find((v) => v.id === editandoVendaId);
-                  const produtoSelecionado = produtos.find((p) => p.id === formVenda.produto_id);
-                  if (!vendaEditando) return null;
-                  return (
-                    <tr key={`editar-${editandoVendaId}`}>
-                      <td colSpan={11} style={{ background: "var(--surface-sunk)", padding: 14 }}>
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end" }}>
-                          <div className={styles.field} style={{ margin: 0 }}>
-                            <label>Data</label>
-                            <input
-                              className={styles.inp} type="date" value={formVenda.data}
-                              onChange={(e) => {
-                                const novaData = e.target.value;
-                                setFormVenda({
-                                  ...formVenda,
-                                  data: novaData,
-                                  // recebimento previsto não pode ficar antes da data da venda — se
-                                  // só a data mudou (ex.: corrigindo um erro de digitação) e isso
-                                  // deixaria o previsto no passado, empurra o previsto junto
-                                  dataPrevista:
-                                    !formVenda.aVista && formVenda.dataPrevista < novaData
-                                      ? novaData
-                                      : formVenda.dataPrevista,
-                                });
-                              }}
-                            />
-                          </div>
-                          <div className={styles.field} style={{ margin: 0 }}>
-                            <label>Cliente</label>
-                            <select
-                              className={styles.inp}
-                              value={formVenda.cliente_id ?? ""}
-                              onChange={(e) => setFormVenda({ ...formVenda, cliente_id: e.target.value ? Number(e.target.value) : null })}
-                            >
-                              <option value="">Consumidor final</option>
-                              {clientes.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
-                            </select>
-                          </div>
-                          <div className={styles.field} style={{ margin: 0 }}>
-                            <label>Produto</label>
-                            <select
-                              className={styles.inp}
-                              value={formVenda.produto_id}
-                              onChange={(e) => setFormVenda({ ...formVenda, produto_id: Number(e.target.value) })}
-                            >
-                              {produtos.map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}
-                            </select>
-                          </div>
-                          <div className={styles.field} style={{ margin: 0 }}>
-                            <label>{produtoSelecionado?.kg_digitado ? "Quantidade (Kg)" : "Quantidade (un)"}</label>
-                            <input
-                              className={styles.inp} style={{ width: 100 }} type="text" inputMode="decimal"
-                              value={formVenda.quantidade}
-                              onChange={(e) => setFormVenda({ ...formVenda, quantidade: e.target.value })}
-                            />
-                          </div>
-                          <div className={styles.field} style={{ margin: 0 }}>
-                            <label>Preço/Kg</label>
-                            <input
-                              className={styles.inp} style={{ width: 100 }} type="text" inputMode="decimal"
-                              value={formVenda.preco_kg}
-                              onChange={(e) => setFormVenda({ ...formVenda, preco_kg: e.target.value })}
-                            />
-                          </div>
-                          <div className={styles.field} style={{ margin: 0 }}>
-                            <label>Vendedor</label>
-                            <input
-                              className={styles.inp} style={{ width: 120 }}
-                              value={formVenda.vendedor}
-                              onChange={(e) => setFormVenda({ ...formVenda, vendedor: e.target.value })}
-                            />
-                          </div>
-                          <div className={styles.field} style={{ margin: 0 }}>
-                            <label>Forma</label>
-                            <select
-                              className={styles.inp}
-                              value={formVenda.forma_pgto}
-                              onChange={(e) => setFormVenda({ ...formVenda, forma_pgto: e.target.value })}
-                            >
-                              {FORMAS_VENDA.map((f) => <option key={f} value={f}>{f}</option>)}
-                            </select>
-                          </div>
-                          <div className={styles.field} style={{ margin: 0 }}>
-                            <label>À vista / a prazo</label>
-                            <select
-                              className={styles.inp}
-                              value={formVenda.aVista ? "vista" : "prazo"}
-                              onChange={(e) => setFormVenda({ ...formVenda, aVista: e.target.value === "vista" })}
-                            >
-                              <option value="vista">À vista</option>
-                              <option value="prazo">A prazo</option>
-                            </select>
-                          </div>
-                          {!formVenda.aVista && (
-                            <div className={styles.field} style={{ margin: 0 }}>
-                              <label>Recebimento previsto</label>
-                              <input
-                                className={styles.inp} type="date" value={formVenda.dataPrevista}
-                                onChange={(e) => setFormVenda({ ...formVenda, dataPrevista: e.target.value })}
-                              />
-                            </div>
-                          )}
-                          <div className={styles.field} style={{ margin: 0 }}>
-                            <label>Situação</label>
-                            <select
-                              className={styles.inp}
-                              value={formVenda.situacao}
-                              onChange={(e) => setFormVenda({ ...formVenda, situacao: e.target.value })}
-                            >
-                              <option value="Em aberto">Em aberto</option>
-                              <option value="Pago">Pago</option>
-                            </select>
-                          </div>
-                          {formVenda.situacao === "Pago" && (
-                            <div className={styles.field} style={{ margin: 0 }}>
-                              <label>Data de pagamento</label>
-                              <input
-                                className={styles.inp} type="date" value={formVenda.dataPagamento}
-                                onChange={(e) => setFormVenda({ ...formVenda, dataPagamento: e.target.value })}
-                              />
-                            </div>
-                          )}
-                          <button
-                            className={styles.btnPrimary}
-                            style={{ padding: "9px 16px" }}
-                            disabled={salvandoVenda}
-                            onClick={() => salvarEdicaoVenda(editandoVendaId)}
-                          >
-                            {salvandoVenda ? "Salvando…" : "Salvar"}
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })()}
               </tbody>
             </table>
           </div>
         )}
       </div>
+
+      {editandoVendaId !== null && formVenda && (() => {
+        const vendaEditando = vendas?.find((v) => v.id === editandoVendaId);
+        const produtoSelecionado = produtos.find((p) => p.id === formVenda.produto_id);
+        if (!vendaEditando) return null;
+        return (
+          <div
+            style={{
+              position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 100,
+              display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
+            }}
+            onClick={() => { setEditandoVendaId(null); setFormVenda(null); }}
+          >
+            <div
+              style={{
+                background: "var(--surface)", borderRadius: 14, padding: 20,
+                width: "100%", maxWidth: 640, maxHeight: "90vh", overflowY: "auto",
+                boxShadow: "0 24px 64px rgba(0,0,0,0.35)",
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                <h2 style={{ margin: 0, fontSize: "1.1rem" }}>Editar venda</h2>
+                <button
+                  type="button"
+                  onClick={() => { setEditandoVendaId(null); setFormVenda(null); }}
+                  aria-label="Fechar"
+                  style={{ background: "none", border: "none", fontSize: "1.4rem", lineHeight: 1, color: "var(--ink-muted)", cursor: "pointer" }}
+                >
+                  ×
+                </button>
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end" }}>
+                <div className={styles.field} style={{ margin: 0 }}>
+                  <label>Data</label>
+                  <input
+                    className={styles.inp} type="date" value={formVenda.data}
+                    onChange={(e) => {
+                      const novaData = e.target.value;
+                      setFormVenda({
+                        ...formVenda,
+                        data: novaData,
+                        // recebimento previsto não pode ficar antes da data da venda — se
+                        // só a data mudou (ex.: corrigindo um erro de digitação) e isso
+                        // deixaria o previsto no passado, empurra o previsto junto
+                        dataPrevista:
+                          !formVenda.aVista && formVenda.dataPrevista < novaData
+                            ? novaData
+                            : formVenda.dataPrevista,
+                      });
+                    }}
+                  />
+                </div>
+                <div className={styles.field} style={{ margin: 0 }}>
+                  <label>Cliente</label>
+                  <select
+                    className={styles.inp}
+                    value={formVenda.cliente_id ?? ""}
+                    onChange={(e) => setFormVenda({ ...formVenda, cliente_id: e.target.value ? Number(e.target.value) : null })}
+                  >
+                    <option value="">Consumidor final</option>
+                    {clientes.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                  </select>
+                </div>
+                <div className={styles.field} style={{ margin: 0 }}>
+                  <label>Produto</label>
+                  <select
+                    className={styles.inp}
+                    value={formVenda.produto_id}
+                    onChange={(e) => setFormVenda({ ...formVenda, produto_id: Number(e.target.value) })}
+                  >
+                    {produtos.map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}
+                  </select>
+                </div>
+                <div className={styles.field} style={{ margin: 0 }}>
+                  <label>{produtoSelecionado?.kg_digitado ? "Quantidade (Kg)" : "Quantidade (un)"}</label>
+                  <input
+                    className={styles.inp} style={{ width: 100 }} type="text" inputMode="decimal"
+                    value={formVenda.quantidade}
+                    onChange={(e) => setFormVenda({ ...formVenda, quantidade: e.target.value })}
+                  />
+                </div>
+                <div className={styles.field} style={{ margin: 0 }}>
+                  <label>Preço/Kg</label>
+                  <input
+                    className={styles.inp} style={{ width: 100 }} type="text" inputMode="decimal"
+                    value={formVenda.preco_kg}
+                    onChange={(e) => setFormVenda({ ...formVenda, preco_kg: e.target.value })}
+                  />
+                </div>
+                <div className={styles.field} style={{ margin: 0 }}>
+                  <label>Vendedor</label>
+                  <input
+                    className={styles.inp} style={{ width: 120 }}
+                    value={formVenda.vendedor}
+                    onChange={(e) => setFormVenda({ ...formVenda, vendedor: e.target.value })}
+                  />
+                </div>
+                <div className={styles.field} style={{ margin: 0 }}>
+                  <label>Forma</label>
+                  <select
+                    className={styles.inp}
+                    value={formVenda.forma_pgto}
+                    onChange={(e) => setFormVenda({ ...formVenda, forma_pgto: e.target.value })}
+                  >
+                    {FORMAS_VENDA.map((f) => <option key={f} value={f}>{f}</option>)}
+                  </select>
+                </div>
+                <div className={styles.field} style={{ margin: 0 }}>
+                  <label>À vista / a prazo</label>
+                  <select
+                    className={styles.inp}
+                    value={formVenda.aVista ? "vista" : "prazo"}
+                    onChange={(e) => setFormVenda({ ...formVenda, aVista: e.target.value === "vista" })}
+                  >
+                    <option value="vista">À vista</option>
+                    <option value="prazo">A prazo</option>
+                  </select>
+                </div>
+                {!formVenda.aVista && (
+                  <div className={styles.field} style={{ margin: 0 }}>
+                    <label>Recebimento previsto</label>
+                    <input
+                      className={styles.inp} type="date" value={formVenda.dataPrevista}
+                      onChange={(e) => setFormVenda({ ...formVenda, dataPrevista: e.target.value })}
+                    />
+                  </div>
+                )}
+                <div className={styles.field} style={{ margin: 0 }}>
+                  <label>Situação</label>
+                  <select
+                    className={styles.inp}
+                    value={formVenda.situacao}
+                    onChange={(e) => setFormVenda({ ...formVenda, situacao: e.target.value })}
+                  >
+                    <option value="Em aberto">Em aberto</option>
+                    <option value="Pago">Pago</option>
+                  </select>
+                </div>
+                {formVenda.situacao === "Pago" && (
+                  <div className={styles.field} style={{ margin: 0 }}>
+                    <label>Data de pagamento</label>
+                    <input
+                      className={styles.inp} type="date" value={formVenda.dataPagamento}
+                      onChange={(e) => setFormVenda({ ...formVenda, dataPagamento: e.target.value })}
+                    />
+                  </div>
+                )}
+              </div>
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
+                <button
+                  type="button"
+                  onClick={() => { setEditandoVendaId(null); setFormVenda(null); }}
+                  style={{ background: "none", border: "none", color: "var(--ink-muted)", fontWeight: 600, fontSize: "0.9rem", cursor: "pointer" }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  className={styles.btnPrimary}
+                  style={{ padding: "9px 20px" }}
+                  disabled={salvandoVenda}
+                  onClick={() => salvarEdicaoVenda(editandoVendaId)}
+                >
+                  {salvandoVenda ? "Salvando…" : "Salvar"}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
