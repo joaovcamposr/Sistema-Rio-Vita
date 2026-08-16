@@ -371,16 +371,14 @@ export default function Recebimentos() {
               </colgroup>
               <thead>
                 <tr>
-                  <th style={{ padding: "8px 6px" }}>Data</th>
-                  <th style={{ padding: "8px 6px" }}>Cliente</th>
-                  <th style={{ padding: "8px 6px" }}>Produto</th>
-                  <th style={{ padding: "8px 6px" }}>Qtd.</th>
-                  <th style={{ padding: "8px 6px" }}>Valor</th>
-                  <th style={{ padding: "8px 6px" }}>Forma</th>
-                  <th style={{ padding: "8px 6px" }}>Vendedor</th>
-                  <th style={{ padding: "8px 6px" }}>Situação</th>
-                  <th style={{ padding: "8px 6px" }}>Obs.</th>
-                  <th style={{ padding: "8px 6px" }}></th>
+                  {["Data", "Cliente", "Produto", "Qtd.", "Valor", "Forma", "Vendedor", "Situação", "Obs.", ""].map((rotulo) => (
+                    <th
+                      key={rotulo}
+                      style={{ padding: "8px 6px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+                    >
+                      {rotulo}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
