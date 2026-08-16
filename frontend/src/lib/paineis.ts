@@ -126,6 +126,8 @@ export interface AjusteEstoque {
   tipo: TipoAjusteEstoque;
   observacao: string | null;
   criado_em: string;
+  excluido_em: string | null;
+  excluido_por: string | null;
 }
 
 export interface MortalidadeLote {
@@ -365,9 +367,14 @@ export const painelEstoque = (de?: string, ate?: string) => {
   return cachedGet<EstoqueItem[]>(`cache:painel:estoque:${de ?? ""}:${ate ?? ""}`, `/paineis/estoque${qs}`);
 };
 
-export const listarAjustesEstoque = (de?: string, ate?: string) => {
-  const qs = de && ate ? `?de=${de}&ate=${ate}` : "";
-  return cachedGet<AjusteEstoque[]>(`cache:ajustes-estoque:${de ?? ""}:${ate ?? ""}`, `/ajustes-estoque${qs}`);
+export const listarAjustesEstoque = (de?: string, ate?: string, excluidos?: boolean) => {
+  const qs = new URLSearchParams();
+  if (de && ate) { qs.set("de", de); qs.set("ate", ate); }
+  if (excluidos) qs.set("excluidos", "true");
+  return cachedGet<AjusteEstoque[]>(
+    `cache:ajustes-estoque:${de ?? ""}:${ate ?? ""}:${excluidos ? "excluidos" : ""}`,
+    `/ajustes-estoque?${qs}`
+  );
 };
 
 export async function criarAjusteEstoque(body: {
@@ -383,6 +390,32 @@ export async function criarAjusteEstoque(body: {
   if (r.status === 401) sessaoInvalida();
   if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
   return (await r.json()) as AjusteEstoque;
+}
+
+export async function editarAjusteEstoque(id: number, body: {
+  data: string; quantidade_embalagens: number | null; quantidade_kg: number | null;
+  tipo: TipoAjusteEstoque; observacao: string | null;
+}): Promise<AjusteEstoque> {
+  const r = await fetch(`${apiBase()}/ajustes-estoque/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...authHeader() },
+    body: JSON.stringify(body),
+  });
+  if (r.status === 401) sessaoInvalida();
+  if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+  return (await r.json()) as AjusteEstoque;
+}
+
+export async function excluirAjusteEstoque(id: number): Promise<void> {
+  const r = await fetch(`${apiBase()}/ajustes-estoque/${id}`, { method: "DELETE", headers: authHeader() });
+  if (r.status === 401) sessaoInvalida();
+  if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+}
+
+export async function restaurarAjusteEstoque(id: number): Promise<void> {
+  const r = await fetch(`${apiBase()}/ajustes-estoque/${id}/restaurar`, { method: "POST", headers: authHeader() });
+  if (r.status === 401) sessaoInvalida();
+  if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
 }
 export const painelMortalidade = () =>
   cachedGet<MortalidadeResumo>("cache:painel:mortalidade", "/paineis/mortalidade");
@@ -479,6 +512,28 @@ export const painelArracoamento = (de?: string, ate?: string, excluidos?: boolea
   return cachedGet<ArracoamentoDetalhe[]>(
     `cache:painel:arracoamento:${de ?? ""}:${ate ?? ""}:${excluidos ? "excluidos" : ""}`,
     `/paineis/arracoamento?${qs}`
+  );
+};
+
+export interface BiometriaDetalhe {
+  id: number;
+  lote_id: number;
+  lote_codigo: string;
+  viveiro_codigo: string;
+  data: string;
+  peso_medio_g: number;
+  criado_em: string;
+  excluido_em: string | null;
+  excluido_por: string | null;
+}
+
+export const painelBiometria = (de?: string, ate?: string, excluidos?: boolean) => {
+  const qs = new URLSearchParams();
+  if (de && ate) { qs.set("de", de); qs.set("ate", ate); }
+  if (excluidos) qs.set("excluidos", "true");
+  return cachedGet<BiometriaDetalhe[]>(
+    `cache:painel:biometria:${de ?? ""}:${ate ?? ""}:${excluidos ? "excluidos" : ""}`,
+    `/biometria/painel?${qs}`
   );
 };
 

@@ -288,7 +288,7 @@ def acertar_expedicao(
         SELECT
           COALESCE((SELECT SUM(valor_total) FROM venda WHERE expedicao_id = :id AND forma_pgto = 'Dinheiro' AND excluido_em IS NULL), 0)
             AS vendas_dinheiro,
-          COALESCE((SELECT SUM(valor) FROM despesa WHERE expedicao_id = :id AND forma_pgto = 'Dinheiro'), 0)
+          COALESCE((SELECT SUM(valor) FROM despesa WHERE expedicao_id = :id AND forma_pgto = 'Dinheiro' AND excluido_em IS NULL), 0)
             AS despesas_dinheiro
     """), {"id": expedicao_id}).mappings().first()
 

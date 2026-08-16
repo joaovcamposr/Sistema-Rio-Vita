@@ -169,12 +169,26 @@ export interface Despesa {
   expedicao_id: number | null;
   observacao: string | null;
   criado_em: string;
+  excluido_em: string | null;
+  excluido_por: string | null;
 }
 export const listarDespesasExpedicao = (expedicaoId: number) =>
   cachedGet<Despesa[]>(`cache:despesas-expedicao:${expedicaoId}`, `/despesas?expedicao_id=${expedicaoId}`);
 export const editarDespesa = (id: number, body: {
   data: string; categoria: string; valor: number; forma_pgto: string; observacao: string | null;
 }) => enviar<Despesa>(`/despesas/${id}`, "PATCH", body);
+
+export const listarDespesasSoltas = (de?: string, ate?: string, excluidos?: boolean) => {
+  const qs = new URLSearchParams();
+  if (de && ate) { qs.set("de", de); qs.set("ate", ate); }
+  if (excluidos) qs.set("excluidos", "true");
+  return cachedGet<Despesa[]>(
+    `cache:despesas-soltas:${de ?? ""}:${ate ?? ""}:${excluidos ? "excluidos" : ""}`,
+    `/despesas/soltas?${qs}`
+  );
+};
+export const excluirDespesa = (id: number) => excluir(`/despesas/${id}`);
+export const restaurarDespesa = (id: number) => enviar<Despesa>(`/despesas/${id}/restaurar`, "POST", undefined);
 
 export interface RetornoDetalhe {
   id: number;

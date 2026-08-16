@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  painelEstoque, listarAjustesEstoque, criarAjusteEstoque,
+  painelEstoque, listarAjustesEstoque, criarAjusteEstoque, editarAjusteEstoque, excluirAjusteEstoque, restaurarAjusteEstoque,
   type EstoqueItem, type AjusteEstoque, type TipoAjusteEstoque,
 } from "@/lib/paineis";
 import { listarProdutos, type Produto } from "@/lib/api";
@@ -23,6 +23,10 @@ function hojeISO(): string {
 function dataBr(iso: string): string {
   const [a, m, d] = iso.split("-");
   return `${d}/${m}/${a}`;
+}
+function dataHoraBr(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 function novoClientId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
@@ -60,6 +64,12 @@ export default function PainelEstoque() {
   const [enviando, setEnviando] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
+  const [mostrarExcluidos, setMostrarExcluidos] = useState(false);
+  const [editandoId, setEditandoId] = useState<number | null>(null);
+  const [formEdicao, setFormEdicao] = useState<{ data: string; quantidade: string; tipo: TipoAjusteEstoque; observacao: string } | null>(null);
+  const [salvandoEdicao, setSalvandoEdicao] = useState(false);
+  const [processandoId, setProcessandoId] = useState<number | null>(null);
+
   useEffect(() => {
     listarProdutos()
       // Tilápia suja não entra no estoque (não passa por Produção) — fora
@@ -75,16 +85,79 @@ export default function PainelEstoque() {
   useEffect(() => {
     setDados(null);
     painelEstoque(de, ate).then(setDados).catch(() => setErro("Sem conexão e sem dado salvo deste aparelho ainda."));
-    listarAjustesEstoque(de, ate).then(setAjustes).catch(() => {});
-  }, [de, ate]);
+    listarAjustesEstoque(de, ate, mostrarExcluidos).then(setAjustes).catch(() => {});
+  }, [de, ate, mostrarExcluidos]);
 
   const produto = useMemo(() => produtos.find((p) => p.id === produtoId) ?? null, [produtos, produtoId]);
   const qtdNum = parseFloat(quantidade.replace(",", ".")) || 0;
   const podeSalvar = produto !== null && qtdNum > 0 && !enviando;
 
   async function recarregarAjustes() {
-    listarAjustesEstoque(de, ate).then(setAjustes).catch(() => {});
+    listarAjustesEstoque(de, ate, mostrarExcluidos).then(setAjustes).catch(() => {});
     painelEstoque(de, ate).then(setDados).catch(() => {});
+  }
+
+  function iniciarEdicaoAjuste(a: AjusteEstoque) {
+    setEditandoId(a.id);
+    const valor = a.quantidade_embalagens !== null ? a.quantidade_embalagens : a.quantidade_kg;
+    setFormEdicao({
+      data: a.data, quantidade: String(valor).replace(".", ","), tipo: a.tipo, observacao: a.observacao ?? "",
+    });
+  }
+
+  async function salvarEdicaoAjuste(a: AjusteEstoque) {
+    if (!formEdicao) return;
+    const valorNum = parseFloat(formEdicao.quantidade.replace(",", ".")) || 0;
+    const digitadoEmKg = a.quantidade_embalagens === null;
+    setSalvandoEdicao(true);
+    try {
+      await editarAjusteEstoque(a.id, {
+        data: formEdicao.data,
+        quantidade_embalagens: digitadoEmKg ? null : valorNum,
+        quantidade_kg: digitadoEmKg ? valorNum : null,
+        tipo: formEdicao.tipo,
+        observacao: formEdicao.observacao.trim() || null,
+      });
+      setToast("Ajuste corrigido");
+      setEditandoId(null);
+      setFormEdicao(null);
+      setTimeout(() => setToast(null), 2200);
+      await recarregarAjustes();
+    } catch {
+      setToast("Não foi possível salvar — confira os valores");
+      setTimeout(() => setToast(null), 3000);
+    } finally {
+      setSalvandoEdicao(false);
+    }
+  }
+
+  async function excluirAjuste(a: AjusteEstoque) {
+    if (!window.confirm(`Excluir o ajuste de ${a.produto_nome} em ${dataBr(a.data)}? Pode ser restaurado depois.`)) return;
+    setProcessandoId(a.id);
+    try {
+      await excluirAjusteEstoque(a.id);
+      setToast("Ajuste excluído");
+      await recarregarAjustes();
+    } catch {
+      setToast("Não foi possível excluir");
+    } finally {
+      setProcessandoId(null);
+      setTimeout(() => setToast(null), 3000);
+    }
+  }
+
+  async function restaurarAjuste(a: AjusteEstoque) {
+    setProcessandoId(a.id);
+    try {
+      await restaurarAjusteEstoque(a.id);
+      setToast("Ajuste restaurado");
+      await recarregarAjustes();
+    } catch {
+      setToast("Não foi possível restaurar");
+    } finally {
+      setProcessandoId(null);
+      setTimeout(() => setToast(null), 3000);
+    }
   }
 
   async function salvarAjuste() {
@@ -143,6 +216,18 @@ export default function PainelEstoque() {
             <label>Até</label>
             <input type="date" value={ate} onChange={(e) => setAte(e.target.value)} />
           </div>
+          <button
+            type="button"
+            onClick={() => setMostrarExcluidos((v) => !v)}
+            style={{
+              padding: "9px 16px", borderRadius: 9, border: "1px solid var(--rule-strong)",
+              background: mostrarExcluidos ? "var(--brand)" : "var(--surface)",
+              color: mostrarExcluidos ? "var(--brand-ink)" : "var(--ink)",
+              fontWeight: 700, fontSize: "0.85rem", cursor: "pointer",
+            }}
+          >
+            {mostrarExcluidos ? "Vendo excluídos" : "Ver excluídos"}
+          </button>
         </div>
 
         {erro && <div className={styles.erro}>{erro}</div>}
@@ -274,25 +359,116 @@ export default function PainelEstoque() {
 
             <div className={styles.section}>Histórico de ajustes de estoque</div>
             <p className={styles.hint}>Amostras, descartes e diferenças de estoque — não entram como venda.</p>
-            {(!ajustes || ajustes.length === 0) && <p className={styles.hint}>Nenhum ajuste no período.</p>}
+            {(!ajustes || ajustes.length === 0) && (
+              <p className={styles.hint}>{mostrarExcluidos ? "Nenhum ajuste excluído no período." : "Nenhum ajuste no período."}</p>
+            )}
             {ajustes && ajustes.length > 0 && (
               <div className={styles.tableWrap}>
                 <table className={styles.tabela}>
                   <thead>
-                    <tr><th>Data</th><th>Produto</th><th>Tipo</th><th>Quantidade</th><th>Observação</th></tr>
+                    <tr><th>Data</th><th>Produto</th><th>Tipo</th><th>Quantidade</th><th>Observação</th><th></th></tr>
                   </thead>
                   <tbody>
                     {ajustes.map((a) => (
                       <tr key={a.id}>
-                        <td>{dataBr(a.data)}</td>
-                        <td>{a.produto_nome}</td>
-                        <td>{TIPO_LABEL[a.tipo]}</td>
-                        <td>
-                          {a.quantidade_embalagens !== null
-                            ? `${nf(a.quantidade_embalagens, 0)} un`
-                            : `${nf(a.quantidade_kg, 1)} kg`}
-                        </td>
-                        <td>{a.observacao ?? "—"}</td>
+                        {editandoId === a.id && formEdicao ? (
+                          <>
+                            <td>
+                              <input
+                                type="date"
+                                value={formEdicao.data}
+                                onChange={(e) => setFormEdicao({ ...formEdicao, data: e.target.value })}
+                                style={{ width: 130 }}
+                              />
+                            </td>
+                            <td>{a.produto_nome}</td>
+                            <td>
+                              <select
+                                value={formEdicao.tipo}
+                                onChange={(e) => setFormEdicao({ ...formEdicao, tipo: e.target.value as TipoAjusteEstoque })}
+                              >
+                                {TIPOS.map((t) => <option key={t} value={t}>{TIPO_LABEL[t]}</option>)}
+                              </select>
+                            </td>
+                            <td>
+                              <input
+                                type="number" inputMode="decimal" style={{ width: 90, textAlign: "right" }}
+                                value={formEdicao.quantidade}
+                                onChange={(e) => setFormEdicao({ ...formEdicao, quantidade: e.target.value })}
+                              />
+                            </td>
+                            <td>
+                              <input
+                                type="text" style={{ width: 140 }}
+                                value={formEdicao.observacao}
+                                onChange={(e) => setFormEdicao({ ...formEdicao, observacao: e.target.value })}
+                              />
+                            </td>
+                            <td style={{ whiteSpace: "nowrap" }}>
+                              <button
+                                type="button" disabled={salvandoEdicao} onClick={() => salvarEdicaoAjuste(a)}
+                                style={{
+                                  padding: "6px 12px", borderRadius: 8, border: "none", background: "var(--brand)",
+                                  color: "var(--brand-ink)", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer", marginRight: 6,
+                                }}
+                              >
+                                OK
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => { setEditandoId(null); setFormEdicao(null); }}
+                                style={{ background: "none", border: "none", color: "var(--ink-muted)", fontSize: "0.78rem", cursor: "pointer" }}
+                              >
+                                Cancelar
+                              </button>
+                            </td>
+                          </>
+                        ) : (
+                          <>
+                            <td>{dataBr(a.data)}</td>
+                            <td>{a.produto_nome}</td>
+                            <td>{TIPO_LABEL[a.tipo]}</td>
+                            <td>
+                              {a.quantidade_embalagens !== null
+                                ? `${nf(a.quantidade_embalagens, 0)} un`
+                                : `${nf(a.quantidade_kg, 1)} kg`}
+                            </td>
+                            <td>{a.observacao ?? "—"}</td>
+                            <td style={{ whiteSpace: "nowrap" }}>
+                              {mostrarExcluidos ? (
+                                <>
+                                  <span className={styles.hint} style={{ display: "block", fontSize: "0.72rem" }}>
+                                    {a.excluido_em ? `Excluído ${dataHoraBr(a.excluido_em)}` : ""}
+                                    {a.excluido_por ? ` · ${a.excluido_por}` : ""}
+                                  </span>
+                                  <button
+                                    type="button" disabled={processandoId === a.id} onClick={() => restaurarAjuste(a)}
+                                    style={{ background: "none", border: "none", color: "var(--brand-deep)", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer" }}
+                                  >
+                                    Restaurar
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => iniciarEdicaoAjuste(a)}
+                                    style={{ background: "none", border: "none", color: "var(--brand-deep)", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer" }}
+                                  >
+                                    Editar
+                                  </button>
+                                  {" · "}
+                                  <button
+                                    type="button" disabled={processandoId === a.id} onClick={() => excluirAjuste(a)}
+                                    style={{ background: "none", border: "none", color: "var(--crit)", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer" }}
+                                  >
+                                    Excluir
+                                  </button>
+                                </>
+                              )}
+                            </td>
+                          </>
+                        )}
                       </tr>
                     ))}
                   </tbody>

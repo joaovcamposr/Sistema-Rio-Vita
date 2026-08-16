@@ -7,6 +7,7 @@ import styles from "./painel.module.css";
 const PAINEIS = [
   { href: "/painel/dashboard", ico: "📊", nome: "Dashboard", desc: "Visão geral do período — produção, vendas e alertas" },
   { href: "/painel/viveiros", ico: "🌊", nome: "Painel do viveiro", desc: "Saldo, densidade, biometria e água por tanque" },
+  { href: "/painel/biometria", ico: "⚖️", nome: "Biometria", desc: "Conferência dos lançamentos, com opção de corrigir" },
   { href: "/painel/abate", ico: "📅", nome: "Programação de abate", desc: "Previsão por lote, a partir da última biometria" },
   { href: "/painel/producao", ico: "📦", nome: "Produção e rendimento", desc: "Peso sujo e rendimento ponderados por período" },
   { href: "/painel/despesca", ico: "🎣", nome: "Despesca", desc: "Conferência dos lançamentos, com opção de corrigir" },
@@ -16,6 +17,7 @@ const PAINEIS = [
   { href: "/painel/estoque-racao", ico: "🌾", nome: "Estoque de ração", desc: "Chegadas − consumo por tipo, e quando pedir a próxima carga" },
   { href: "/painel/mortalidade", ico: "📉", nome: "Mortalidade por fase", desc: "Pré-engorda e engorda, por lote encerrado" },
   { href: "/painel/comercial", ico: "💰", nome: "Comercial", desc: "Vendas por período e funil de clientes" },
+  { href: "/painel/despesas", ico: "🧾", nome: "Despesas", desc: "Despesas soltas, sem vínculo com expedição — conferência e correção" },
   { href: "/painel/agua", ico: "💧", nome: "Análise da água", desc: "Série dos últimos 60 dias, por viveiro" },
   { href: "/painel/caixa", ico: "🧮", nome: "Caixa", desc: "Conferência do dinheiro, por dia e por expedição" },
   { href: "/painel/acertos", ico: "🚚", nome: "Acertos de expedição", desc: "Acertos já fechados, com opção de corrigir despesas e retornos" },

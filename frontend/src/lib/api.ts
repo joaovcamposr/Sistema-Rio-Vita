@@ -238,6 +238,28 @@ export async function restaurarProducao(id: number): Promise<void> {
   if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
 }
 
+export async function editarBiometria(id: number, body: { data: string; peso_medio_g: number }): Promise<void> {
+  const r = await fetch(`${apiBase()}/biometria/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...authHeader() },
+    body: JSON.stringify(body),
+  });
+  if (r.status === 401) sessaoInvalida();
+  if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+}
+
+export async function excluirBiometria(id: number): Promise<void> {
+  const r = await fetch(`${apiBase()}/biometria/${id}`, { method: "DELETE", headers: authHeader() });
+  if (r.status === 401) sessaoInvalida();
+  if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+}
+
+export async function restaurarBiometria(id: number): Promise<void> {
+  const r = await fetch(`${apiBase()}/biometria/${id}/restaurar`, { method: "POST", headers: authHeader() });
+  if (r.status === 401) sessaoInvalida();
+  if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+}
+
 export const listarClientes = () => cachedGet<Cliente[]>("cache:clientes", "/clientes");
 export const listarVendedoresDeVenda = () => cachedGet<string[]>("cache:vendas-vendedores", "/vendas/vendedores");
 

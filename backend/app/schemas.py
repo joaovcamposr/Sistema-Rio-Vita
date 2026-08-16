@@ -275,6 +275,25 @@ class BiometriaOut(BaseModel):
     data: date
     peso_medio_g: float
     criado_em: datetime
+    excluido_em: datetime | None = None
+    excluido_por: str | None = None
+
+
+class BiometriaEditarIn(BaseModel):
+    data: date
+    peso_medio_g: float = Field(gt=0)
+
+
+class BiometriaDetalheOut(BaseModel):
+    id: int
+    lote_id: int
+    lote_codigo: str
+    viveiro_codigo: str
+    data: date
+    peso_medio_g: float
+    criado_em: datetime
+    excluido_em: datetime | None = None
+    excluido_por: str | None = None
 
 
 # ---------- Arraçoamento ----------
@@ -592,6 +611,23 @@ class AjusteEstoqueIn(BaseModel):
         return self
 
 
+class AjusteEstoqueEditarIn(BaseModel):
+    data: date
+    quantidade_embalagens: float | None = Field(default=None)
+    quantidade_kg: float | None = Field(default=None)
+    tipo: TipoAjusteEstoque
+    observacao: str | None = None
+
+    @model_validator(mode="after")
+    def um_dos_dois_informado(self) -> "AjusteEstoqueEditarIn":
+        if self.quantidade_embalagens is None and self.quantidade_kg is None:
+            raise ValueError("informe quantidade_embalagens ou quantidade_kg")
+        if self.tipo != "diferenca_estoque":
+            if (self.quantidade_embalagens or 0) < 0 or (self.quantidade_kg or 0) < 0:
+                raise ValueError("amostra/descarte não podem ser negativos — só 'diferença de estoque' admite correção pra cima")
+        return self
+
+
 class AjusteEstoqueOut(BaseModel):
     id: int
     client_id: uuid.UUID
@@ -603,6 +639,8 @@ class AjusteEstoqueOut(BaseModel):
     tipo: TipoAjusteEstoque
     observacao: str | None
     criado_em: datetime
+    excluido_em: datetime | None = None
+    excluido_por: str | None = None
 
 
 # ---------- Painéis gerenciais (somente leitura) ----------
@@ -1102,6 +1140,8 @@ class DespesaOut(BaseModel):
     expedicao_id: int | None
     observacao: str | None
     criado_em: datetime
+    excluido_em: datetime | None = None
+    excluido_por: str | None = None
 
 
 # ---------- Painel Caixa ----------

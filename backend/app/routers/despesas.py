@@ -1,3 +1,5 @@
+from datetime import date, timedelta
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
@@ -8,7 +10,7 @@ from ..db import get_db
 from ..schemas import DespesaEditarIn, DespesaIn, DespesaOut, UsuarioOut
 
 router = APIRouter(prefix="/despesas", tags=["despesas"])
-_COLUNAS = "id, client_id, data, categoria, valor, forma_pgto, expedicao_id, observacao, criado_em"
+_COLUNAS = "id, client_id, data, categoria, valor, forma_pgto, expedicao_id, observacao, criado_em, excluido_em, excluido_por"
 
 
 @router.get("", response_model=list[DespesaOut])
@@ -20,8 +22,33 @@ def listar_despesas(
     """Alimenta o detalhe do relatório de acertos — despesas lançadas
     junto do acerto de uma expedição específica."""
     rows = db.execute(
-        text(f"SELECT {_COLUNAS} FROM despesa WHERE expedicao_id = :id ORDER BY id"),
+        text(f"SELECT {_COLUNAS} FROM despesa WHERE expedicao_id = :id AND excluido_em IS NULL ORDER BY id"),
         {"id": expedicao_id},
+    ).mappings().all()
+    return [DespesaOut(**r) for r in rows]
+
+
+@router.get("/soltas", response_model=list[DespesaOut])
+def listar_despesas_soltas(
+    de: date | None = Query(default=None),
+    ate: date | None = Query(default=None),
+    excluidos: bool = Query(default=False, description="true = só as excluídas (tela de restaurar)"),
+    db: Session = Depends(get_db),
+    _usuario: UsuarioOut = Depends(get_current_user),
+):
+    """Tela de conferência das despesas soltas (sem vínculo com
+    expedição) — as de acerto de expedição são revertidas junto do
+    acerto (POST /expedicoes/{id}/acerto/cancelar), não aqui."""
+    ate = ate or date.today()
+    de = de or (ate - timedelta(days=30))
+    rows = db.execute(
+        text(f"""
+            SELECT {_COLUNAS} FROM despesa
+            WHERE expedicao_id IS NULL AND data BETWEEN :de AND :ate
+              AND {"excluido_em IS NOT NULL" if excluidos else "excluido_em IS NULL"}
+            ORDER BY data DESC, id DESC
+        """),
+        {"de": de, "ate": ate},
     ).mappings().all()
     return [DespesaOut(**r) for r in rows]
 
@@ -38,7 +65,7 @@ def editar_despesa(
             text(f"""
                 UPDATE despesa SET data = :data, categoria = :categoria, valor = :valor,
                                     forma_pgto = :forma_pgto, observacao = :observacao
-                WHERE id = :id
+                WHERE id = :id AND excluido_em IS NULL
                 RETURNING {_COLUNAS}
             """),
             {"id": despesa_id, **body.model_dump()},
@@ -48,7 +75,45 @@ def editar_despesa(
         db.rollback()
         raise HTTPException(422, f"dado fora das regras: {exc.orig}") from exc
     if row is None:
-        raise HTTPException(404, "despesa não encontrada")
+        raise HTTPException(404, "despesa não encontrada (ou excluída — restaure antes de editar)")
+    return DespesaOut(**row)
+
+
+@router.delete("/{despesa_id}", response_model=DespesaOut)
+def excluir_despesa(
+    despesa_id: int, db: Session = Depends(get_db), usuario: UsuarioOut = Depends(get_current_user),
+):
+    """Só despesas soltas — as de acerto de expedição saem junto quando
+    o acerto é cancelado (POST /expedicoes/{id}/acerto/cancelar)."""
+    row = db.execute(
+        text(f"""
+            UPDATE despesa SET excluido_em = now(), excluido_por = :quem
+            WHERE id = :id AND expedicao_id IS NULL AND excluido_em IS NULL
+            RETURNING {_COLUNAS}
+        """),
+        {"id": despesa_id, "quem": usuario.nome},
+    ).mappings().first()
+    db.commit()
+    if row is None:
+        raise HTTPException(404, "despesa não encontrada, já excluída, ou vinculada a uma expedição")
+    return DespesaOut(**row)
+
+
+@router.post("/{despesa_id}/restaurar", response_model=DespesaOut)
+def restaurar_despesa(
+    despesa_id: int, db: Session = Depends(get_db), _usuario: UsuarioOut = Depends(get_current_user),
+):
+    row = db.execute(
+        text(f"""
+            UPDATE despesa SET excluido_em = NULL, excluido_por = NULL
+            WHERE id = :id AND excluido_em IS NOT NULL
+            RETURNING {_COLUNAS}
+        """),
+        {"id": despesa_id},
+    ).mappings().first()
+    db.commit()
+    if row is None:
+        raise HTTPException(404, "despesa não encontrada (ou não está excluída)")
     return DespesaOut(**row)
 
 

@@ -223,7 +223,7 @@ def painel_viveiros(db: Session = Depends(get_db)):
         LEFT JOIN vw_saldo_lote s ON s.lote_id = l.id
         LEFT JOIN LATERAL (
           SELECT data, peso_medio_g FROM biometria
-          WHERE lote_id = l.id ORDER BY data DESC LIMIT 1
+          WHERE lote_id = l.id AND excluido_em IS NULL ORDER BY data DESC LIMIT 1
         ) b ON true
         LEFT JOIN LATERAL (
           SELECT data, oxigenio, temperatura_c, amonia, ph, nitrito, nitrato
@@ -297,7 +297,7 @@ def painel_abate(db: Session = Depends(get_db)):
         JOIN vw_saldo_lote s ON s.lote_id = l.id
         LEFT JOIN LATERAL (
           SELECT data, peso_medio_g FROM biometria
-          WHERE lote_id = l.id ORDER BY data DESC LIMIT 1
+          WHERE lote_id = l.id AND excluido_em IS NULL ORDER BY data DESC LIMIT 1
         ) b ON true
         WHERE l.data_fim IS NULL
         ORDER BY v.codigo
@@ -541,7 +541,7 @@ def painel_estoque(
         ) transito ON transito.produto_id = pr.id
         LEFT JOIN (
           SELECT produto_id, SUM(quantidade_embalagens) AS embalagens, SUM(quantidade_kg) AS kg
-          FROM ajuste_estoque WHERE data BETWEEN :de AND :ate GROUP BY produto_id
+          FROM ajuste_estoque WHERE data BETWEEN :de AND :ate AND excluido_em IS NULL GROUP BY produto_id
         ) ajuste ON ajuste.produto_id = pr.id
         -- Tilápia suja não passa por Produção (vai direto da despesca pra
         -- venda), então "produzido - vendido" não representa estoque real
@@ -932,7 +932,7 @@ def painel_acertos(
             SELECT
               COALESCE((SELECT SUM(valor_total) FROM venda WHERE expedicao_id = :id AND forma_pgto = 'Dinheiro' AND excluido_em IS NULL), 0)
                 AS vendas_dinheiro,
-              COALESCE((SELECT SUM(valor) FROM despesa WHERE expedicao_id = :id AND forma_pgto = 'Dinheiro'), 0)
+              COALESCE((SELECT SUM(valor) FROM despesa WHERE expedicao_id = :id AND forma_pgto = 'Dinheiro' AND excluido_em IS NULL), 0)
                 AS despesas_dinheiro
         """), {"id": e["id"]}).mappings().first()
         vendas_dinheiro = float(totais["vendas_dinheiro"])
@@ -1179,7 +1179,7 @@ def arracoamento_previsto(
         JOIN lote l ON l.viveiro_id = v.id AND l.data_fim IS NULL
         JOIN vw_saldo_lote s ON s.lote_id = l.id
         LEFT JOIN LATERAL (
-          SELECT data, peso_medio_g FROM biometria WHERE lote_id = l.id ORDER BY data DESC LIMIT 1
+          SELECT data, peso_medio_g FROM biometria WHERE lote_id = l.id AND excluido_em IS NULL ORDER BY data DESC LIMIT 1
         ) b ON true
         WHERE v.ativo AND s.saldo_un > 0
     """)).mappings().all()
@@ -1878,7 +1878,7 @@ def historico_lote(viveiro_id: int, db: Session = Depends(get_db)):
     semana_maxima_tabela = max(consumo_por_semana)
 
     biometrias = db.execute(text("""
-        SELECT data, peso_medio_g FROM biometria WHERE lote_id = :lote_id ORDER BY data
+        SELECT data, peso_medio_g FROM biometria WHERE lote_id = :lote_id AND excluido_em IS NULL ORDER BY data
     """), {"lote_id": lote["id"]}).mappings().all()
 
     # busca despesca/repicagem/arraçoamento inteiros de uma vez e soma em
