@@ -358,7 +358,7 @@ export default function Recebimentos() {
           <div className={styles.tableWrap}>
             <table className={styles.tabela} style={{ fontSize: "0.78rem", tableLayout: "fixed", width: "100%" }}>
               <colgroup>
-                <col style={{ width: "9%" }} />
+                <col style={{ width: "11%" }} />
                 <col style={{ width: "11%" }} />
                 <col style={{ width: "12%" }} />
                 <col style={{ width: "6%" }} />
@@ -367,7 +367,7 @@ export default function Recebimentos() {
                 <col style={{ width: "8%" }} />
                 <col style={{ width: "12%" }} />
                 <col style={{ width: "11%" }} />
-                <col style={{ width: "17%" }} />
+                <col style={{ width: "15%" }} />
               </colgroup>
               <thead>
                 <tr>
@@ -390,16 +390,18 @@ export default function Recebimentos() {
                   const venc = dataVencimento(v);
                   return (
                     <tr key={v.id} style={{ cursor: "default" }}>
-                      <td style={{ padding: "6px", whiteSpace: "nowrap" }}>{dataBr(v.data)}</td>
+                      <td style={{ padding: "6px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{dataBr(v.data)}</td>
                       <td style={{ padding: "6px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={v.cliente_nome}>
                         {v.cliente_nome}
                       </td>
                       <td style={{ padding: "6px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={v.produto_nome}>
                         {v.produto_nome}
                       </td>
-                      <td style={{ padding: "6px" }}>{v.quantidade_un !== null ? `${nf(v.quantidade_un, 0)} un` : `${nf(v.quantidade_kg)} kg`}</td>
-                      <td style={{ padding: "6px" }}>{moeda(v.valor_total)}</td>
-                      <td style={{ padding: "6px" }}>{v.forma_pgto ?? "—"}</td>
+                      <td style={{ padding: "6px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {v.quantidade_un !== null ? `${nf(v.quantidade_un, 0)} un` : `${nf(v.quantidade_kg)} kg`}
+                      </td>
+                      <td style={{ padding: "6px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{moeda(v.valor_total)}</td>
+                      <td style={{ padding: "6px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{v.forma_pgto ?? "—"}</td>
                       <td style={{ padding: "6px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={v.vendedor ?? ""}>
                         {v.vendedor ?? "—"}
                       </td>
