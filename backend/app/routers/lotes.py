@@ -1,5 +1,6 @@
 from datetime import date
 
+import psycopg
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
@@ -39,6 +40,50 @@ def _gerar_codigo(db: Session, fase: str, data: date) -> str:
     return f"{prefixo}-{data.year}-{seq:02d}"
 
 
+_MAX_TENTATIVAS_CODIGO = 3
+
+
+def _e_colisao_codigo_lote(exc: DBAPIError) -> bool:
+    """True quando o INSERT falhou porque dois lançamentos concorrentes
+    geraram o mesmo código pra mesma fase/ano (a contagem em
+    _gerar_codigo não trava contra corrida) — nesse caso vale gerar outro
+    código e tentar de novo, em vez de devolver erro pro operador."""
+    return (
+        isinstance(exc.orig, psycopg.errors.UniqueViolation)
+        and getattr(exc.orig.diag, "constraint_name", None) == "lote_codigo_key"
+    )
+
+
+def _sincronizar_fechamento_lote(db: Session, lote_id: int, data_evento: date) -> None:
+    """Fecha o lote se o saldo zerou (repicagem esvaziou o tanque), ou
+    reabre se um saldo positivo voltou a existir — ex.: excluir/corrigir
+    uma repicagem que tinha esvaziado o tanque de origem. Só reabre se o
+    viveiro não tiver ganhado outro lote ativo enquanto este estava
+    fechado, pra nunca deixar dois lotes ativos no mesmo tanque ao mesmo
+    tempo. Mesma regra usada em despescas.py."""
+    lote = db.execute(
+        text("SELECT viveiro_id, data_fim FROM lote WHERE id = :id"), {"id": lote_id}
+    ).mappings().first()
+    if lote is None:
+        return
+    saldo = db.execute(
+        text("SELECT saldo_un FROM vw_saldo_lote WHERE lote_id = :l"), {"l": lote_id}
+    ).scalar_one()
+    if saldo <= 0:
+        if lote["data_fim"] is None:
+            db.execute(
+                text("UPDATE lote SET data_fim = :data WHERE id = :id"),
+                {"data": data_evento, "id": lote_id},
+            )
+    elif lote["data_fim"] is not None:
+        outro_ativo = db.execute(
+            text("SELECT 1 FROM lote WHERE viveiro_id = :v AND data_fim IS NULL AND id != :id"),
+            {"v": lote["viveiro_id"], "id": lote_id},
+        ).first()
+        if outro_ativo is None:
+            db.execute(text("UPDATE lote SET data_fim = NULL WHERE id = :id"), {"id": lote_id})
+
+
 @router.post("/lotes", response_model=LoteOut, status_code=201)
 def registrar_povoamento(
     body: PovoamentoIn, db: Session = Depends(get_db), usuario: UsuarioOut = Depends(get_current_user),
@@ -52,30 +97,38 @@ def registrar_povoamento(
         raise HTTPException(422, "viveiro de decantação não recebe povoamento")
 
     fase = "pre_engorda" if viveiro["tipo"] == "pre_engorda" else "engorda"
-    codigo = _gerar_codigo(db, fase, body.data)
 
-    try:
-        row = db.execute(
-            text(f"""
-                INSERT INTO lote (client_id, codigo, fase, viveiro_id, viveiro_tipo, data_inicio,
-                                   quantidade_inicial, peso_medio_inicial_g, observacao, criado_por)
-                VALUES (:client_id, :codigo, :fase, :viveiro_id, :viveiro_tipo, :data,
-                        :quantidade_inicial, :peso_medio_inicial_g, :observacao, :criado_por)
-                ON CONFLICT (client_id) DO NOTHING
-                RETURNING {_COLUNAS_LOTE}
-            """),
-            {
-                "client_id": str(body.client_id), "codigo": codigo, "fase": fase,
-                "viveiro_id": body.viveiro_id, "viveiro_tipo": viveiro["tipo"], "data": body.data,
-                "quantidade_inicial": body.quantidade_inicial,
-                "peso_medio_inicial_g": body.peso_medio_inicial_g, "observacao": body.observacao,
-                "criado_por": usuario.nome,
-            },
-        ).mappings().first()
-        db.commit()
-    except DBAPIError as exc:
-        db.rollback()
-        raise HTTPException(422, f"dado inválido ou fora das regras: {exc.orig}") from exc
+    row = None
+    for tentativa in range(_MAX_TENTATIVAS_CODIGO):
+        codigo = _gerar_codigo(db, fase, body.data)
+        try:
+            row = db.execute(
+                text(f"""
+                    INSERT INTO lote (client_id, codigo, fase, viveiro_id, viveiro_tipo, data_inicio,
+                                       quantidade_inicial, peso_medio_inicial_g, observacao, criado_por)
+                    VALUES (:client_id, :codigo, :fase, :viveiro_id, :viveiro_tipo, :data,
+                            :quantidade_inicial, :peso_medio_inicial_g, :observacao, :criado_por)
+                    ON CONFLICT (client_id) DO NOTHING
+                    RETURNING {_COLUNAS_LOTE}
+                """),
+                {
+                    "client_id": str(body.client_id), "codigo": codigo, "fase": fase,
+                    "viveiro_id": body.viveiro_id, "viveiro_tipo": viveiro["tipo"], "data": body.data,
+                    "quantidade_inicial": body.quantidade_inicial,
+                    "peso_medio_inicial_g": body.peso_medio_inicial_g, "observacao": body.observacao,
+                    "criado_por": usuario.nome,
+                },
+            ).mappings().first()
+            db.commit()
+            break
+        except DBAPIError as exc:
+            db.rollback()
+            # dois povoamentos concorrentes podem gerar o mesmo código pra
+            # mesma fase/ano — gera outro e tenta de novo, em vez de
+            # devolver erro pro operador por uma corrida de outro aparelho
+            if _e_colisao_codigo_lote(exc) and tentativa < _MAX_TENTATIVAS_CODIGO - 1:
+                continue
+            raise HTTPException(422, f"dado inválido ou fora das regras: {exc.orig}") from exc
 
     if row is None:
         row = db.execute(
@@ -152,60 +205,67 @@ def registrar_repicagem(
         {"v": body.viveiro_destino_id},
     ).mappings().first()
 
-    try:
-        if lote_destino_existente is not None:
-            db.execute(
-                text("UPDATE lote SET quantidade_inicial = quantidade_inicial + :qtd WHERE id = :id"),
-                {"qtd": quantidade_total, "id": lote_destino_existente["id"]},
-            )
-            novo = db.execute(
-                text(f"SELECT {_COLUNAS_LOTE} FROM lote WHERE id = :id"),
-                {"id": lote_destino_existente["id"]},
-            ).mappings().first()
-        else:
-            codigo = _gerar_codigo(db, fase_destino, body.data)
-            novo = db.execute(
-                text(f"""
-                    INSERT INTO lote (client_id, codigo, fase, viveiro_id, viveiro_tipo, data_inicio,
-                                       quantidade_inicial, peso_medio_inicial_g, criado_por)
-                    VALUES (:client_id, :codigo, :fase, :viveiro_id, :viveiro_tipo, :data,
-                            :quantidade_inicial, :peso_medio_g, :criado_por)
-                    RETURNING {_COLUNAS_LOTE}
-                """),
-                {
-                    "client_id": str(body.client_id), "codigo": codigo, "fase": fase_destino,
-                    "viveiro_id": body.viveiro_destino_id, "viveiro_tipo": destino["tipo"],
-                    "data": body.data, "quantidade_inicial": quantidade_total, "peso_medio_g": body.peso_medio_g,
-                    "criado_por": usuario.nome,
-                },
-            ).mappings().first()
-
-        fechados: list[int] = []
-        for lote_origem_id, quantidade, saldo_atual in origem_lotes:
-            db.execute(
-                text("""
-                    INSERT INTO lote_origem (lote_id, lote_origem_id, quantidade, peso_medio_g, data, client_id)
-                    VALUES (:lote_id, :lote_origem_id, :quantidade, :peso_medio_g, :data, :client_id)
-                """),
-                {
-                    "lote_id": novo["id"], "lote_origem_id": lote_origem_id, "quantidade": quantidade,
-                    "peso_medio_g": body.peso_medio_g, "data": body.data, "client_id": str(body.client_id),
-                },
-            )
-            # só fecha o lote de origem quando a repicagem esvazia ele por
-            # completo — repicagem parcial deixa o restante ativo no
-            # tanque, com o saldo já reduzido pelo lote_origem acima
-            if quantidade >= saldo_atual:
+    for tentativa in range(_MAX_TENTATIVAS_CODIGO):
+        try:
+            if lote_destino_existente is not None:
                 db.execute(
-                    text("UPDATE lote SET data_fim = :data WHERE id = :id"),
-                    {"data": body.data, "id": lote_origem_id},
+                    text("UPDATE lote SET quantidade_inicial = quantidade_inicial + :qtd WHERE id = :id"),
+                    {"qtd": quantidade_total, "id": lote_destino_existente["id"]},
                 )
-                fechados.append(lote_origem_id)
+                novo = db.execute(
+                    text(f"SELECT {_COLUNAS_LOTE} FROM lote WHERE id = :id"),
+                    {"id": lote_destino_existente["id"]},
+                ).mappings().first()
+            else:
+                codigo = _gerar_codigo(db, fase_destino, body.data)
+                novo = db.execute(
+                    text(f"""
+                        INSERT INTO lote (client_id, codigo, fase, viveiro_id, viveiro_tipo, data_inicio,
+                                           quantidade_inicial, peso_medio_inicial_g, criado_por)
+                        VALUES (:client_id, :codigo, :fase, :viveiro_id, :viveiro_tipo, :data,
+                                :quantidade_inicial, :peso_medio_g, :criado_por)
+                        RETURNING {_COLUNAS_LOTE}
+                    """),
+                    {
+                        "client_id": str(body.client_id), "codigo": codigo, "fase": fase_destino,
+                        "viveiro_id": body.viveiro_destino_id, "viveiro_tipo": destino["tipo"],
+                        "data": body.data, "quantidade_inicial": quantidade_total, "peso_medio_g": body.peso_medio_g,
+                        "criado_por": usuario.nome,
+                    },
+                ).mappings().first()
 
-        db.commit()
-    except DBAPIError as exc:
-        db.rollback()
-        raise HTTPException(422, f"dado inválido ou fora das regras: {exc.orig}") from exc
+            fechados: list[int] = []
+            for lote_origem_id, quantidade, saldo_atual in origem_lotes:
+                db.execute(
+                    text("""
+                        INSERT INTO lote_origem (lote_id, lote_origem_id, quantidade, peso_medio_g, data, client_id)
+                        VALUES (:lote_id, :lote_origem_id, :quantidade, :peso_medio_g, :data, :client_id)
+                    """),
+                    {
+                        "lote_id": novo["id"], "lote_origem_id": lote_origem_id, "quantidade": quantidade,
+                        "peso_medio_g": body.peso_medio_g, "data": body.data, "client_id": str(body.client_id),
+                    },
+                )
+                # só fecha o lote de origem quando a repicagem esvazia ele por
+                # completo — repicagem parcial deixa o restante ativo no
+                # tanque, com o saldo já reduzido pelo lote_origem acima
+                if quantidade >= saldo_atual:
+                    db.execute(
+                        text("UPDATE lote SET data_fim = :data WHERE id = :id"),
+                        {"data": body.data, "id": lote_origem_id},
+                    )
+                    fechados.append(lote_origem_id)
+
+            db.commit()
+            break
+        except DBAPIError as exc:
+            db.rollback()
+            # só pode colidir no ramo que cria lote novo (codigo) — o
+            # ramo que junta num lote existente não gera código nenhum,
+            # então nunca cai aqui por essa causa
+            if lote_destino_existente is None and _e_colisao_codigo_lote(exc) and tentativa < _MAX_TENTATIVAS_CODIGO - 1:
+                continue
+            raise HTTPException(422, f"dado inválido ou fora das regras: {exc.orig}") from exc
 
     return RepicagemOut(lote=LoteOut(**novo), lotes_origem_fechados=fechados)
 
@@ -236,10 +296,12 @@ def editar_repicagem(
     quantidade mudar, ajusta ela pela diferença pra manter o estoque de
     peixe do tanque de destino correto (mesmo saldo vivo em
     vw_saldo_lote, que já subtrai lote_origem.quantidade do tanque de
-    origem automaticamente). Não mexe em fechamento/reabertura de lote
-    (nem origem nem destino) — isso continua manual via outras telas."""
+    origem automaticamente). Também refaz o fechamento do tanque de
+    origem conforme o saldo resultante (fecha se esvaziou, reabre se
+    sobrou saldo — ver _sincronizar_fechamento_lote); o destino não fecha
+    nem reabre por causa de repicagem, só por despesca."""
     atual = db.execute(
-        text("SELECT lote_id, quantidade FROM lote_origem WHERE id = :id AND excluido_em IS NULL"),
+        text("SELECT lote_id, lote_origem_id, quantidade FROM lote_origem WHERE id = :id AND excluido_em IS NULL"),
         {"id": repicagem_id},
     ).mappings().first()
     if atual is None:
@@ -260,6 +322,7 @@ def editar_repicagem(
                 text("UPDATE lote SET quantidade_inicial = quantidade_inicial + :delta WHERE id = :id"),
                 {"delta": delta, "id": atual["lote_id"]},
             )
+        _sincronizar_fechamento_lote(db, atual["lote_origem_id"], body.data)
         db.commit()
     except DBAPIError as exc:
         db.rollback()
@@ -278,9 +341,10 @@ def excluir_repicagem(
     quantidade_inicial do lote de destino foi somada na hora da
     repicagem, excluir precisa tirar essa quantidade de volta — o
     tanque de origem já recupera o saldo sozinho, porque vw_saldo_lote
-    ignora lote_origem excluído."""
+    ignora lote_origem excluído; se isso tirar o lote de origem do zero,
+    ele é reaberto (ver _sincronizar_fechamento_lote)."""
     atual = db.execute(
-        text("SELECT lote_id, quantidade FROM lote_origem WHERE id = :id AND excluido_em IS NULL"),
+        text("SELECT lote_id, lote_origem_id, quantidade, data FROM lote_origem WHERE id = :id AND excluido_em IS NULL"),
         {"id": repicagem_id},
     ).mappings().first()
     if atual is None:
@@ -294,6 +358,7 @@ def excluir_repicagem(
         text("UPDATE lote SET quantidade_inicial = quantidade_inicial - :qtd WHERE id = :id"),
         {"qtd": atual["quantidade"], "id": atual["lote_id"]},
     )
+    _sincronizar_fechamento_lote(db, atual["lote_origem_id"], atual["data"])
     db.commit()
 
     row = db.execute(text(_QUERY_REPICAGEM_DETALHE), {"id": repicagem_id}).mappings().first()
@@ -305,8 +370,11 @@ def restaurar_repicagem(
     repicagem_id: int, db: Session = Depends(get_db),
     _usuario: UsuarioOut = Depends(get_current_user),
 ):
+    """Restaurar volta a tirar a quantidade do tanque de origem — se
+    isso esvaziar o tanque de novo, fecha o lote como no lançamento
+    normal (ver _sincronizar_fechamento_lote)."""
     atual = db.execute(
-        text("SELECT lote_id, quantidade FROM lote_origem WHERE id = :id AND excluido_em IS NOT NULL"),
+        text("SELECT lote_id, lote_origem_id, quantidade, data FROM lote_origem WHERE id = :id AND excluido_em IS NOT NULL"),
         {"id": repicagem_id},
     ).mappings().first()
     if atual is None:
@@ -320,6 +388,7 @@ def restaurar_repicagem(
         text("UPDATE lote SET quantidade_inicial = quantidade_inicial + :qtd WHERE id = :id"),
         {"qtd": atual["quantidade"], "id": atual["lote_id"]},
     )
+    _sincronizar_fechamento_lote(db, atual["lote_origem_id"], atual["data"])
     db.commit()
 
     row = db.execute(text(_QUERY_REPICAGEM_DETALHE), {"id": repicagem_id}).mappings().first()

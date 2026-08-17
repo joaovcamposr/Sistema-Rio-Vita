@@ -105,7 +105,7 @@ def atualizar_pagamento(
             text(f"""
                 UPDATE venda SET situacao = :situacao, data_pagamento = :data_pagamento,
                                   forma_pgto = COALESCE(:forma_pgto, forma_pgto)
-                WHERE id = :id
+                WHERE id = :id AND excluido_em IS NULL
                 RETURNING {_COLUNAS}
             """),
             {"id": venda_id, **body.model_dump()},
@@ -115,7 +115,7 @@ def atualizar_pagamento(
         db.rollback()
         raise HTTPException(422, f"data de pagamento inválida: {exc.orig}") from exc
     if row is None:
-        raise HTTPException(404, "venda não encontrada")
+        raise HTTPException(404, "venda não encontrada (ou excluída — restaure antes de editar)")
     return VendaOut(**row)
 
 

@@ -1,3 +1,5 @@
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
@@ -10,6 +12,35 @@ from ..schemas import DespescaEditarIn, DespescaIn, DespescaOut, DespescaResumoO
 router = APIRouter(prefix="/despescas", tags=["despescas"])
 
 _COLUNAS = "id, client_id, lote_id, data, destino, quantidade_un, peso_medio_g, peso_total_kg, criado_em"
+
+
+def _sincronizar_fechamento_lote(db: Session, lote_id: int, data_evento: date) -> None:
+    """Fecha o lote se o saldo zerou (colheita total), ou reabre se um
+    saldo positivo voltou a existir — ex.: excluir/corrigir uma despesca
+    que tinha zerado o tanque. Só reabre se o viveiro não tiver ganhado
+    outro lote ativo enquanto este estava fechado, pra nunca deixar dois
+    lotes ativos no mesmo tanque ao mesmo tempo."""
+    lote = db.execute(
+        text("SELECT viveiro_id, data_fim FROM lote WHERE id = :id"), {"id": lote_id}
+    ).mappings().first()
+    if lote is None:
+        return
+    saldo = db.execute(
+        text("SELECT saldo_un FROM vw_saldo_lote WHERE lote_id = :l"), {"l": lote_id}
+    ).scalar_one()
+    if saldo <= 0:
+        if lote["data_fim"] is None:
+            db.execute(
+                text("UPDATE lote SET data_fim = :data WHERE id = :id"),
+                {"data": data_evento, "id": lote_id},
+            )
+    elif lote["data_fim"] is not None:
+        outro_ativo = db.execute(
+            text("SELECT 1 FROM lote WHERE viveiro_id = :v AND data_fim IS NULL AND id != :id"),
+            {"v": lote["viveiro_id"], "id": lote_id},
+        ).first()
+        if outro_ativo is None:
+            db.execute(text("UPDATE lote SET data_fim = NULL WHERE id = :id"), {"id": lote_id})
 
 
 @router.get("", response_model=list[DespescaOut])
@@ -42,18 +73,10 @@ def criar_despesca(body: DespescaIn, db: Session = Depends(get_db), usuario: Usu
             {**body.model_dump(), "criado_por": usuario.nome},
         ).mappings().first()
         if row is not None:
-            # despesca zerou o saldo do lote (colheita total) — fecha o
-            # lote para liberar o viveiro para um novo povoamento, e para
-            # que a mortalidade da fase entre no painel gerencial
-            saldo = db.execute(
-                text("SELECT saldo_un FROM vw_saldo_lote WHERE lote_id = :l"),
-                {"l": row["lote_id"]},
-            ).scalar_one()
-            if saldo <= 0:
-                db.execute(
-                    text("UPDATE lote SET data_fim = :data WHERE id = :id AND data_fim IS NULL"),
-                    {"data": row["data"], "id": row["lote_id"]},
-                )
+            # despesca pode ter zerado o saldo do lote (colheita total) —
+            # fecha o lote para liberar o viveiro para um novo povoamento,
+            # e para que a mortalidade da fase entre no painel gerencial
+            _sincronizar_fechamento_lote(db, row["lote_id"], row["data"])
         db.commit()
     except DBAPIError as exc:
         db.rollback()
@@ -75,8 +98,9 @@ def editar_despesca(
     usuario: UsuarioOut = Depends(get_current_user),
 ):
     """Corrige uma despesca já lançada (tanque, data, destino, quantidade ou
-    peso digitados errado). Não reabre um lote que já foi encerrado — se a
-    correção zerar o saldo de novo, fecha o lote como no lançamento normal."""
+    peso digitados errado). Refaz o fechamento do lote conforme o saldo
+    resultante — fecha se a correção zerou o saldo, reabre se o saldo
+    voltou a ficar positivo (ver _sincronizar_fechamento_lote)."""
     try:
         row = db.execute(
             text(f"""
@@ -90,14 +114,7 @@ def editar_despesca(
         if row is None:
             raise HTTPException(404, "despesca não encontrada (ou excluída — restaure antes de editar)")
 
-        saldo = db.execute(
-            text("SELECT saldo_un FROM vw_saldo_lote WHERE lote_id = :l"), {"l": row["lote_id"]}
-        ).scalar_one()
-        if saldo <= 0:
-            db.execute(
-                text("UPDATE lote SET data_fim = :data WHERE id = :id AND data_fim IS NULL"),
-                {"data": row["data"], "id": row["lote_id"]},
-            )
+        _sincronizar_fechamento_lote(db, row["lote_id"], row["data"])
         db.commit()
     except DBAPIError as exc:
         db.rollback()
@@ -149,7 +166,8 @@ def excluir_despesca(
     """Exclusão reversível — marca excluido_em/excluido_por em vez de
     apagar a linha, pra poder restaurar (POST .../restaurar) se for
     engano. vw_saldo_lote já ignora despesca excluída, então o peixe
-    volta pro saldo do tanque assim que isso é salvo."""
+    volta pro saldo do tanque assim que isso é salvo — e se isso tirar o
+    lote do zero, ele é reaberto (ver _sincronizar_fechamento_lote)."""
     row = db.execute(
         text(f"""
             UPDATE despesca SET excluido_em = now(), excluido_por = :quem
@@ -158,9 +176,10 @@ def excluir_despesca(
         """),
         {"id": despesca_id, "quem": usuario.nome},
     ).mappings().first()
-    db.commit()
     if row is None:
         raise HTTPException(404, "despesca não encontrada (ou já excluída)")
+    _sincronizar_fechamento_lote(db, row["lote_id"], row["data"])
+    db.commit()
     return DespescaOut(**row)
 
 
@@ -168,6 +187,9 @@ def excluir_despesca(
 def restaurar_despesca(
     despesca_id: int, db: Session = Depends(get_db), _usuario: UsuarioOut = Depends(get_current_user),
 ):
+    """Restaurar volta a contar a despesca no saldo — se isso zerar o
+    tanque de novo, fecha o lote como no lançamento normal (ver
+    _sincronizar_fechamento_lote)."""
     row = db.execute(
         text(f"""
             UPDATE despesca SET excluido_em = NULL, excluido_por = NULL
@@ -176,7 +198,8 @@ def restaurar_despesca(
         """),
         {"id": despesca_id},
     ).mappings().first()
-    db.commit()
     if row is None:
         raise HTTPException(404, "despesca não encontrada (ou não está excluída)")
+    _sincronizar_fechamento_lote(db, row["lote_id"], row["data"])
+    db.commit()
     return DespescaOut(**row)
