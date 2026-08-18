@@ -129,7 +129,7 @@ export default function RegistrarExpedicao() {
               <option value="">— Nova expedição —</option>
               {expedicoesAbertas.map((e) => (
                 <option key={e.id} value={e.id}>
-                  {e.vendedor_nome} — saiu em {e.data_saida.split("-").reverse().join("/")}
+                  Entregador: {e.vendedor_nome} — saiu em {e.data_saida.split("-").reverse().join("/")}
                 </option>
               ))}
             </select>
@@ -152,7 +152,7 @@ export default function RegistrarExpedicao() {
         </div>
 
         <div className={styles.field}>
-          <label>Vendedor/entregador</label>
+          <label>Entregador</label>
           <div className={styles.chips}>
             {vendedores.map((v) => (
               <button
@@ -166,7 +166,7 @@ export default function RegistrarExpedicao() {
               </button>
             ))}
           </div>
-          {vendedores.length === 0 && <p className={styles.hint}>Nenhum vendedor cadastrado ainda.</p>}
+          {vendedores.length === 0 && <p className={styles.hint}>Nenhum entregador cadastrado ainda.</p>}
         </div>
 
         <p className={styles.hint}>Preencha a quantidade de cada produto que sai com essa carga.</p>

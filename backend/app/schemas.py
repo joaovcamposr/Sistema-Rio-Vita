@@ -1022,6 +1022,7 @@ class ExpedicaoEdicaoOut(BaseModel):
 
 class AcertoVendaIn(BaseModel):
     cliente_id: int | None = None
+    vendedor: str | None = None
     produto_id: int
     quantidade_un: float | None = Field(default=None, ge=0)
     quantidade_kg: float = Field(gt=0)

@@ -173,7 +173,7 @@ export default function PainelAcertos() {
 
   async function cancelar(a: AcertoResumo) {
     const confirmar = window.confirm(
-      `Cancelar o acerto de ${a.vendedor_nome} (acertado em ${dataBr(a.data_acerto)})?\n\n` +
+      `Cancelar o acerto da rota do entregador ${a.vendedor_nome} (acertado em ${dataBr(a.data_acerto)})?\n\n` +
       "As vendas geradas por esse acerto serão canceladas (dá pra restaurar depois em Recebimentos → Ver excluídas), " +
       "as despesas e retornos lançados junto serão removidos, e a expedição volta a ficar em aberto pra ser " +
       "acertada de novo."
@@ -215,7 +215,7 @@ export default function PainelAcertos() {
             <input type="date" value={ate} onChange={(e) => setAte(e.target.value)} />
           </div>
           <div className={styles.campo}>
-            <label>Vendedor</label>
+            <label>Entregador</label>
             <select
               value={vendedorFiltro}
               onChange={(e) => setVendedorFiltro(e.target.value ? Number(e.target.value) : "")}
@@ -253,7 +253,9 @@ export default function PainelAcertos() {
                   padding: "12px 14px", background: "var(--surface)", border: "none", cursor: "pointer", textAlign: "left",
                 }}
               >
-                <div style={{ fontWeight: 700 }}>{a.vendedor_nome}</div>
+                <div style={{ fontWeight: 700 }}>
+                  <span className={styles.hint} style={{ fontWeight: 400 }}>Entregador: </span>{a.vendedor_nome}
+                </div>
                 <div className={styles.hint}>Saiu {dataBr(a.data_saida)} · Acertado {dataBr(a.data_acerto)}</div>
                 <div style={{ marginLeft: "auto", display: "flex", gap: 16, fontSize: "0.85rem" }}>
                   <span>Vendas: <strong>{moeda(a.total_vendas_dinheiro)}</strong></span>

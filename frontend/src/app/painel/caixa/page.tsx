@@ -81,7 +81,7 @@ export default function PainelCaixa() {
                 <div className={styles.section}>Expedições em aberto agora</div>
                 <div className={styles.tableWrap}>
                   <table className={styles.tabela}>
-                    <thead><tr><th>Vendedor</th><th>Saída</th><th>Dias em aberto</th></tr></thead>
+                    <thead><tr><th>Entregador</th><th>Saída</th><th>Dias em aberto</th></tr></thead>
                     <tbody>
                       {dados.expedicoes_abertas.map((e) => (
                         <tr key={e.id}>

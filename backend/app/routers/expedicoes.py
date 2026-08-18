@@ -224,12 +224,18 @@ def acertar_expedicao(
         raise HTTPException(422, f"expedição já foi acertada em {atual['data_acerto']}")
 
     if not ja_processado:
-        vendedor_nome = db.execute(text("""
+        # quem sai com a carga (entregador, tabela `vendedor`) não é
+        # necessariamente quem vendeu pra cada cliente — cada venda do
+        # acerto informa seu próprio vendedor; só cai pro entregador se a
+        # venda não trouxer um (retrocompatibilidade com acerto antigo)
+        entregador_nome = db.execute(text("""
             SELECT vd.nome FROM expedicao e JOIN vendedor vd ON vd.id = e.vendedor_id WHERE e.id = :id
         """), {"id": expedicao_id}).scalar_one()
 
         try:
             for v in body.vendas:
+                dados = v.model_dump()
+                dados["vendedor"] = dados.get("vendedor") or entregador_nome
                 db.execute(text("""
                     INSERT INTO venda (data, cliente_id, vendedor, produto_id, quantidade_un, quantidade_kg,
                                         preco_kg, forma_pgto, expedicao_id, prazo_dias, emite_nf, emite_boleto,
@@ -238,8 +244,8 @@ def acertar_expedicao(
                             :preco_kg, :forma_pgto, :expedicao_id, :prazo_dias, :emite_nf, :emite_boleto,
                             :criado_por)
                 """), {
-                    "data": body.data_acerto, "expedicao_id": expedicao_id, "vendedor": vendedor_nome,
-                    "criado_por": usuario.nome, **v.model_dump(),
+                    "data": body.data_acerto, "expedicao_id": expedicao_id,
+                    "criado_por": usuario.nome, **dados,
                 })
             for r in body.retornos:
                 db.execute(text("""

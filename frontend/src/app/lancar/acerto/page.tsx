@@ -3,7 +3,10 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { listarClientes, listarProdutos, type Cliente, type Produto } from "@/lib/api";
-import { criarCliente, listarExpedicoesAbertas, listarPrecosCliente, type Expedicao } from "@/lib/cadastros";
+import {
+  criarCliente, listarExpedicoesAbertas, listarPrecosCliente, listarVendedores,
+  type Expedicao, type Vendedor,
+} from "@/lib/cadastros";
 import { enfileirar } from "@/lib/offline-queue";
 import styles from "../form.module.css";
 
@@ -19,6 +22,7 @@ function nf(v: number, casas = 1): string {
 
 interface VendaLinha {
   clienteId: number | null;
+  vendedor: string;
   produtoId: number | null;
   quantidade: string;
   preco: string;
@@ -30,8 +34,8 @@ interface VendaLinha {
 interface RetornoLinha { produtoId: number | null; quantidade: string }
 interface DespesaLinha { categoria: string; valor: string; forma: string }
 
-function novaVenda(produtoId: number | null): VendaLinha {
-  return { clienteId: null, produtoId, quantidade: "", preco: "", forma: FORMAS[0], prazoDias: "", emiteNf: false, emiteBoleto: false };
+function novaVenda(produtoId: number | null, vendedor: string): VendaLinha {
+  return { clienteId: null, vendedor, produtoId, quantidade: "", preco: "", forma: FORMAS[0], prazoDias: "", emiteNf: false, emiteBoleto: false };
 }
 
 export default function AcertoExpedicao() {
@@ -39,11 +43,12 @@ export default function AcertoExpedicao() {
   const [expedicoes, setExpedicoes] = useState<Expedicao[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [produtos, setProdutos] = useState<Produto[]>([]);
+  const [vendedores, setVendedores] = useState<Vendedor[]>([]);
   const [erroCarregar, setErroCarregar] = useState<string | null>(null);
 
   const [expedicaoId, setExpedicaoId] = useState<number | null>(null);
   const [dataAcerto, setDataAcerto] = useState(hojeISO());
-  const [vendas, setVendas] = useState<VendaLinha[]>([novaVenda(null)]);
+  const [vendas, setVendas] = useState<VendaLinha[]>([novaVenda(null, "")]);
   const [retornos, setRetornos] = useState<RetornoLinha[]>([{ produtoId: null, quantidade: "" }]);
   const [despesas, setDespesas] = useState<DespesaLinha[]>([]);
   const [enviando, setEnviando] = useState(false);
@@ -53,17 +58,27 @@ export default function AcertoExpedicao() {
   const [salvandoCliente, setSalvandoCliente] = useState(false);
 
   useEffect(() => {
-    Promise.all([listarExpedicoesAbertas(), listarClientes(), listarProdutos()])
-      .then(([es, cs, ps]) => {
+    Promise.all([listarExpedicoesAbertas(), listarClientes(), listarProdutos(), listarVendedores()])
+      .then(([es, cs, ps, vs]) => {
         setExpedicoes(es);
         setClientes(cs);
         setProdutos(ps);
-        if (es.length > 0) setExpedicaoId(es[0].id);
+        setVendedores(vs);
+        if (es.length > 0) {
+          setExpedicaoId(es[0].id);
+          setVendas([novaVenda(null, es[0].vendedor_nome)]);
+        }
       })
       .catch(() => setErroCarregar("Sem conexão e sem dados salvos deste aparelho ainda. Conecte-se ao menos uma vez."));
   }, []);
 
   const expedicao = expedicoes.find((e) => e.id === expedicaoId) ?? null;
+
+  function aoEscolherExpedicao(id: number) {
+    setExpedicaoId(id);
+    const exp = expedicoes.find((e) => e.id === id);
+    setVendas([novaVenda(null, exp?.vendedor_nome ?? "")]);
+  }
 
   async function aoEscolherCliente(idx: number, clienteId: number | null) {
     const cliente = clientes.find((c) => c.id === clienteId) ?? null;
@@ -184,6 +199,7 @@ export default function AcertoExpedicao() {
           const qtd = parseFloat(v.quantidade.replace(",", "."));
           return {
             cliente_id: v.clienteId,
+            vendedor: v.vendedor.trim() || null,
             produto_id: v.produtoId,
             quantidade_un: produto?.kg_digitado ? null : qtd,
             quantidade_kg: produto?.kg_digitado ? qtd : qtd * (produto?.fator_kg ?? 1),
@@ -208,7 +224,7 @@ export default function AcertoExpedicao() {
         })),
       });
       setToast("Acerto registrado");
-      setVendas([novaVenda(null)]);
+      setVendas([novaVenda(null, expedicao?.vendedor_nome ?? "")]);
       setRetornos([{ produtoId: null, quantidade: "" }]);
       setDespesas([]);
       setTimeout(() => setToast(null), 2200);
@@ -239,10 +255,10 @@ export default function AcertoExpedicao() {
 
         <div className={styles.field}>
           <label>Expedição</label>
-          <select className={styles.inp} value={expedicaoId ?? ""} onChange={(e) => setExpedicaoId(Number(e.target.value))}>
+          <select className={styles.inp} value={expedicaoId ?? ""} onChange={(e) => aoEscolherExpedicao(Number(e.target.value))}>
             {expedicoes.map((e) => (
               <option key={e.id} value={e.id}>
-                {e.vendedor_nome} — saiu em {e.data_saida.split("-").reverse().join("/")}
+                Entregador: {e.vendedor_nome} — saiu em {e.data_saida.split("-").reverse().join("/")}
               </option>
             ))}
           </select>
@@ -316,6 +332,19 @@ export default function AcertoExpedicao() {
               )}
             </div>
             <div className={styles.field} style={{ marginBottom: 10 }}>
+              <label>Vendedor</label>
+              <select
+                className={styles.inp}
+                value={v.vendedor}
+                onChange={(e) => atualizarVenda(idx, "vendedor", e.target.value)}
+              >
+                <option value="">Sem vendedor definido</option>
+                {vendedores.map((vd) => (
+                  <option key={vd.id} value={vd.nome}>{vd.nome}</option>
+                ))}
+              </select>
+            </div>
+            <div className={styles.field} style={{ marginBottom: 10 }}>
               <label>Produto</label>
               <div className={styles.chips}>
                 {produtos.map((p) => (
@@ -360,7 +389,7 @@ export default function AcertoExpedicao() {
             )}
           </div>
         ))}
-        <button type="button" className={styles.chip} onClick={() => setVendas((ls) => [...ls, novaVenda(null)])}>
+        <button type="button" className={styles.chip} onClick={() => setVendas((ls) => [...ls, novaVenda(null, expedicao?.vendedor_nome ?? "")])}>
           + adicionar venda
         </button>
 
