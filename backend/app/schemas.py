@@ -486,6 +486,8 @@ class ClienteOut(BaseModel):
     prazo_dias: int | None = None
     emite_nf: bool = False
     emite_boleto: bool = False
+    vendedor_id: int | None = None
+    vendedor_nome: str | None = None
 
 
 class VendaIn(BaseModel):
@@ -942,6 +944,8 @@ class ClienteDetalheOut(BaseModel):
     prazo_dias: int | None
     emite_nf: bool
     emite_boleto: bool
+    vendedor_id: int | None = None
+    vendedor_nome: str | None = None
 
 
 class ClienteIn(BaseModel):
@@ -952,6 +956,7 @@ class ClienteIn(BaseModel):
     prazo_dias: int | None = None
     emite_nf: bool = False
     emite_boleto: bool = False
+    vendedor_id: int | None = None
 
 
 class ClienteProdutoPrecoOut(BaseModel):

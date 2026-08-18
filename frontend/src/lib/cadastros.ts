@@ -49,6 +49,8 @@ export interface ClienteDetalhe {
   prazo_dias: number | null;
   emite_nf: boolean;
   emite_boleto: boolean;
+  vendedor_id: number | null;
+  vendedor_nome: string | null;
 }
 
 export interface ClienteProdutoPreco {

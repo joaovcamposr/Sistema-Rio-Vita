@@ -7,9 +7,11 @@ import {
   definirPrecoCliente,
   excluirCliente,
   listarPrecosCliente,
+  listarVendedores,
   obterCliente,
   type ClienteDetalhe,
   type ClienteProdutoPreco,
+  type Vendedor,
 } from "@/lib/cadastros";
 import styles from "../../cadastros.module.css";
 
@@ -20,16 +22,18 @@ export default function EditarCliente() {
 
   const [cliente, setCliente] = useState<ClienteDetalhe | null>(null);
   const [precos, setPrecos] = useState<ClienteProdutoPreco[]>([]);
+  const [vendedores, setVendedores] = useState<Vendedor[]>([]);
   const [erro, setErro] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [precoEditando, setPrecoEditando] = useState<Record<number, string>>({});
 
   useEffect(() => {
-    Promise.all([obterCliente(clienteId), listarPrecosCliente(clienteId)])
-      .then(([c, ps]) => {
+    Promise.all([obterCliente(clienteId), listarPrecosCliente(clienteId), listarVendedores()])
+      .then(([c, ps, vs]) => {
         setCliente(c);
         setPrecos(ps);
+        setVendedores(vs);
         setPrecoEditando(Object.fromEntries(ps.map((p) => [p.produto_id, p.preco > 0 ? String(p.preco) : ""])));
       })
       .catch(() => setErro("Sem conexão e sem dado salvo deste aparelho ainda."));
@@ -46,6 +50,7 @@ export default function EditarCliente() {
       const atualizado = await atualizarCliente(clienteId, {
         nome: cliente.nome, cnpj: cliente.cnpj, contato: cliente.contato, cidade: cliente.cidade,
         prazo_dias: cliente.prazo_dias, emite_nf: cliente.emite_nf, emite_boleto: cliente.emite_boleto,
+        vendedor_id: cliente.vendedor_id, vendedor_nome: cliente.vendedor_nome,
       });
       setCliente(atualizado);
       setToast("Cadastro atualizado");
@@ -136,6 +141,17 @@ export default function EditarCliente() {
             value={cliente.prazo_dias ?? ""}
             onChange={(e) => atualizarCampo("prazo_dias", e.target.value ? Number(e.target.value) : null)}
           />
+        </div>
+        <div className={styles.field}>
+          <label>Vendedor</label>
+          <select
+            className={styles.inp}
+            value={cliente.vendedor_id ?? ""}
+            onChange={(e) => atualizarCampo("vendedor_id", e.target.value ? Number(e.target.value) : null)}
+          >
+            <option value="">Sem vendedor definido</option>
+            {vendedores.map((v) => <option key={v.id} value={v.id}>{v.nome}</option>)}
+          </select>
         </div>
         <div className={styles.checkRow}>
           <input type="checkbox" id="nf" checked={cliente.emite_nf} onChange={(e) => atualizarCampo("emite_nf", e.target.checked)} />

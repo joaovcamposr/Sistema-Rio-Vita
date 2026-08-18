@@ -64,6 +64,8 @@ export interface Cliente {
   prazo_dias: number | null;
   emite_nf: boolean;
   emite_boleto: boolean;
+  vendedor_id: number | null;
+  vendedor_nome: string | null;
 }
 
 export interface VendaLista {

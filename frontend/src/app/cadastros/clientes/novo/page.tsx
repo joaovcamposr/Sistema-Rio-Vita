@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { criarCliente } from "@/lib/cadastros";
+import { criarCliente, listarVendedores, type Vendedor } from "@/lib/cadastros";
 import styles from "../../cadastros.module.css";
 
 export default function NovoCliente() {
@@ -16,8 +16,14 @@ export default function NovoCliente() {
   const [prazoDias, setPrazoDias] = useState("");
   const [emiteNf, setEmiteNf] = useState(false);
   const [emiteBoleto, setEmiteBoleto] = useState(false);
+  const [vendedorId, setVendedorId] = useState<number | null>(null);
+  const [vendedores, setVendedores] = useState<Vendedor[]>([]);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+
+  useEffect(() => {
+    listarVendedores().then(setVendedores).catch(() => undefined);
+  }, []);
 
   async function salvar() {
     if (!nome.trim()) return;
@@ -31,6 +37,8 @@ export default function NovoCliente() {
         prazo_dias: prazoDias ? Number(prazoDias) : null,
         emite_nf: emiteNf,
         emite_boleto: emiteBoleto,
+        vendedor_id: vendedorId,
+        vendedor_nome: null,
       });
       router.push(retorno ? `${retorno}?clienteId=${cliente.id}` : `/cadastros/clientes/${cliente.id}`);
     } catch {
@@ -72,6 +80,13 @@ export default function NovoCliente() {
         <div className={styles.field}>
           <label>Prazo (dias, opcional)</label>
           <input className={styles.inp} type="number" inputMode="numeric" value={prazoDias} onChange={(e) => setPrazoDias(e.target.value)} />
+        </div>
+        <div className={styles.field}>
+          <label>Vendedor (opcional)</label>
+          <select className={styles.inp} value={vendedorId ?? ""} onChange={(e) => setVendedorId(e.target.value ? Number(e.target.value) : null)}>
+            <option value="">Sem vendedor definido</option>
+            {vendedores.map((v) => <option key={v.id} value={v.id}>{v.nome}</option>)}
+          </select>
         </div>
         <div className={styles.checkRow}>
           <input type="checkbox" id="nf" checked={emiteNf} onChange={(e) => setEmiteNf(e.target.checked)} />

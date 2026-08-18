@@ -98,12 +98,13 @@ export default function CadastroClientes() {
             {clientesFiltrados.length > 0 && (
               <div className={styles.tableWrap}>
                 <table className={styles.tabela}>
-                  <thead><tr><th>Nome</th><th>Cidade</th><th>Prazo</th><th>NF</th><th>Boleto</th></tr></thead>
+                  <thead><tr><th>Nome</th><th>Cidade</th><th>Vendedor</th><th>Prazo</th><th>NF</th><th>Boleto</th></tr></thead>
                   <tbody>
                     {clientesFiltrados.map((c) => (
                       <tr key={c.id} onClick={() => router.push(`/cadastros/clientes/${c.id}`)}>
                         <td>{c.nome}</td>
                         <td>{c.cidade ?? "—"}</td>
+                        <td>{c.vendedor_nome ?? "—"}</td>
                         <td>{c.prazo_dias != null ? `${c.prazo_dias} dias` : "—"}</td>
                         <td>{c.emite_nf ? "Sim" : "Não"}</td>
                         <td>{c.emite_boleto ? "Sim" : "Não"}</td>

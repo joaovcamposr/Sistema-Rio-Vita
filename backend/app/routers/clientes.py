@@ -14,35 +14,47 @@ from ..schemas import (
 
 router = APIRouter(prefix="/clientes", tags=["clientes"])
 
-_COLUNAS_DETALHE = "id, nome, cnpj, contato, cidade, prazo_dias, emite_nf, emite_boleto"
+_COLUNAS_DETALHE = (
+    "c.id, c.nome, c.cnpj, c.contato, c.cidade, c.prazo_dias, c.emite_nf, c.emite_boleto, "
+    "c.vendedor_id, vd.nome AS vendedor_nome"
+)
+_FROM_DETALHE = "FROM cliente c LEFT JOIN vendedor vd ON vd.id = c.vendedor_id"
 
 
 @router.get("", response_model=list[ClienteOut])
 def listar_clientes(db: Session = Depends(get_db)):
-    rows = db.execute(text(
-        "SELECT id, nome, cidade, prazo_dias, emite_nf, emite_boleto FROM cliente WHERE ativo ORDER BY nome"
-    )).mappings().all()
+    rows = db.execute(text(f"""
+        SELECT c.id, c.nome, c.cidade, c.prazo_dias, c.emite_nf, c.emite_boleto,
+               c.vendedor_id, vd.nome AS vendedor_nome
+        {_FROM_DETALHE}
+        WHERE c.ativo ORDER BY c.nome
+    """)).mappings().all()
     return [ClienteOut(**r) for r in rows]
 
 
 @router.post("", response_model=ClienteDetalheOut, status_code=201)
 def criar_cliente(body: ClienteIn, db: Session = Depends(get_db)):
-    row = db.execute(
-        text(f"""
-            INSERT INTO cliente (nome, cnpj, contato, cidade, prazo_dias, emite_nf, emite_boleto)
-            VALUES (:nome, :cnpj, :contato, :cidade, :prazo_dias, :emite_nf, :emite_boleto)
-            RETURNING {_COLUNAS_DETALHE}
-        """),
-        body.model_dump(),
-    ).mappings().first()
-    db.commit()
+    try:
+        novo_id = db.execute(
+            text("""
+                INSERT INTO cliente (nome, cnpj, contato, cidade, prazo_dias, emite_nf, emite_boleto, vendedor_id)
+                VALUES (:nome, :cnpj, :contato, :cidade, :prazo_dias, :emite_nf, :emite_boleto, :vendedor_id)
+                RETURNING id
+            """),
+            body.model_dump(),
+        ).scalar_one()
+        db.commit()
+    except DBAPIError as exc:
+        db.rollback()
+        raise HTTPException(422, f"vendedor_id inválido: {exc.orig}") from exc
+    row = db.execute(text(f"SELECT {_COLUNAS_DETALHE} {_FROM_DETALHE} WHERE c.id = :id"), {"id": novo_id}).mappings().first()
     return ClienteDetalheOut(**row)
 
 
 @router.get("/{cliente_id}", response_model=ClienteDetalheOut)
 def obter_cliente(cliente_id: int, db: Session = Depends(get_db)):
     row = db.execute(
-        text(f"SELECT {_COLUNAS_DETALHE} FROM cliente WHERE id = :id"), {"id": cliente_id}
+        text(f"SELECT {_COLUNAS_DETALHE} {_FROM_DETALHE} WHERE c.id = :id"), {"id": cliente_id}
     ).mappings().first()
     if row is None:
         raise HTTPException(404, "cliente não encontrado")
@@ -51,19 +63,25 @@ def obter_cliente(cliente_id: int, db: Session = Depends(get_db)):
 
 @router.put("/{cliente_id}", response_model=ClienteDetalheOut)
 def atualizar_cliente(cliente_id: int, body: ClienteIn, db: Session = Depends(get_db)):
-    row = db.execute(
-        text(f"""
-            UPDATE cliente SET nome = :nome, cnpj = :cnpj, contato = :contato, cidade = :cidade,
-                   prazo_dias = :prazo_dias, emite_nf = :emite_nf, emite_boleto = :emite_boleto
-            WHERE id = :id
-            RETURNING {_COLUNAS_DETALHE}
-        """),
-        {**body.model_dump(), "id": cliente_id},
-    ).mappings().first()
-    db.commit()
+    try:
+        row = db.execute(
+            text("""
+                UPDATE cliente SET nome = :nome, cnpj = :cnpj, contato = :contato, cidade = :cidade,
+                       prazo_dias = :prazo_dias, emite_nf = :emite_nf, emite_boleto = :emite_boleto,
+                       vendedor_id = :vendedor_id
+                WHERE id = :id
+                RETURNING id
+            """),
+            {**body.model_dump(), "id": cliente_id},
+        ).mappings().first()
+        db.commit()
+    except DBAPIError as exc:
+        db.rollback()
+        raise HTTPException(422, f"vendedor_id inválido: {exc.orig}") from exc
     if row is None:
         raise HTTPException(404, "cliente não encontrado")
-    return ClienteDetalheOut(**row)
+    atualizado = db.execute(text(f"SELECT {_COLUNAS_DETALHE} {_FROM_DETALHE} WHERE c.id = :id"), {"id": cliente_id}).mappings().first()
+    return ClienteDetalheOut(**atualizado)
 
 
 @router.delete("/{cliente_id}", status_code=204)

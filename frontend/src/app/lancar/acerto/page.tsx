@@ -87,6 +87,9 @@ export default function AcertoExpedicao() {
       copia[idx] = {
         ...copia[idx],
         clienteId,
+        // cliente tem vendedor responsável cadastrado: usa ele; senão mantém
+        // o que já estava (o padrão inicial é o entregador da expedição)
+        vendedor: cliente?.vendedor_nome ?? copia[idx].vendedor,
         prazoDias: cliente?.prazo_dias != null ? String(cliente.prazo_dias) : "",
         emiteNf: cliente?.emite_nf ?? false,
         emiteBoleto: cliente?.emite_boleto ?? false,
@@ -122,6 +125,7 @@ export default function AcertoExpedicao() {
     try {
       const cliente = await criarCliente({
         nome, cnpj: null, contato: null, cidade: null, prazo_dias: null, emite_nf: false, emite_boleto: false,
+        vendedor_id: null, vendedor_nome: null,
       });
       setClientes((cs) => [...cs, cliente].sort((a, b) => a.nome.localeCompare(b.nome)));
       setCriandoClienteIdx(null);
