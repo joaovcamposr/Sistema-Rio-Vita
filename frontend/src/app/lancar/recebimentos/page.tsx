@@ -262,9 +262,21 @@ export default function Recebimentos() {
   }
 
   return (
-    <div className={styles.page} style={{ maxWidth: 1360 }}>
+    <div className={`${styles.page} print-fit`} style={{ maxWidth: 1360 }}>
+      <style>{`
+        @media print {
+          @page { size: landscape; margin: 10mm; }
+          .no-print { display: none !important; }
+          .print-fit { max-width: none !important; overflow: visible !important; }
+          .print-table { table-layout: auto !important; width: 100% !important; font-size: 9pt !important; }
+          .print-table th, .print-table td {
+            white-space: normal !important; overflow: visible !important; text-overflow: clip !important;
+            padding: 3px 5px !important;
+          }
+        }
+      `}</style>
       <div className={styles.appbar}>
-        <button className={styles.backbtn} aria-label="Voltar" onClick={() => router.push("/")}>
+        <button className={`${styles.backbtn} no-print`} aria-label="Voltar" onClick={() => router.push("/")}>
           ←
         </button>
         <div>
@@ -275,7 +287,7 @@ export default function Recebimentos() {
       <div className={styles.body}>
         {erro && <div className={styles.error}>{erro}</div>}
 
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 16, alignItems: "flex-end" }}>
+        <div className="no-print" style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 16, alignItems: "flex-end" }}>
           <div className={styles.field} style={{ margin: 0 }}>
             <label>De</label>
             <input className={styles.inp} type="date" value={de} onChange={(e) => setDe(e.target.value)} />
@@ -355,8 +367,8 @@ export default function Recebimentos() {
         )}
 
         {vendasFiltradas && vendasFiltradas.length > 0 && (
-          <div className={styles.tableWrap}>
-            <table className={styles.tabela} style={{ fontSize: "0.78rem", tableLayout: "fixed", width: "100%" }}>
+          <div className={`${styles.tableWrap} print-fit`}>
+            <table className={`${styles.tabela} print-table`} style={{ fontSize: "0.78rem", tableLayout: "fixed", width: "100%" }}>
               <colgroup>
                 <col style={{ width: "10%" }} />
                 <col style={{ width: "10%" }} />
@@ -374,6 +386,7 @@ export default function Recebimentos() {
                   {["Data", "Cliente", "Produto", "Qtd.", "Valor", "Forma", "Vendedor", "Situação", "Obs.", ""].map((rotulo) => (
                     <th
                       key={rotulo}
+                      className={rotulo === "" ? "no-print" : undefined}
                       style={{ padding: "8px 6px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
                     >
                       {rotulo}
@@ -458,7 +471,7 @@ export default function Recebimentos() {
                           </button>
                         )}
                       </td>
-                      <td style={{ padding: "6px", fontSize: "0.76rem" }}>
+                      <td className="no-print" style={{ padding: "6px", fontSize: "0.76rem" }}>
                         {mostrarExcluidos ? (
                           <>
                             <span className={styles.hint} style={{ display: "block", fontSize: "0.7rem" }}>
