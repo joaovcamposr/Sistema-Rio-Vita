@@ -1242,9 +1242,12 @@ def painel_estoque_racao(db: Session = Depends(get_db)):
 
     chegou_por_tipo = {
         r["tipo_racao_id"]: float(r["chegou"])
-        for r in db.execute(text(
-            "SELECT tipo_racao_id, SUM(quantidade_sacos) AS chegou FROM chegada_racao_item GROUP BY tipo_racao_id"
-        )).mappings().all()
+        for r in db.execute(text("""
+            SELECT i.tipo_racao_id, SUM(i.quantidade_sacos) AS chegou
+            FROM chegada_racao_item i JOIN chegada_racao c ON c.id = i.chegada_id
+            WHERE c.excluido_em IS NULL
+            GROUP BY i.tipo_racao_id
+        """)).mappings().all()
     }
     consumido_por_tipo = {
         r["tipo_racao_id"]: float(r["consumido"])

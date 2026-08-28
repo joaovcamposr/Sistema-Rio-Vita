@@ -84,7 +84,16 @@ export default function PainelEstoque() {
 
   useEffect(() => {
     setDados(null);
-    painelEstoque(de, ate).then(setDados).catch(() => setErro("Sem conexão e sem dado salvo deste aparelho ainda."));
+    painelEstoque(de, ate)
+      .then((r) => {
+        setDados(r);
+        // veio de um atalho tipo "/painel/estoque#ajuste" — pula direto pro
+        // formulário de ajuste em vez de deixar a pessoa procurar na página
+        if (typeof window !== "undefined" && window.location.hash === "#ajuste") {
+          setTimeout(() => document.getElementById("ajuste")?.scrollIntoView({ behavior: "smooth" }), 50);
+        }
+      })
+      .catch(() => setErro("Sem conexão e sem dado salvo deste aparelho ainda."));
     listarAjustesEstoque(de, ate, mostrarExcluidos).then(setAjustes).catch(() => {});
   }, [de, ate, mostrarExcluidos]);
 
@@ -265,7 +274,7 @@ export default function PainelEstoque() {
               </div>
             </div>
 
-            <div className={styles.formBox}>
+            <div id="ajuste" className={styles.formBox}>
               <div className={styles.section} style={{ marginTop: 0 }}>Novo ajuste de estoque</div>
               <div className={styles.campo} style={{ marginBottom: 14 }}>
                 <label>Produto</label>

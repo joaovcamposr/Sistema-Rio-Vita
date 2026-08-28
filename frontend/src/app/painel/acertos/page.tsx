@@ -22,11 +22,6 @@ const FORMAS = ["Dinheiro", "Pix", "Prazo"];
 function hojeISO(): string {
   return new Date().toISOString().slice(0, 10);
 }
-function diasAtras(dias: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() - dias);
-  return d.toISOString().slice(0, 10);
-}
 function nf(v: number, casas = 1): string {
   return v.toLocaleString("pt-BR", { minimumFractionDigits: casas, maximumFractionDigits: casas });
 }
@@ -37,13 +32,16 @@ function dataBr(iso: string): string {
   const [a, m, d] = iso.split("-");
   return `${d}/${m}/${a}`;
 }
+// "De" começa sempre no início — um acerto antigo não pode ficar escondido
+// só porque o padrão de período era curto demais
+const DESDE_SEMPRE = "2020-01-01";
 
 interface FormDespesa { data: string; categoria: string; valor: string; forma_pgto: string; observacao: string }
 interface FormRetorno { quantidade: string }
 
 export default function PainelAcertos() {
   const router = useRouter();
-  const [de, setDe] = useState(diasAtras(30));
+  const [de, setDe] = useState(DESDE_SEMPRE);
   const [ate, setAte] = useState(hojeISO());
   const [vendedores, setVendedores] = useState<Vendedor[]>([]);
   const [vendedorFiltro, setVendedorFiltro] = useState<number | "">("");
@@ -245,43 +243,43 @@ export default function PainelAcertos() {
           const diferencasComProblema = a.diferencas.filter((d) => Math.abs(d.diferenca_kg) > 0.01);
           return (
             <div key={a.expedicao_id} style={{ border: "1px solid var(--rule)", borderRadius: 12, marginBottom: 12, overflow: "hidden" }}>
-              <button
-                type="button"
+              <div
+                role="button"
+                tabIndex={0}
                 onClick={() => expandir(a)}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") expandir(a); }}
                 style={{
                   width: "100%", display: "flex", flexWrap: "wrap", gap: 16, alignItems: "center",
-                  padding: "12px 14px", background: "var(--surface)", border: "none", cursor: "pointer", textAlign: "left",
+                  padding: "12px 14px", background: "var(--surface)", cursor: "pointer",
                 }}
               >
                 <div style={{ fontWeight: 700 }}>
                   <span className={styles.hint} style={{ fontWeight: 400 }}>Entregador: </span>{a.vendedor_nome}
                 </div>
                 <div className={styles.hint}>Saiu {dataBr(a.data_saida)} · Acertado {dataBr(a.data_acerto)}</div>
-                <div style={{ marginLeft: "auto", display: "flex", gap: 16, fontSize: "0.85rem" }}>
+                <div style={{ marginLeft: "auto", display: "flex", gap: 14, alignItems: "center", fontSize: "0.85rem" }}>
                   <span>Vendas: <strong>{moeda(a.total_vendas_dinheiro)}</strong></span>
                   <span>Despesas: <strong>{moeda(a.total_despesas_dinheiro)}</strong></span>
                   <span>Esperado: <strong>{moeda(a.total_esperado_dinheiro)}</strong></span>
                   {diferencasComProblema.length > 0 && (
                     <span style={{ color: "var(--crit)", fontWeight: 700 }}>⚠ diferença de estoque</span>
                   )}
+                  <button
+                    type="button"
+                    disabled={cancelandoId === a.expedicao_id}
+                    onClick={(e) => { e.stopPropagation(); cancelar(a); }}
+                    style={{
+                      padding: "5px 12px", borderRadius: 8, border: "1px solid var(--crit)",
+                      background: "none", color: "var(--crit)", fontWeight: 700, fontSize: "0.76rem", cursor: "pointer",
+                    }}
+                  >
+                    {cancelandoId === a.expedicao_id ? "Cancelando…" : "Cancelar acerto"}
+                  </button>
                 </div>
-              </button>
+              </div>
 
               {expandido && (
                 <div style={{ padding: 14, borderTop: "1px solid var(--rule)" }}>
-                  <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
-                    <button
-                      type="button"
-                      disabled={cancelandoId === a.expedicao_id}
-                      onClick={() => cancelar(a)}
-                      style={{
-                        padding: "6px 14px", borderRadius: 8, border: "1px solid var(--crit)",
-                        background: "none", color: "var(--crit)", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer",
-                      }}
-                    >
-                      {cancelandoId === a.expedicao_id ? "Cancelando…" : "Cancelar acerto"}
-                    </button>
-                  </div>
                   <p className={styles.hint} style={{ fontWeight: 700, marginBottom: 8 }}>Diferenças (expedido × vendido × retornado)</p>
                   <div className={styles.tableWrap} style={{ marginBottom: 18 }}>
                     <table className={styles.tabela}>

@@ -419,6 +419,15 @@ class ChegadaRacaoOut(BaseModel):
     fornecedor_nome: str
     observacao: str | None
     itens: list[ChegadaRacaoItemOut]
+    excluido_em: datetime | None = None
+    excluido_por: str | None = None
+
+
+class ChegadaRacaoEditarIn(BaseModel):
+    data: date
+    fornecedor_id: int
+    observacao: str | None = None
+    itens: list[ChegadaRacaoItemIn] = Field(min_length=1)
 
 
 class EstoqueRacaoTipoOut(BaseModel):

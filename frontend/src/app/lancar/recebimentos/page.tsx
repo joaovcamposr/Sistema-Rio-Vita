@@ -16,6 +16,7 @@ import {
   type Produto,
   type VendaLista,
 } from "@/lib/api";
+import ClienteCombobox from "@/components/ClienteCombobox";
 import styles from "../../cadastros/cadastros.module.css";
 
 const FORMAS_RECEBIMENTO = ["Pix", "Dinheiro", "Boleto", "Cheque"];
@@ -578,16 +579,14 @@ export default function Recebimentos() {
                     }}
                   />
                 </div>
-                <div className={styles.field} style={{ margin: 0 }}>
+                <div className={styles.field} style={{ margin: 0, minWidth: 220 }}>
                   <label>Cliente</label>
-                  <select
-                    className={styles.inp}
-                    value={formVenda.cliente_id ?? ""}
-                    onChange={(e) => setFormVenda({ ...formVenda, cliente_id: e.target.value ? Number(e.target.value) : null })}
-                  >
-                    <option value="">Consumidor final</option>
-                    {clientes.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
-                  </select>
+                  <ClienteCombobox
+                    clientes={clientes}
+                    value={formVenda.cliente_id}
+                    onChange={(clienteId) => setFormVenda({ ...formVenda, cliente_id: clienteId })}
+                    opcaoVazia="Consumidor final"
+                  />
                 </div>
                 <div className={styles.field} style={{ margin: 0 }}>
                   <label>Produto</label>

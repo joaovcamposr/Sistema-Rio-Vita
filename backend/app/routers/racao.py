@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from ..auth import get_current_user
 from ..db import get_db
 from ..schemas import (
+    ChegadaRacaoEditarIn,
     ChegadaRacaoIn,
     ChegadaRacaoItemOut,
     ChegadaRacaoOut,
@@ -124,15 +125,18 @@ def excluir_tipo_racao(fornecedor_id: int, tipo_id: int, db: Session = Depends(g
 
 @router.get("/chegadas-racao", response_model=list[ChegadaRacaoOut])
 def listar_chegadas_racao(
-    de: date | None = None, ate: date | None = None, db: Session = Depends(get_db),
+    de: date | None = None, ate: date | None = None,
+    excluidos: bool = False, db: Session = Depends(get_db),
 ):
     ate = ate or date.today()
     de = de or ate.replace(year=ate.year - 1)
     chegadas = db.execute(
-        text("""
-            SELECT c.id, c.data, c.fornecedor_id, f.nome AS fornecedor_nome, c.observacao
+        text(f"""
+            SELECT c.id, c.data, c.fornecedor_id, f.nome AS fornecedor_nome, c.observacao,
+                   c.excluido_em, c.excluido_por
             FROM chegada_racao c JOIN fornecedor_racao f ON f.id = c.fornecedor_id
             WHERE c.data BETWEEN :de AND :ate
+              AND {"c.excluido_em IS NOT NULL" if excluidos else "c.excluido_em IS NULL"}
             ORDER BY c.data DESC, c.id DESC
         """),
         {"de": de, "ate": ate},
@@ -155,6 +159,7 @@ def listar_chegadas_racao(
         ChegadaRacaoOut(
             id=c["id"], data=c["data"], fornecedor_id=c["fornecedor_id"], fornecedor_nome=c["fornecedor_nome"],
             observacao=c["observacao"], itens=itens_por_chegada.get(c["id"], []),
+            excluido_em=c["excluido_em"], excluido_por=c["excluido_por"],
         )
         for c in chegadas
     ]
@@ -223,3 +228,108 @@ def criar_chegada_racao(
             for i in itens
         ],
     )
+
+
+def _carregar_chegada(db: Session, chegada_id: int) -> ChegadaRacaoOut:
+    row = db.execute(
+        text("""
+            SELECT c.id, c.data, c.fornecedor_id, f.nome AS fornecedor_nome, c.observacao,
+                   c.excluido_em, c.excluido_por
+            FROM chegada_racao c JOIN fornecedor_racao f ON f.id = c.fornecedor_id
+            WHERE c.id = :id
+        """),
+        {"id": chegada_id},
+    ).mappings().first()
+    if row is None:
+        raise HTTPException(404, "chegada de ração não encontrada")
+    itens = db.execute(
+        text("""
+            SELECT i.tipo_racao_id, t.codigo AS tipo_racao_codigo, i.quantidade_sacos
+            FROM chegada_racao_item i JOIN tipo_racao t ON t.id = i.tipo_racao_id
+            WHERE i.chegada_id = :id
+        """),
+        {"id": chegada_id},
+    ).mappings().all()
+    return ChegadaRacaoOut(
+        id=row["id"], data=row["data"], fornecedor_id=row["fornecedor_id"], fornecedor_nome=row["fornecedor_nome"],
+        observacao=row["observacao"], excluido_em=row["excluido_em"], excluido_por=row["excluido_por"],
+        itens=[
+            ChegadaRacaoItemOut(
+                tipo_racao_id=i["tipo_racao_id"], tipo_racao_codigo=i["tipo_racao_codigo"],
+                quantidade_sacos=float(i["quantidade_sacos"]),
+            )
+            for i in itens
+        ],
+    )
+
+
+@router.patch("/chegadas-racao/{chegada_id}", response_model=ChegadaRacaoOut)
+def editar_chegada_racao(
+    chegada_id: int, body: ChegadaRacaoEditarIn, db: Session = Depends(get_db),
+    _usuario: UsuarioOut = Depends(get_current_user),
+):
+    """Corrige data, fornecedor, observação ou os itens (sacos por tipo)
+    de uma chegada já lançada."""
+    atual = db.execute(
+        text("SELECT id FROM chegada_racao WHERE id = :id AND excluido_em IS NULL"), {"id": chegada_id}
+    ).mappings().first()
+    if atual is None:
+        raise HTTPException(404, "chegada não encontrada (ou excluída — restaure antes de editar)")
+    try:
+        db.execute(
+            text("""
+                UPDATE chegada_racao SET data = :data, fornecedor_id = :fornecedor_id, observacao = :observacao
+                WHERE id = :id
+            """),
+            {"id": chegada_id, "data": body.data, "fornecedor_id": body.fornecedor_id, "observacao": body.observacao},
+        )
+        db.execute(text("DELETE FROM chegada_racao_item WHERE chegada_id = :id"), {"id": chegada_id})
+        for item in body.itens:
+            db.execute(
+                text("""
+                    INSERT INTO chegada_racao_item (chegada_id, tipo_racao_id, quantidade_sacos)
+                    VALUES (:chegada_id, :tipo_racao_id, :quantidade_sacos)
+                """),
+                {"chegada_id": chegada_id, **item.model_dump()},
+            )
+        db.commit()
+    except DBAPIError as exc:
+        db.rollback()
+        raise HTTPException(422, f"fornecedor_id/tipo_racao_id inválido: {exc.orig}") from exc
+    return _carregar_chegada(db, chegada_id)
+
+
+@router.delete("/chegadas-racao/{chegada_id}", response_model=ChegadaRacaoOut)
+def excluir_chegada_racao(
+    chegada_id: int, db: Session = Depends(get_db), usuario: UsuarioOut = Depends(get_current_user),
+):
+    row = db.execute(
+        text("""
+            UPDATE chegada_racao SET excluido_em = now(), excluido_por = :quem
+            WHERE id = :id AND excluido_em IS NULL
+            RETURNING id
+        """),
+        {"id": chegada_id, "quem": usuario.nome},
+    ).mappings().first()
+    db.commit()
+    if row is None:
+        raise HTTPException(404, "chegada não encontrada (ou já excluída)")
+    return _carregar_chegada(db, chegada_id)
+
+
+@router.post("/chegadas-racao/{chegada_id}/restaurar", response_model=ChegadaRacaoOut)
+def restaurar_chegada_racao(
+    chegada_id: int, db: Session = Depends(get_db), _usuario: UsuarioOut = Depends(get_current_user),
+):
+    row = db.execute(
+        text("""
+            UPDATE chegada_racao SET excluido_em = NULL, excluido_por = NULL
+            WHERE id = :id AND excluido_em IS NOT NULL
+            RETURNING id
+        """),
+        {"id": chegada_id},
+    ).mappings().first()
+    db.commit()
+    if row is None:
+        raise HTTPException(404, "chegada não encontrada (ou não está excluída)")
+    return _carregar_chegada(db, chegada_id)

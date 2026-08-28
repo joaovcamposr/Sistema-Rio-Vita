@@ -38,6 +38,8 @@ export interface ChegadaRacao {
   fornecedor_nome: string;
   observacao: string | null;
   itens: ChegadaRacaoItem[];
+  excluido_em: string | null;
+  excluido_por: string | null;
 }
 
 export interface ClienteDetalhe {
@@ -147,7 +149,22 @@ export const atualizarTipoRacao = (fornecedorId: number, tipoId: number, codigo:
 export const excluirTipoRacao = (fornecedorId: number, tipoId: number) =>
   excluir(`/fornecedores-racao/${fornecedorId}/tipos/${tipoId}`);
 
-export const listarChegadasRacao = () => cachedGet<ChegadaRacao[]>("cache:chegadas-racao", "/chegadas-racao");
+export const listarChegadasRacao = (de?: string, ate?: string, excluidos?: boolean) => {
+  const qs = new URLSearchParams();
+  if (de) qs.set("de", de);
+  if (ate) qs.set("ate", ate);
+  if (excluidos) qs.set("excluidos", "true");
+  return cachedGet<ChegadaRacao[]>(
+    `cache:chegadas-racao:${de ?? ""}:${ate ?? ""}:${excluidos ? "excluidos" : ""}`,
+    `/chegadas-racao?${qs}`
+  );
+};
+export const editarChegadaRacao = (id: number, body: {
+  data: string; fornecedor_id: number; observacao: string | null;
+  itens: { tipo_racao_id: number; quantidade_sacos: number }[];
+}) => enviar<ChegadaRacao>(`/chegadas-racao/${id}`, "PATCH", body);
+export const excluirChegadaRacao = (id: number) => excluir(`/chegadas-racao/${id}`);
+export const restaurarChegadaRacao = (id: number) => enviar<ChegadaRacao>(`/chegadas-racao/${id}/restaurar`, "POST", undefined);
 
 export const listarExpedicoesAbertas = () =>
   cachedGet<Expedicao[]>("cache:expedicoes:abertas", "/expedicoes/abertas");

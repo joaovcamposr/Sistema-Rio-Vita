@@ -58,6 +58,10 @@ export default function Home() {
           <span className={styles.ico}>🌾</span>
           <span>Chegada de ração</span>
         </Link>
+        <Link href="/painel/estoque#ajuste" className={styles.tile}>
+          <span className={styles.ico}>📦</span>
+          <span>Ajuste de estoque</span>
+        </Link>
         <Link href="/lancar/recebimentos" className={styles.tile}>
           <span className={styles.ico}>💵</span>
           <span>Recebimentos</span>

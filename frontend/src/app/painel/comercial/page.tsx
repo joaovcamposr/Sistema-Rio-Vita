@@ -12,6 +12,7 @@ import {
   type VendaClienteProduto,
 } from "@/lib/paineis";
 import Chart, { type SeriePonto } from "@/components/Chart";
+import ClienteCombobox from "@/components/ClienteCombobox";
 import styles from "../painel.module.css";
 
 function hojeISO(): string {
@@ -203,16 +204,14 @@ export default function PainelComercial() {
               ))}
             </div>
           </div>
-          <div className={styles.campo}>
+          <div className={styles.campo} style={{ minWidth: 200 }}>
             <label>Cliente</label>
-            <select
-              style={{ padding: "9px 11px", borderRadius: 9, border: "1px solid var(--rule-strong)", background: "var(--surface)", color: "var(--ink)" }}
-              value={clienteFiltro ?? ""}
-              onChange={(e) => setClienteFiltro(e.target.value ? Number(e.target.value) : null)}
-            >
-              <option value="">Todos os clientes</option>
-              {clientes.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
-            </select>
+            <ClienteCombobox
+              clientes={clientes}
+              value={clienteFiltro}
+              onChange={setClienteFiltro}
+              opcaoVazia="Todos os clientes"
+            />
           </div>
           <div className={styles.campo}>
             <label>Vendedor</label>

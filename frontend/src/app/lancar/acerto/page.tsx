@@ -8,6 +8,7 @@ import {
   type Expedicao, type Vendedor,
 } from "@/lib/cadastros";
 import { enfileirar } from "@/lib/offline-queue";
+import ClienteCombobox from "@/components/ClienteCombobox";
 import styles from "../form.module.css";
 
 const FORMAS = ["Dinheiro", "Pix", "Prazo"];
@@ -319,20 +320,23 @@ export default function AcertoExpedicao() {
                   </button>
                 </div>
               ) : (
-                <select
-                  className={styles.inp}
-                  value={v.clienteId ?? ""}
-                  onChange={(e) => {
-                    if (e.target.value === "__novo__") { iniciarNovoCliente(idx); return; }
-                    aoEscolherCliente(idx, e.target.value ? Number(e.target.value) : null);
-                  }}
-                >
-                  <option value="">Consumidor final</option>
-                  {clientes.map((c) => (
-                    <option key={c.id} value={c.id}>{c.nome}</option>
-                  ))}
-                  <option value="__novo__">+ Novo cliente…</option>
-                </select>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <div style={{ flex: 1 }}>
+                    <ClienteCombobox
+                      clientes={clientes}
+                      value={v.clienteId}
+                      onChange={(clienteId) => aoEscolherCliente(idx, clienteId)}
+                      opcaoVazia="Consumidor final"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => iniciarNovoCliente(idx)}
+                    style={{ background: "none", border: "none", color: "var(--brand-deep)", fontWeight: 700, fontSize: ".85rem", cursor: "pointer", whiteSpace: "nowrap" }}
+                  >
+                    + Novo
+                  </button>
+                </div>
               )}
             </div>
             <div className={styles.field} style={{ marginBottom: 10 }}>
