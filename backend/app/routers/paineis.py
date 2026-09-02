@@ -640,17 +640,27 @@ def painel_comercial(
         GROUP BY v.cliente_id, c.nome ORDER BY valor_total DESC
     """), params).mappings().all()
 
+    # preço médio ponderado nunca considera venda com preço 0 (amostra/
+    # brinde lançado como venda) — puxaria a média pra baixo mesmo sem
+    # ter sido uma venda de verdade. Os totais de kg/valor continuam
+    # somando tudo — só a MÉDIA de preço ignora a parte de graça.
     por_cliente_file = db.execute(text(f"""
-        SELECT v.cliente_id, SUM(v.quantidade_kg) AS kg, SUM(v.valor_total) AS valor
+        SELECT v.cliente_id, SUM(v.quantidade_kg) AS kg, SUM(v.valor_total) AS valor,
+               SUM(v.quantidade_kg) FILTER (WHERE v.preco_kg > 0) AS kg_precificado
         FROM venda v JOIN produto pr ON pr.id = v.produto_id
         WHERE v.data BETWEEN :de AND :ate AND pr.nome LIKE 'Filé%' {filtro_vendedor}
         GROUP BY v.cliente_id
     """), params).mappings().all()
-    file_por_cliente = {r["cliente_id"]: (float(r["kg"]), float(r["valor"])) for r in por_cliente_file}
+    file_por_cliente = {
+        r["cliente_id"]: (float(r["kg_precificado"] or 0), float(r["valor"]))
+        for r in por_cliente_file
+    }
 
     por_cliente_produto = db.execute(text(f"""
         SELECT v.cliente_id, v.produto_id, pr.nome AS produto_nome,
-               SUM(v.quantidade_kg) AS quantidade_kg, SUM(v.valor_total) AS valor_total
+               SUM(v.quantidade_kg) AS quantidade_kg, SUM(v.valor_total) AS valor_total,
+               SUM(v.quantidade_kg) FILTER (WHERE v.preco_kg > 0) AS kg_precificado,
+               SUM(v.valor_total) FILTER (WHERE v.preco_kg > 0) AS valor_precificado
         FROM venda v JOIN produto pr ON pr.id = v.produto_id
         WHERE v.data BETWEEN :de AND :ate {filtro_vendedor}
         GROUP BY v.cliente_id, v.produto_id, pr.nome
@@ -660,10 +670,12 @@ def painel_comercial(
         kg = float(r["quantidade_kg"])
         if kg <= 0:
             continue
+        kg_precificado = float(r["kg_precificado"] or 0)
+        valor_precificado = float(r["valor_precificado"] or 0)
         produtos_por_cliente.setdefault(r["cliente_id"], []).append(VendaClienteProdutoOut(
             produto_id=r["produto_id"], produto_nome=r["produto_nome"],
             quantidade_kg=kg, valor_total=float(r["valor_total"]),
-            preco_medio_ponderado=float(r["valor_total"]) / kg,
+            preco_medio_ponderado=(valor_precificado / kg_precificado) if kg_precificado > 0 else 0.0,
         ))
 
     totais = db.execute(text(f"""
@@ -672,12 +684,14 @@ def painel_comercial(
     """), params).mappings().first()
 
     file_totais = db.execute(text(f"""
-        SELECT COALESCE(SUM(v.quantidade_kg), 0) AS kg, COALESCE(SUM(v.valor_total), 0) AS valor
+        SELECT COALESCE(SUM(v.quantidade_kg), 0) AS kg, COALESCE(SUM(v.valor_total), 0) AS valor,
+               COALESCE(SUM(v.quantidade_kg) FILTER (WHERE v.preco_kg > 0), 0) AS kg_precificado
         FROM venda v JOIN produto pr ON pr.id = v.produto_id
         WHERE v.data BETWEEN :de AND :ate AND pr.nome LIKE 'Filé%' {filtro_vendedor}
     """), params).mappings().first()
     file_kg = float(file_totais["kg"])
-    file_preco_medio_ponderado = float(file_totais["valor"]) / file_kg if file_kg > 0 else None
+    file_kg_precificado = float(file_totais["kg_precificado"])
+    file_preco_medio_ponderado = float(file_totais["valor"]) / file_kg_precificado if file_kg_precificado > 0 else None
 
     return ComercialResumoOut(
         de=de, ate=ate,
@@ -721,7 +735,8 @@ def painel_comercial_serie(
 
     rows = db.execute(text(f"""
         SELECT {bucket} AS bucket, v.produto_id, pr.nome AS produto_nome,
-               SUM(v.quantidade_kg) AS quantidade_kg, SUM(v.valor_total) AS valor_total
+               SUM(v.quantidade_kg) AS quantidade_kg, SUM(v.valor_total) AS valor_total,
+               SUM(v.quantidade_kg) FILTER (WHERE v.preco_kg > 0) AS kg_precificado
         FROM venda v JOIN produto pr ON pr.id = v.produto_id
         WHERE v.data BETWEEN :de AND :ate
           AND (CAST(:cliente_id AS bigint) IS NULL OR v.cliente_id = :cliente_id)
@@ -731,14 +746,17 @@ def painel_comercial_serie(
         ORDER BY bucket, pr.nome
     """), {"de": de, "ate": ate, "cliente_id": cliente_id, "vendedor": vendedor}).mappings().all()
 
+    # preço médio ponderado ignora venda com preço 0 (amostra/brinde) —
+    # senão puxaria a média pra baixo; kg/valor totais continuam somando tudo
     por_bucket: dict[str, list[SerieBucketProdutoOut]] = {}
     for r in rows:
         kg = float(r["quantidade_kg"])
         valor = float(r["valor_total"])
+        kg_precificado = float(r["kg_precificado"] or 0)
         por_bucket.setdefault(r["bucket"], []).append(SerieBucketProdutoOut(
             produto_id=r["produto_id"], produto_nome=r["produto_nome"],
             quantidade_kg=kg, valor_total=valor,
-            preco_medio_ponderado=(valor / kg) if kg else None,
+            preco_medio_ponderado=(valor / kg_precificado) if kg_precificado > 0 else None,
         ))
 
     return ComercialSerieOut(
