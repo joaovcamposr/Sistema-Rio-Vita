@@ -537,11 +537,14 @@ export const painelBiometria = (de?: string, ate?: string, excluidos?: boolean) 
   );
 };
 
-export const painelComercial = (de?: string, ate?: string, vendedor?: string | null) => {
+export const painelComercial = (
+  de?: string, ate?: string, vendedores?: string[], excluirVendedores?: boolean
+) => {
   const params = new URLSearchParams();
   if (de) params.set("de", de);
   if (ate) params.set("ate", ate);
-  if (vendedor) params.set("vendedor", vendedor);
+  (vendedores ?? []).forEach((v) => params.append("vendedores", v));
+  if (excluirVendedores) params.set("excluir_vendedores", "true");
   const qs = params.toString() ? `?${params}` : "";
   return cachedGet<ComercialResumo>(`cache:painel:comercial:${params.toString()}`, `/paineis/comercial${qs}`);
 };
@@ -582,13 +585,15 @@ export const painelAcertos = (de?: string, ate?: string, vendedorId?: number | n
 };
 
 export const painelComercialSerie = (
-  granularidade: Granularidade, de?: string, ate?: string, clienteId?: number | null, vendedor?: string | null
+  granularidade: Granularidade, de?: string, ate?: string, clienteId?: number | null,
+  vendedores?: string[], excluirVendedores?: boolean
 ) => {
   const params = new URLSearchParams({ granularidade });
   if (de) params.set("de", de);
   if (ate) params.set("ate", ate);
   if (clienteId) params.set("cliente_id", String(clienteId));
-  if (vendedor) params.set("vendedor", vendedor);
+  (vendedores ?? []).forEach((v) => params.append("vendedores", v));
+  if (excluirVendedores) params.set("excluir_vendedores", "true");
   return cachedGet<ComercialSerie>(`cache:painel:comercial-serie:${params.toString()}`, `/paineis/comercial/serie?${params}`);
 };
 

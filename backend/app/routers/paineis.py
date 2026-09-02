@@ -95,6 +95,22 @@ def _periodo_padrao(de: date | None, ate: date | None, granularidade: str) -> tu
     return de, ate
 
 
+def _clausula_vendedores(vendedores: list[str] | None, excluir: bool, params: dict) -> str:
+    """Filtro de vendedor do painel Comercial — junta os nomes escolhidos
+    como parâmetros nomeados (:vend0, :vend1, ...) em vez de um array, pra
+    não depender de adaptação de lista do driver. Sem nome escolhido,
+    não filtra nada (nem incluir nem excluir). No modo excluir, venda sem
+    vendedor lançado continua aparecendo — só os nomes marcados somem."""
+    if not vendedores:
+        return ""
+    nomes = {f"vend{i}": v for i, v in enumerate(vendedores)}
+    params.update(nomes)
+    placeholders = ", ".join(f":{k}" for k in nomes)
+    if excluir:
+        return f"AND (v.vendedor IS NULL OR v.vendedor NOT IN ({placeholders}))"
+    return f"AND v.vendedor IN ({placeholders})"
+
+
 def _carregar_curva(db: Session) -> list[dict]:
     rows = db.execute(text("SELECT semana, peso_final_g FROM tabela_crescimento ORDER BY semana")).mappings().all()
     return [{"semana": r["semana"], "peso_final_g": float(r["peso_final_g"])} for r in rows]
@@ -616,13 +632,14 @@ def painel_mortalidade(db: Session = Depends(get_db)):
 def painel_comercial(
     de: date | None = Query(default=None),
     ate: date | None = Query(default=None),
-    vendedor: str | None = Query(default=None),
+    vendedores: list[str] | None = Query(default=None),
+    excluir_vendedores: bool = Query(default=False, description="true = os nomes em `vendedores` são excluídos, não incluídos"),
     db: Session = Depends(get_db),
 ):
     ate = ate or date.today()
     de = de or (ate - timedelta(days=30))
-    params = {"de": de, "ate": ate, "vendedor": vendedor}
-    filtro_vendedor = "AND (CAST(:vendedor AS text) IS NULL OR v.vendedor = :vendedor) AND v.excluido_em IS NULL"
+    params: dict = {"de": de, "ate": ate}
+    filtro_vendedor = "AND v.excluido_em IS NULL " + _clausula_vendedores(vendedores, excluir_vendedores, params)
 
     por_produto = db.execute(text(f"""
         SELECT v.produto_id, pr.nome AS produto_nome,
@@ -724,14 +741,19 @@ def painel_comercial_serie(
     de: date | None = Query(default=None),
     ate: date | None = Query(default=None),
     cliente_id: int | None = Query(default=None),
-    vendedor: str | None = Query(default=None),
+    vendedores: list[str] | None = Query(default=None),
+    excluir_vendedores: bool = Query(default=False, description="true = os nomes em `vendedores` são excluídos, não incluídos"),
     db: Session = Depends(get_db),
 ):
     """Alimenta os gráficos de volume vendido, faturamento e preço médio
     ponderado por produto — cada um quebrado por dia/mês/ano, com filtro
-    opcional por cliente e por vendedor."""
+    opcional por cliente e por vendedor (incluindo só os marcados, ou
+    excluindo eles e mostrando o resto)."""
     de, ate = _periodo_padrao(de, ate, granularidade)
     bucket = _bucket_expr(granularidade, "v.data")
+
+    params: dict = {"de": de, "ate": ate, "cliente_id": cliente_id}
+    clausula_vendedores = _clausula_vendedores(vendedores, excluir_vendedores, params)
 
     rows = db.execute(text(f"""
         SELECT {bucket} AS bucket, v.produto_id, pr.nome AS produto_nome,
@@ -740,11 +762,11 @@ def painel_comercial_serie(
         FROM venda v JOIN produto pr ON pr.id = v.produto_id
         WHERE v.data BETWEEN :de AND :ate
           AND (CAST(:cliente_id AS bigint) IS NULL OR v.cliente_id = :cliente_id)
-          AND (CAST(:vendedor AS text) IS NULL OR v.vendedor = :vendedor)
           AND v.excluido_em IS NULL
+          {clausula_vendedores}
         GROUP BY bucket, v.produto_id, pr.nome
         ORDER BY bucket, pr.nome
-    """), {"de": de, "ate": ate, "cliente_id": cliente_id, "vendedor": vendedor}).mappings().all()
+    """), params).mappings().all()
 
     # preço médio ponderado ignora venda com preço 0 (amostra/brinde) —
     # senão puxaria a média pra baixo; kg/valor totais continuam somando tudo

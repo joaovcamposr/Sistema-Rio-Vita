@@ -58,7 +58,8 @@ export default function PainelComercial() {
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [clienteFiltro, setClienteFiltro] = useState<number | null>(null);
   const [vendedores, setVendedores] = useState<string[]>([]);
-  const [vendedorFiltro, setVendedorFiltro] = useState("");
+  const [vendedoresFiltro, setVendedoresFiltro] = useState<string[]>([]);
+  const [excluirVendedores, setExcluirVendedores] = useState(false);
   const [granularidade, setGranularidade] = useState<Granularidade>("mes");
   const [serie, setSerie] = useState<ComercialSerie | null>(null);
   const [comoTabela, setComoTabela] = useState(false);
@@ -66,10 +67,10 @@ export default function PainelComercial() {
 
   useEffect(() => {
     setDados(null);
-    painelComercial(de, ate, vendedorFiltro || null)
+    painelComercial(de, ate, vendedoresFiltro, excluirVendedores)
       .then(setDados)
       .catch(() => setErro("Sem conexão e sem dado salvo deste aparelho ainda."));
-  }, [de, ate, vendedorFiltro]);
+  }, [de, ate, vendedoresFiltro, excluirVendedores]);
 
   useEffect(() => {
     listarClientes().then(setClientes).catch(() => undefined);
@@ -78,10 +79,16 @@ export default function PainelComercial() {
 
   useEffect(() => {
     setSerie(null);
-    painelComercialSerie(granularidade, de, ate, clienteFiltro, vendedorFiltro || null)
+    painelComercialSerie(granularidade, de, ate, clienteFiltro, vendedoresFiltro, excluirVendedores)
       .then(setSerie)
       .catch(() => setErro("Sem conexão e sem dado salvo deste aparelho ainda."));
-  }, [granularidade, clienteFiltro, vendedorFiltro, de, ate]);
+  }, [granularidade, clienteFiltro, vendedoresFiltro, excluirVendedores, de, ate]);
+
+  function toggleVendedorFiltro(nome: string) {
+    setVendedoresFiltro((atual) =>
+      atual.includes(nome) ? atual.filter((v) => v !== nome) : [...atual, nome]
+    );
+  }
 
   const produtos = useMemo(() => {
     if (!serie) return [];
@@ -213,16 +220,61 @@ export default function PainelComercial() {
               opcaoVazia="Todos os clientes"
             />
           </div>
-          <div className={styles.campo}>
+          <div className={styles.campo} style={{ minWidth: 240 }}>
             <label>Vendedor</label>
-            <select
-              style={{ padding: "9px 11px", borderRadius: 9, border: "1px solid var(--rule-strong)", background: "var(--surface)", color: "var(--ink)" }}
-              value={vendedorFiltro}
-              onChange={(e) => setVendedorFiltro(e.target.value)}
-            >
-              <option value="">Todos os vendedores</option>
-              {vendedores.map((v) => <option key={v} value={v}>{v}</option>)}
-            </select>
+            <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+              <button
+                type="button"
+                onClick={() => setExcluirVendedores(false)}
+                aria-pressed={!excluirVendedores}
+                style={{
+                  padding: "5px 10px", borderRadius: 7, border: "1px solid var(--rule-strong)",
+                  background: !excluirVendedores ? "var(--brand)" : "var(--surface)",
+                  color: !excluirVendedores ? "var(--brand-ink)" : "var(--ink-muted)",
+                  fontWeight: 700, fontSize: "0.74rem", cursor: "pointer",
+                }}
+              >
+                Considerar
+              </button>
+              <button
+                type="button"
+                onClick={() => setExcluirVendedores(true)}
+                aria-pressed={excluirVendedores}
+                style={{
+                  padding: "5px 10px", borderRadius: 7, border: "1px solid var(--rule-strong)",
+                  background: excluirVendedores ? "var(--crit)" : "var(--surface)",
+                  color: excluirVendedores ? "#fff" : "var(--ink-muted)",
+                  fontWeight: 700, fontSize: "0.74rem", cursor: "pointer",
+                }}
+              >
+                Excluir
+              </button>
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, maxWidth: 320 }}>
+              {vendedores.map((v) => {
+                const ativo = vendedoresFiltro.includes(v);
+                return (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => toggleVendedorFiltro(v)}
+                    aria-pressed={ativo}
+                    style={{
+                      padding: "6px 11px", borderRadius: 8, border: "1px solid var(--rule-strong)",
+                      background: ativo ? (excluirVendedores ? "var(--crit-soft)" : "var(--brand)") : "var(--surface)",
+                      color: ativo ? (excluirVendedores ? "var(--crit)" : "var(--brand-ink)") : "var(--ink-muted)",
+                      fontWeight: 700, fontSize: "0.8rem", cursor: "pointer",
+                    }}
+                  >
+                    {v}
+                  </button>
+                );
+              })}
+              {vendedores.length === 0 && <span className={styles.hint}>Nenhum vendedor lançado ainda.</span>}
+            </div>
+            {vendedoresFiltro.length === 0 && (
+              <p className={styles.hint} style={{ margin: "6px 0 0" }}>Nenhum selecionado — considera todos.</p>
+            )}
           </div>
           <div className={styles.campo}>
             <label>Visualização</label>
