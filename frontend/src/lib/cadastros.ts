@@ -53,6 +53,21 @@ export interface ClienteDetalhe {
   emite_boleto: boolean;
   vendedor_id: number | null;
   vendedor_nome: string | null;
+  // ---- CRM ----
+  nome_contato: string | null;
+  endereco: string | null;
+  ramo: string | null;
+  priorizacao: number | null;
+  e_cliente: boolean;
+  fase: string | null;
+  temperatura: string | null;
+  motivo: string | null;
+  proxima_acao: string | null;
+  fornecedor_atual: string | null;
+  preco_concorrente: number | null;
+  preferencia_tamanho: string | null;
+  fresco_congelado: string | null;
+  observacoes: string | null;
 }
 
 export interface ClienteProdutoPreco {

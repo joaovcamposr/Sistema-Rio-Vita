@@ -16,16 +16,26 @@ router = APIRouter(prefix="/clientes", tags=["clientes"])
 
 _COLUNAS_DETALHE = (
     "c.id, c.nome, c.cnpj, c.contato, c.cidade, c.prazo_dias, c.emite_nf, c.emite_boleto, "
-    "c.vendedor_id, vd.nome AS vendedor_nome"
+    "c.vendedor_id, vd.nome AS vendedor_nome, "
+    "c.nome_contato, c.endereco, c.ramo, c.priorizacao, c.e_cliente, c.fase, c.temperatura, "
+    "c.motivo, c.proxima_acao, c.fornecedor_atual, c.preco_concorrente, c.preferencia_tamanho, "
+    "c.fresco_congelado, c.observacoes"
 )
 _FROM_DETALHE = "FROM cliente c LEFT JOIN vendedor vd ON vd.id = c.vendedor_id"
+
+_COLUNAS_CRIAR_EDITAR = (
+    "nome", "cnpj", "contato", "cidade", "prazo_dias", "emite_nf", "emite_boleto", "vendedor_id",
+    "nome_contato", "endereco", "ramo", "priorizacao", "e_cliente", "fase", "temperatura",
+    "motivo", "proxima_acao", "fornecedor_atual", "preco_concorrente", "preferencia_tamanho",
+    "fresco_congelado", "observacoes",
+)
 
 
 @router.get("", response_model=list[ClienteOut])
 def listar_clientes(db: Session = Depends(get_db)):
     rows = db.execute(text(f"""
         SELECT c.id, c.nome, c.cidade, c.prazo_dias, c.emite_nf, c.emite_boleto,
-               c.vendedor_id, vd.nome AS vendedor_nome
+               c.vendedor_id, vd.nome AS vendedor_nome, c.e_cliente, c.fase, c.temperatura
         {_FROM_DETALHE}
         WHERE c.ativo ORDER BY c.nome
     """)).mappings().all()
@@ -34,13 +44,11 @@ def listar_clientes(db: Session = Depends(get_db)):
 
 @router.post("", response_model=ClienteDetalheOut, status_code=201)
 def criar_cliente(body: ClienteIn, db: Session = Depends(get_db)):
+    colunas = ", ".join(_COLUNAS_CRIAR_EDITAR)
+    valores = ", ".join(f":{c}" for c in _COLUNAS_CRIAR_EDITAR)
     try:
         novo_id = db.execute(
-            text("""
-                INSERT INTO cliente (nome, cnpj, contato, cidade, prazo_dias, emite_nf, emite_boleto, vendedor_id)
-                VALUES (:nome, :cnpj, :contato, :cidade, :prazo_dias, :emite_nf, :emite_boleto, :vendedor_id)
-                RETURNING id
-            """),
+            text(f"INSERT INTO cliente ({colunas}) VALUES ({valores}) RETURNING id"),
             body.model_dump(),
         ).scalar_one()
         db.commit()
@@ -63,15 +71,10 @@ def obter_cliente(cliente_id: int, db: Session = Depends(get_db)):
 
 @router.put("/{cliente_id}", response_model=ClienteDetalheOut)
 def atualizar_cliente(cliente_id: int, body: ClienteIn, db: Session = Depends(get_db)):
+    atribuicoes = ", ".join(f"{c} = :{c}" for c in _COLUNAS_CRIAR_EDITAR)
     try:
         row = db.execute(
-            text("""
-                UPDATE cliente SET nome = :nome, cnpj = :cnpj, contato = :contato, cidade = :cidade,
-                       prazo_dias = :prazo_dias, emite_nf = :emite_nf, emite_boleto = :emite_boleto,
-                       vendedor_id = :vendedor_id
-                WHERE id = :id
-                RETURNING id
-            """),
+            text(f"UPDATE cliente SET {atribuicoes} WHERE id = :id RETURNING id"),
             {**body.model_dump(), "id": cliente_id},
         ).mappings().first()
         db.commit()

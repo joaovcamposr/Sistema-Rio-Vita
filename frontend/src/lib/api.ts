@@ -66,6 +66,9 @@ export interface Cliente {
   emite_boleto: boolean;
   vendedor_id: number | null;
   vendedor_nome: string | null;
+  e_cliente: boolean;
+  fase: string | null;
+  temperatura: string | null;
 }
 
 export interface VendaLista {

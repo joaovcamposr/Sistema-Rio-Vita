@@ -497,6 +497,9 @@ class ClienteOut(BaseModel):
     emite_boleto: bool = False
     vendedor_id: int | None = None
     vendedor_nome: str | None = None
+    e_cliente: bool = True
+    fase: str | None = None
+    temperatura: str | None = None
 
 
 class VendaIn(BaseModel):
@@ -955,6 +958,21 @@ class ClienteDetalheOut(BaseModel):
     emite_boleto: bool
     vendedor_id: int | None = None
     vendedor_nome: str | None = None
+    # ---- CRM (ver migração 002/026) ----
+    nome_contato: str | None = None
+    endereco: str | None = None
+    ramo: str | None = None
+    priorizacao: int | None = None
+    e_cliente: bool = True
+    fase: str | None = None
+    temperatura: str | None = None
+    motivo: str | None = None
+    proxima_acao: str | None = None
+    fornecedor_atual: str | None = None
+    preco_concorrente: float | None = None
+    preferencia_tamanho: str | None = None
+    fresco_congelado: str | None = None
+    observacoes: str | None = None
 
 
 class ClienteIn(BaseModel):
@@ -966,6 +984,20 @@ class ClienteIn(BaseModel):
     emite_nf: bool = False
     emite_boleto: bool = False
     vendedor_id: int | None = None
+    nome_contato: str | None = None
+    endereco: str | None = None
+    ramo: str | None = None
+    priorizacao: int | None = None
+    e_cliente: bool = True
+    fase: str | None = None
+    temperatura: str | None = None
+    motivo: str | None = None
+    proxima_acao: str | None = None
+    fornecedor_atual: str | None = None
+    preco_concorrente: float | None = None
+    preferencia_tamanho: str | None = None
+    fresco_congelado: str | None = None
+    observacoes: str | None = None
 
 
 class ClienteProdutoPrecoOut(BaseModel):

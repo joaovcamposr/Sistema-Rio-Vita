@@ -127,6 +127,9 @@ export default function AcertoExpedicao() {
       const cliente = await criarCliente({
         nome, cnpj: null, contato: null, cidade: null, prazo_dias: null, emite_nf: false, emite_boleto: false,
         vendedor_id: null, vendedor_nome: null,
+        nome_contato: null, endereco: null, ramo: null, priorizacao: null, e_cliente: true,
+        fase: null, temperatura: null, motivo: null, proxima_acao: null, fornecedor_atual: null,
+        preco_concorrente: null, preferencia_tamanho: null, fresco_congelado: null, observacoes: null,
       });
       setClientes((cs) => [...cs, cliente].sort((a, b) => a.nome.localeCompare(b.nome)));
       setCriandoClienteIdx(null);

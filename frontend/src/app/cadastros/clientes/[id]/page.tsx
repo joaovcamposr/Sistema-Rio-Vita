@@ -15,6 +15,9 @@ import {
 } from "@/lib/cadastros";
 import styles from "../../cadastros.module.css";
 
+export const FASES = ["Prospecção", "Negociação", "Cliente ativo", "Inativo"];
+export const TEMPERATURAS = ["Frio", "Morno", "Quente"];
+
 export default function EditarCliente() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
@@ -51,6 +54,12 @@ export default function EditarCliente() {
         nome: cliente.nome, cnpj: cliente.cnpj, contato: cliente.contato, cidade: cliente.cidade,
         prazo_dias: cliente.prazo_dias, emite_nf: cliente.emite_nf, emite_boleto: cliente.emite_boleto,
         vendedor_id: cliente.vendedor_id, vendedor_nome: cliente.vendedor_nome,
+        nome_contato: cliente.nome_contato, endereco: cliente.endereco, ramo: cliente.ramo,
+        priorizacao: cliente.priorizacao, e_cliente: cliente.e_cliente, fase: cliente.fase,
+        temperatura: cliente.temperatura, motivo: cliente.motivo, proxima_acao: cliente.proxima_acao,
+        fornecedor_atual: cliente.fornecedor_atual, preco_concorrente: cliente.preco_concorrente,
+        preferencia_tamanho: cliente.preferencia_tamanho, fresco_congelado: cliente.fresco_congelado,
+        observacoes: cliente.observacoes,
       });
       setCliente(atualizado);
       setToast("Cadastro atualizado");
@@ -161,6 +170,86 @@ export default function EditarCliente() {
           <input type="checkbox" id="boleto" checked={cliente.emite_boleto} onChange={(e) => atualizarCampo("emite_boleto", e.target.checked)} />
           <label htmlFor="boleto">Emite boleto</label>
         </div>
+
+        <p className={styles.section}>CRM</p>
+        <div className={styles.checkRow}>
+          <input
+            type="checkbox" id="e_cliente" checked={cliente.e_cliente}
+            onChange={(e) => atualizarCampo("e_cliente", e.target.checked)}
+          />
+          <label htmlFor="e_cliente">É cliente (desmarcado = ainda é só prospecção)</label>
+        </div>
+        <div className={styles.field}>
+          <label>Fase</label>
+          <select className={styles.inp} value={cliente.fase ?? ""} onChange={(e) => atualizarCampo("fase", e.target.value || null)}>
+            <option value="">—</option>
+            {FASES.map((f) => <option key={f} value={f}>{f}</option>)}
+          </select>
+        </div>
+        <div className={styles.field}>
+          <label>Temperatura</label>
+          <select className={styles.inp} value={cliente.temperatura ?? ""} onChange={(e) => atualizarCampo("temperatura", e.target.value || null)}>
+            <option value="">—</option>
+            {TEMPERATURAS.map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+        <div className={styles.field}>
+          <label>Prioridade (1 = mais alta, opcional)</label>
+          <input
+            className={styles.inp} type="number" inputMode="numeric" style={{ maxWidth: 120 }}
+            value={cliente.priorizacao ?? ""}
+            onChange={(e) => atualizarCampo("priorizacao", e.target.value ? Number(e.target.value) : null)}
+          />
+        </div>
+        <div className={styles.field}>
+          <label>Nome do contato</label>
+          <input className={styles.inp} value={cliente.nome_contato ?? ""} onChange={(e) => atualizarCampo("nome_contato", e.target.value || null)} />
+        </div>
+        <div className={styles.field}>
+          <label>Endereço</label>
+          <input className={styles.inp} value={cliente.endereco ?? ""} onChange={(e) => atualizarCampo("endereco", e.target.value || null)} />
+        </div>
+        <div className={styles.field}>
+          <label>Ramo</label>
+          <input className={styles.inp} value={cliente.ramo ?? ""} onChange={(e) => atualizarCampo("ramo", e.target.value || null)} />
+        </div>
+        <div className={styles.field}>
+          <label>Motivo (da fase/temperatura atual)</label>
+          <input className={styles.inp} value={cliente.motivo ?? ""} onChange={(e) => atualizarCampo("motivo", e.target.value || null)} />
+        </div>
+        <div className={styles.field}>
+          <label>Próxima ação</label>
+          <input className={styles.inp} value={cliente.proxima_acao ?? ""} onChange={(e) => atualizarCampo("proxima_acao", e.target.value || null)} />
+        </div>
+        <div className={styles.field}>
+          <label>Fornecedor atual (concorrência)</label>
+          <input className={styles.inp} value={cliente.fornecedor_atual ?? ""} onChange={(e) => atualizarCampo("fornecedor_atual", e.target.value || null)} />
+        </div>
+        <div className={styles.field}>
+          <label>Preço do concorrente (R$/Kg)</label>
+          <input
+            className={styles.inp} type="number" inputMode="decimal" style={{ maxWidth: 140 }}
+            value={cliente.preco_concorrente ?? ""}
+            onChange={(e) => atualizarCampo("preco_concorrente", e.target.value ? Number(e.target.value) : null)}
+          />
+        </div>
+        <div className={styles.field}>
+          <label>Preferência de tamanho</label>
+          <input className={styles.inp} value={cliente.preferencia_tamanho ?? ""} onChange={(e) => atualizarCampo("preferencia_tamanho", e.target.value || null)} />
+        </div>
+        <div className={styles.field}>
+          <label>Fresco ou congelado</label>
+          <input className={styles.inp} value={cliente.fresco_congelado ?? ""} onChange={(e) => atualizarCampo("fresco_congelado", e.target.value || null)} />
+        </div>
+        <div className={styles.field}>
+          <label>Observações</label>
+          <textarea
+            className={styles.inp} rows={3} style={{ resize: "vertical", fontFamily: "inherit" }}
+            value={cliente.observacoes ?? ""}
+            onChange={(e) => atualizarCampo("observacoes", e.target.value || null)}
+          />
+        </div>
+
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
           <button className={styles.btnPrimary} disabled={salvando} onClick={salvarCadastro}>
             {salvando ? "Salvando…" : "Salvar cadastro"}

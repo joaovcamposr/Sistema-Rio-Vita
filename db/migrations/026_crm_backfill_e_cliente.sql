@@ -1,0 +1,13 @@
+-- Rio Vita — Migração 026: início do módulo de CRM.
+--
+-- Os campos de CRM (fase, temperatura, motivo, próxima ação, concorrência,
+-- preferências, e_cliente, interacao_cliente...) já existem desde a
+-- migração 002 — vieram da engenharia reversa da planilha original, mas
+-- nunca foram expostos em tela nenhuma. Esta migração não cria coluna
+-- nova, só corrige o dado histórico antes de a coluna passar a ser usada:
+--
+-- e_cliente nasceu com default false, e todo cadastro feito até hoje (o
+-- único fluxo que existe é "clientes de venda") na prática já representa
+-- cliente de verdade, não prospecção — sem isso, todo mundo já cadastrado
+-- apareceria como prospecto no funil.
+UPDATE cliente SET e_cliente = true WHERE e_cliente = false;
