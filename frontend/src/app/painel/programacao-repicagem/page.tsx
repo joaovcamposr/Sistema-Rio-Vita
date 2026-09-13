@@ -4,7 +4,10 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { listarViveirosTodos, type ViveiroAtivo } from "@/lib/api";
-import { painelViveiros, painelAbate, type PainelViveiro, type Abate } from "@/lib/paineis";
+import {
+  painelViveiros, disponibilidadeTanques, listarParametros,
+  type PainelViveiro, type DisponibilidadeTanque, type Parametro,
+} from "@/lib/paineis";
 import PainelSugestaoRepicagem from "@/components/PainelSugestaoRepicagem";
 import styles from "../painel.module.css";
 
@@ -14,6 +17,10 @@ const TIPO_LABEL: Record<string, string> = {
   decantacao: "Decantação",
 };
 
+// peso alvo (kg) usado pra estimar capacidade — mesma conta que a
+// sugestão de repicagem já faz no backend (area_m2 * limite_kg_m2 / 0.8),
+// pensando na densidade quando os peixes chegarem a 800g
+const PESO_ALVO_CAPACIDADE_KG = 0.8;
 const HORIZONTE_EM_BREVE_DIAS = 60;
 
 function nf(v: number, casas = 0): string {
@@ -33,49 +40,60 @@ interface LinhaTanque {
   viveiro: ViveiroAtivo;
   status: Status;
   detalhe: PainelViveiro | null;
-  abate: Abate | null;
+  disponibilidade: DisponibilidadeTanque | null;
 }
 
 export default function ProgramacaoRepicagem() {
   const router = useRouter();
   const [viveiros, setViveiros] = useState<ViveiroAtivo[] | null>(null);
   const [detalhes, setDetalhes] = useState<PainelViveiro[] | null>(null);
-  const [abates, setAbates] = useState<Abate[] | null>(null);
+  const [disponibilidade, setDisponibilidade] = useState<DisponibilidadeTanque[] | null>(null);
+  const [parametros, setParametros] = useState<Parametro[] | null>(null);
   const [erro, setErro] = useState<string | null>(null);
 
   useEffect(() => {
-    Promise.all([listarViveirosTodos(), painelViveiros(), painelAbate()])
-      .then(([v, d, a]) => { setViveiros(v); setDetalhes(d); setAbates(a); })
+    Promise.all([listarViveirosTodos(), painelViveiros(), disponibilidadeTanques(), listarParametros()])
+      .then(([v, d, disp, p]) => { setViveiros(v); setDetalhes(d); setDisponibilidade(disp); setParametros(p); })
       .catch(() => setErro("Sem conexão e sem dado salvo deste aparelho ainda."));
   }, []);
 
+  const limitePorTipo = useMemo(() => {
+    const preEngorda = parametros?.find((p) => p.chave === "limite_densidade_pre_engorda_kg_m2")?.valor ?? 2.5;
+    const engorda = parametros?.find((p) => p.chave === "limite_densidade_engorda_kg_m2")?.valor ?? 2.5;
+    return { pre_engorda: preEngorda, engorda };
+  }, [parametros]);
+
+  function capacidadeUn(areaM2: number, tipo: string): number {
+    const limite = tipo === "pre_engorda" ? limitePorTipo.pre_engorda : limitePorTipo.engorda;
+    return Math.floor((areaM2 * limite) / PESO_ALVO_CAPACIDADE_KG);
+  }
+
   const linhas: LinhaTanque[] | null = useMemo(() => {
-    if (!viveiros || !detalhes || !abates) return null;
+    if (!viveiros || !detalhes || !disponibilidade) return null;
     const detalhePorCodigo = new Map(detalhes.map((d) => [d.codigo, d]));
-    const abatePorCodigo = new Map(abates.map((a) => [a.viveiro_codigo, a]));
+    const dispPorCodigo = new Map(disponibilidade.map((d) => [d.viveiro_codigo, d]));
     return viveiros.map((v) => {
       const detalhe = detalhePorCodigo.get(v.codigo) ?? null;
-      const abate = abatePorCodigo.get(v.codigo) ?? null;
+      const disp = dispPorCodigo.get(v.codigo) ?? null;
       let status: Status;
       if (!v.ativo) status = "inativo";
       else if (v.tipo === "decantacao") status = "decantacao";
       else if (!detalhe?.lote_atual) status = "disponivel";
       else status = "ocupado";
-      return { viveiro: v, status, detalhe, abate };
+      return { viveiro: v, status, detalhe, disponibilidade: disp };
     });
-  }, [viveiros, detalhes, abates]);
+  }, [viveiros, detalhes, disponibilidade]);
 
   const disponiveisAgora = useMemo(() => linhas?.filter((l) => l.status === "disponivel") ?? [], [linhas]);
 
   const disponibilidadePrevista = useMemo(() => {
     if (!linhas) return [];
     return linhas
-      .filter((l) => l.status === "ocupado" && l.abate !== null)
-      .map((l) => ({ ...l, abate: l.abate as Abate }))
+      .filter((l): l is LinhaTanque & { disponibilidade: DisponibilidadeTanque } => l.status === "ocupado" && l.disponibilidade !== null)
       .sort((a, b) => {
-        if (a.abate.pronto !== b.abate.pronto) return a.abate.pronto ? -1 : 1;
-        const da = a.abate.previsao_abate ?? "9999-99-99";
-        const db_ = b.abate.previsao_abate ?? "9999-99-99";
+        if (a.disponibilidade.pronto !== b.disponibilidade.pronto) return a.disponibilidade.pronto ? -1 : 1;
+        const da = a.disponibilidade.data_prevista ?? "9999-99-99";
+        const db_ = b.disponibilidade.data_prevista ?? "9999-99-99";
         return da.localeCompare(db_);
       });
   }, [linhas]);
@@ -83,7 +101,9 @@ export default function ProgramacaoRepicagem() {
   const emBreveCount = useMemo(
     () =>
       disponibilidadePrevista.filter(
-        (l) => l.abate.pronto || (l.abate.previsao_abate && diasAtePrevisao(l.abate.previsao_abate) <= HORIZONTE_EM_BREVE_DIAS)
+        (l) =>
+          l.disponibilidade.pronto ||
+          (l.disponibilidade.data_prevista && diasAtePrevisao(l.disponibilidade.data_prevista) <= HORIZONTE_EM_BREVE_DIAS)
       ).length,
     [disponibilidadePrevista]
   );
@@ -92,6 +112,21 @@ export default function ProgramacaoRepicagem() {
     () => linhas?.filter((l) => l.viveiro.ativo).reduce((s, l) => s + l.viveiro.area_m2, 0) ?? 0,
     [linhas]
   );
+  const capacidadeDisponivelUn = useMemo(
+    () => disponiveisAgora.reduce((s, l) => s + capacidadeUn(l.viveiro.area_m2, l.viveiro.tipo), 0),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [disponiveisAgora, limitePorTipo]
+  );
+
+  // horizonte da linha do tempo: até a previsão mais distante entre os
+  // "vão ficar disponíveis em breve" com data conhecida, arredondado pra
+  // cima em blocos de 4 semanas, com um mínimo de 8 pra não ficar apertado
+  const horizonteSemanas = useMemo(() => {
+    const max = disponibilidadePrevista.reduce(
+      (m, l) => Math.max(m, l.disponibilidade.semanas_ate_disponivel ?? 0), 0
+    );
+    return Math.max(8, Math.ceil((max + 1) / 4) * 4);
+  }, [disponibilidadePrevista]);
 
   return (
     <div className={styles.page}>
@@ -121,7 +156,7 @@ export default function ProgramacaoRepicagem() {
                 <div className={styles.cardValue}>{disponiveisAgora.length}</div>
                 <div className={styles.cardSub}>
                   {disponiveisAgora.length > 0
-                    ? `${nf(disponiveisAgora.reduce((s, l) => s + l.viveiro.area_m2, 0))} m² livres`
+                    ? `${nf(disponiveisAgora.reduce((s, l) => s + l.viveiro.area_m2, 0))} m² · até ${nf(capacidadeDisponivelUn)} peixes`
                     : "Nenhum tanque vazio"}
                 </div>
               </div>
@@ -164,16 +199,16 @@ export default function ProgramacaoRepicagem() {
                           <>
                             Lote {l.detalhe.lote_atual.codigo} · {nf(l.detalhe.lote_atual.saldo_un)} peixes
                             {l.detalhe.peso_estimado_hoje_g !== null && ` · ${nf(l.detalhe.peso_estimado_hoje_g)}g`}
-                            {l.abate && (
-                              l.abate.pronto
-                                ? " · pronto para abate"
-                                : l.abate.previsao_abate
-                                  ? ` · disponível a partir de ${dataBr(l.abate.previsao_abate)}`
+                            {l.disponibilidade && (
+                              l.disponibilidade.pronto
+                                ? ` · pronto (${l.disponibilidade.motivo})`
+                                : l.disponibilidade.data_prevista
+                                  ? ` · disponível a partir de ${dataBr(l.disponibilidade.data_prevista)}`
                                   : ""
                             )}
                           </>
                         )}
-                        {l.status === "disponivel" && "Pronto para receber lote ou repicagem"}
+                        {l.status === "disponivel" && `Cabem até ${nf(capacidadeUn(l.viveiro.area_m2, l.viveiro.tipo))} peixes`}
                       </td>
                     </tr>
                   ))}
@@ -183,39 +218,79 @@ export default function ProgramacaoRepicagem() {
 
             <div className={styles.section}>Vão ficar disponíveis em breve</div>
             <p className={styles.hint} style={{ margin: "0 0 8px" }}>
-              Projeção pela última biometria + curva de crescimento — mesma base da Programação de abate. Assume
-              despesca total do tanque quando o lote atinge a idade de abate (semana {abates?.[0]?.semana_limite ?? 26}).
+              Pré-engorda projeta pela repicagem (peso passa de 300g ou densidade passa do limite da fase — o que
+              vier primeiro); engorda projeta pela idade de abate, mesma base da Programação de abate.
             </p>
             {disponibilidadePrevista.length === 0 && (
               <p className={styles.hint}>Nenhum tanque ocupado com previsão calculada.</p>
             )}
             {disponibilidadePrevista.length > 0 && (
-              <div className={styles.tableWrap}>
-                <table className={styles.tabela}>
-                  <thead>
-                    <tr><th>Viveiro</th><th>Lote</th><th>Peso atual</th><th>Semana atual / limite</th><th>Disponível a partir de</th></tr>
-                  </thead>
-                  <tbody>
-                    {disponibilidadePrevista.map((l) => (
-                      <tr key={l.viveiro.id}>
-                        <td>{l.viveiro.codigo}</td>
-                        <td>{l.abate.lote_codigo}</td>
-                        <td>{nf(l.abate.peso_medio_g)} g</td>
-                        <td>{l.abate.semana_atual} / {l.abate.semana_limite}</td>
-                        <td>
-                          {l.abate.pronto ? (
-                            <span className={`${styles.badge} ${styles.badgeCrit}`}>Pronto agora — falta despescar</span>
-                          ) : (
-                            <span className={`${styles.badge} ${styles.badgeNeutro}`}>
-                              {l.abate.previsao_abate ? dataBr(l.abate.previsao_abate) : "—"}
-                            </span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <>
+                <div className={styles.tableWrap} style={{ marginBottom: 18 }}>
+                  <table className={styles.tabela}>
+                    <thead>
+                      <tr><th>Viveiro</th><th>Lote</th><th>Peso atual</th><th>Semana atual</th><th>Disponível a partir de</th><th>Motivo</th></tr>
+                    </thead>
+                    <tbody>
+                      {disponibilidadePrevista.map((l) => (
+                        <tr key={l.viveiro.id}>
+                          <td>{l.viveiro.codigo}</td>
+                          <td>{l.disponibilidade.lote_codigo}</td>
+                          <td>{nf(l.disponibilidade.peso_atual_g)} g</td>
+                          <td>{l.disponibilidade.semana_atual}</td>
+                          <td>
+                            {l.disponibilidade.pronto ? (
+                              <span className={`${styles.badge} ${styles.badgeCrit}`}>Pronto agora</span>
+                            ) : (
+                              <span className={`${styles.badge} ${styles.badgeNeutro}`}>
+                                {l.disponibilidade.data_prevista ? dataBr(l.disponibilidade.data_prevista) : "—"}
+                              </span>
+                            )}
+                          </td>
+                          <td className={styles.hint} style={{ margin: 0 }}>{l.disponibilidade.motivo}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div style={{ display: "flex", fontSize: "0.72rem", color: "var(--ink-faint)", marginBottom: 6, paddingLeft: 118 }}>
+                  <span style={{ flex: 1 }}>Hoje</span>
+                  <span style={{ flex: 1, textAlign: "center" }}>{Math.round(horizonteSemanas / 2)} sem.</span>
+                  <span style={{ width: 90, textAlign: "right" }}>{horizonteSemanas} sem.</span>
+                </div>
+                {disponibilidadePrevista.map((l) => {
+                  const semanas = l.disponibilidade.semanas_ate_disponivel;
+                  const pct = semanas === null ? 100 : Math.min(100, (semanas / horizonteSemanas) * 100);
+                  const cor = l.disponibilidade.fase === "pre_engorda" ? "var(--brand)" : "var(--ok)";
+                  return (
+                    <div key={l.viveiro.id} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+                      <div style={{ width: 108, fontSize: "0.78rem", fontWeight: 700, flexShrink: 0 }}>
+                        {l.viveiro.codigo}
+                      </div>
+                      <div style={{ flex: 1, position: "relative", height: 20, background: "var(--surface-sunk)", borderRadius: 6 }}>
+                        <div
+                          style={{
+                            position: "absolute", left: 0, top: 0, bottom: 0, width: `${pct}%`,
+                            background: cor, opacity: l.disponibilidade.pronto ? 1 : 0.55, borderRadius: 6,
+                          }}
+                        />
+                      </div>
+                      <div style={{ width: 90, fontSize: "0.76rem", textAlign: "right", flexShrink: 0 }}>
+                        {l.disponibilidade.pronto
+                          ? "Pronto"
+                          : l.disponibilidade.data_prevista
+                            ? dataBr(l.disponibilidade.data_prevista)
+                            : "sem previsão"}
+                      </div>
+                    </div>
+                  );
+                })}
+                <p className={styles.hint} style={{ margin: "6px 0 0" }}>
+                  <span style={{ color: "var(--brand)" }}>■</span> Pré-engorda (repicagem) ·{" "}
+                  <span style={{ color: "var(--ok)" }}>■</span> Engorda (abate)
+                </p>
+              </>
             )}
 
             <div className={styles.section}>Sugestões de repicagem</div>

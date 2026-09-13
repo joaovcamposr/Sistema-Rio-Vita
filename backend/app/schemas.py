@@ -712,6 +712,19 @@ class AbateOut(BaseModel):
     pronto: bool
 
 
+class DisponibilidadeTanqueOut(BaseModel):
+    viveiro_codigo: str
+    lote_codigo: str
+    fase: str
+    peso_atual_g: float
+    densidade_atual_kg_m2: float | None
+    semana_atual: int
+    semanas_ate_disponivel: int | None
+    data_prevista: date | None
+    pronto: bool
+    motivo: str
+
+
 class ProducaoPorProdutoOut(BaseModel):
     produto_id: int
     produto_nome: str

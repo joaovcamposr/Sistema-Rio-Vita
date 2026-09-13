@@ -27,6 +27,7 @@ from ..schemas import (
     DashboardOut,
     DespescaDetalheOut,
     DespescaPreviaOut,
+    DisponibilidadeTanqueOut,
     EstoqueItemOut,
     EventoProjetadoOut,
     ExpedicaoAbertaOut,
@@ -70,6 +71,11 @@ router = APIRouter(prefix="/paineis", tags=["paineis"])
 # mesmo limite fixo (26) usado pela aba "Programação de abate" da planilha
 # original para todos os viveiros.
 SEMANA_LIMITE_ABATE = 26
+
+# Pré-engorda esvazia por repicagem pro tanque de engorda, não por abate —
+# regra prática do campo: sai de lá assim que o peixe passa desse peso ou
+# a densidade do tanque estoura o limite da fase (o que vier primeiro).
+PESO_REPICAGEM_PRE_ENGORDA_G = 300.0
 
 _BUCKET_SQL = {
     "dia": "to_char(%s, 'YYYY-MM-DD')",
@@ -131,6 +137,27 @@ def _peso_para_semana(curva: list[dict], semana: int) -> float:
         if c["semana"] == semana:
             return c["peso_final_g"]
     return curva[-1]["peso_final_g"]
+
+
+def _semanas_ate_peso(curva: list[dict], semana_atual: int, peso_alvo: float) -> int | None:
+    """Semanas a partir de `semana_atual` até a curva atingir `peso_alvo`,
+    ou None se a curva nunca chega lá dentro do horizonte."""
+    semana_maxima = curva[-1]["semana"]
+    for w in range(0, semana_maxima - semana_atual + 1):
+        if _peso_para_semana(curva, semana_atual + w) >= peso_alvo:
+            return w
+    return None
+
+
+def _semanas_ate_densidade(curva: list[dict], semana_atual: int, saldo_un: int, area_m2: float, limite: float) -> int | None:
+    """Semanas a partir de `semana_atual` até a densidade projetada (saldo
+    de peixe fixo, peso crescendo pela curva) estourar `limite` kg/m²."""
+    semana_maxima = curva[-1]["semana"]
+    for w in range(0, semana_maxima - semana_atual + 1):
+        peso_w = _peso_para_semana(curva, semana_atual + w)
+        if saldo_un * peso_w / 1000 / area_m2 >= limite:
+            return w
+    return None
 
 
 def _buscar_parametro(db: Session, chave: str, padrao: float) -> float:
@@ -1683,6 +1710,57 @@ def sugestao_repicagem(db: Session = Depends(get_db)):
     return SugestaoRepicagemGeralOut(
         tanques_acima_do_limite=origens_codigos, nivel_1=nivel_1, nivel_2=nivel_2, nivel_3=nivel_3,
     )
+
+
+@router.get("/disponibilidade-tanques", response_model=list[DisponibilidadeTanqueOut])
+def disponibilidade_tanques(db: Session = Depends(get_db)):
+    """Quando cada tanque ocupado hoje deve ficar disponível de novo, uma
+    linha por lote ativo. Pré-engorda esvazia por repicagem pro tanque de
+    engorda — projeta pela regra prática do campo (peso ou densidade,
+    o que vier primeiro), não pela idade de abate. Engorda esvazia por
+    despesca, na idade de abate (mesma base da Programação de abate)."""
+    curva = _carregar_curva(db)
+    limites = _limites_densidade(db)
+    viveiros = painel_viveiros(db)
+    hoje = date.today()
+
+    out = []
+    for v in viveiros:
+        if v.lote_atual is None:
+            continue
+        semana_atual = v.idade_semanas if v.idade_semanas is not None else 0
+        peso_atual = v.peso_estimado_hoje_g if v.peso_estimado_hoje_g is not None else 0.0
+
+        if v.tipo == "pre_engorda":
+            limite = _limite_de(limites, v.tipo)
+            sem_peso = _semanas_ate_peso(curva, semana_atual, PESO_REPICAGEM_PRE_ENGORDA_G)
+            sem_densidade = _semanas_ate_densidade(curva, semana_atual, v.lote_atual.saldo_un, v.area_m2, limite)
+            candidatos = [
+                (w, motivo) for w, motivo in (
+                    (sem_peso, f"repicagem — peso passa de {PESO_REPICAGEM_PRE_ENGORDA_G:.0f}g"),
+                    (sem_densidade, f"repicagem — densidade passa de {limite:.1f} kg/m²"),
+                )
+                if w is not None
+            ]
+            if candidatos:
+                semanas, motivo = min(candidatos, key=lambda item: item[0])
+            else:
+                semanas, motivo = None, "sem previsão dentro do horizonte da curva"
+        else:
+            pronto_abate = semana_atual >= SEMANA_LIMITE_ABATE
+            semanas = 0 if pronto_abate else SEMANA_LIMITE_ABATE - semana_atual
+            motivo = f"abate — idade limite (semana {SEMANA_LIMITE_ABATE})"
+
+        out.append(DisponibilidadeTanqueOut(
+            viveiro_codigo=v.codigo, lote_codigo=v.lote_atual.codigo, fase=v.tipo,
+            peso_atual_g=peso_atual, densidade_atual_kg_m2=v.densidade_kg_m2,
+            semana_atual=semana_atual, semanas_ate_disponivel=semanas,
+            data_prevista=None if semanas is None else hoje + timedelta(weeks=semanas),
+            pronto=semanas == 0, motivo=motivo,
+        ))
+
+    out.sort(key=lambda a: (0 if a.pronto else 1, a.data_prevista or date.max))
+    return out
 
 
 class _DestinoProjetado:

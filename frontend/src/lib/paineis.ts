@@ -362,6 +362,22 @@ async function cachedGet<T>(cacheKey: string, path: string): Promise<T> {
 
 export const painelViveiros = () => cachedGet<PainelViveiro[]>("cache:painel:viveiros", "/paineis/viveiros");
 export const painelAbate = () => cachedGet<Abate[]>("cache:painel:abate", "/paineis/abate");
+
+export interface DisponibilidadeTanque {
+  viveiro_codigo: string;
+  lote_codigo: string;
+  fase: "pre_engorda" | "engorda";
+  peso_atual_g: number;
+  densidade_atual_kg_m2: number | null;
+  semana_atual: number;
+  semanas_ate_disponivel: number | null;
+  data_prevista: string | null;
+  pronto: boolean;
+  motivo: string;
+}
+
+export const disponibilidadeTanques = () =>
+  cachedGet<DisponibilidadeTanque[]>("cache:painel:disponibilidade-tanques", "/paineis/disponibilidade-tanques");
 export const painelEstoque = (de?: string, ate?: string) => {
   const qs = de && ate ? `?de=${de}&ate=${ate}` : "";
   return cachedGet<EstoqueItem[]>(`cache:painel:estoque:${de ?? ""}:${ate ?? ""}`, `/paineis/estoque${qs}`);
