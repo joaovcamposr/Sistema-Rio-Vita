@@ -131,7 +131,7 @@ export default function PainelRepicagem() {
           ←
         </button>
         <div>
-          <h1>Repicagem</h1>
+          <h1>Histórico de repicagem</h1>
           <div className={styles.sub}>Conferência dos lançamentos, com opção de corrigir</div>
         </div>
       </div>
