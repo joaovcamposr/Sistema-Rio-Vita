@@ -180,14 +180,28 @@ export default function ProgramacaoRepicagem() {
             <div className={styles.tableWrap}>
               <table className={styles.tabela}>
                 <thead>
-                  <tr><th>Viveiro</th><th>Tipo</th><th>Área (m²)</th><th>Status</th><th>Detalhe</th></tr>
+                  <tr><th>Viveiro</th><th>Tipo</th><th>Área (m²)</th><th>Densidade (kg/m²)</th><th>Status</th><th>Detalhe</th></tr>
                 </thead>
                 <tbody>
-                  {linhas.map((l) => (
+                  {linhas.map((l) => {
+                    const densidade = l.detalhe?.densidade_kg_m2 ?? null;
+                    const limite = l.viveiro.tipo === "pre_engorda" ? limitePorTipo.pre_engorda : limitePorTipo.engorda;
+                    const densidadeAlerta = l.status === "ocupado" && densidade !== null && densidade >= limite * 0.9;
+                    const densidadeAcima = l.status === "ocupado" && densidade !== null && densidade >= limite;
+                    return (
                     <tr key={l.viveiro.id}>
                       <td>{l.viveiro.codigo}</td>
                       <td>{TIPO_LABEL[l.viveiro.tipo]}</td>
                       <td>{nf(l.viveiro.area_m2, 1)}</td>
+                      <td>
+                        {densidade === null ? "—" : densidadeAlerta ? (
+                          <span className={`${styles.badge} ${densidadeAcima ? styles.badgeCrit : styles.badgeWarn}`}>
+                            {nf(densidade, 2)}
+                          </span>
+                        ) : (
+                          nf(densidade, 2)
+                        )}
+                      </td>
                       <td>
                         {l.status === "disponivel" && <span className={`${styles.badge} ${styles.badgeOk}`}>Disponível agora</span>}
                         {l.status === "ocupado" && <span className={`${styles.badge} ${styles.badgeNeutro}`}>Ocupado</span>}
@@ -211,7 +225,8 @@ export default function ProgramacaoRepicagem() {
                         {l.status === "disponivel" && `Cabem até ${nf(capacidadeUn(l.viveiro.area_m2, l.viveiro.tipo))} peixes`}
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
