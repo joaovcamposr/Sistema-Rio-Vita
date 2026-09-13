@@ -177,10 +177,18 @@ export default function ProgramacaoRepicagem() {
             </div>
 
             <div className={styles.section}>Todos os tanques</div>
+            <p className={styles.hint} style={{ margin: "0 0 8px" }}>
+              Pré-engorda projeta a disponibilidade pela repicagem (peso passa de 300g ou densidade passa do limite
+              da fase — o que vier primeiro); engorda projeta pela idade de abate, mesma base da Programação de
+              abate.
+            </p>
             <div className={styles.tableWrap}>
               <table className={styles.tabela}>
                 <thead>
-                  <tr><th>Viveiro</th><th>Tipo</th><th>Área (m²)</th><th>Densidade (kg/m²)</th><th>Status</th><th>Detalhe</th></tr>
+                  <tr>
+                    <th>Viveiro</th><th>Tipo</th><th>Área (m²)</th><th>Densidade (kg/m²)</th>
+                    <th>Disponibilidade</th><th>Detalhe</th>
+                  </tr>
                 </thead>
                 <tbody>
                   {linhas.map((l) => {
@@ -204,7 +212,16 @@ export default function ProgramacaoRepicagem() {
                       </td>
                       <td>
                         {l.status === "disponivel" && <span className={`${styles.badge} ${styles.badgeOk}`}>Disponível agora</span>}
-                        {l.status === "ocupado" && <span className={`${styles.badge} ${styles.badgeNeutro}`}>Ocupado</span>}
+                        {l.status === "ocupado" && l.disponibilidade && (
+                          l.disponibilidade.pronto ? (
+                            <span className={`${styles.badge} ${styles.badgeCrit}`}>Pronto agora</span>
+                          ) : (
+                            <span className={`${styles.badge} ${styles.badgeNeutro}`}>
+                              {l.disponibilidade.data_prevista ? `A partir de ${dataBr(l.disponibilidade.data_prevista)}` : "Sem previsão"}
+                            </span>
+                          )
+                        )}
+                        {l.status === "ocupado" && !l.disponibilidade && <span className={`${styles.badge} ${styles.badgeNeutro}`}>Ocupado</span>}
                         {l.status === "decantacao" && <span className={`${styles.badge} ${styles.badgeNeutro}`}>Decantação</span>}
                         {l.status === "inativo" && <span className={`${styles.badge} ${styles.badgeWarn}`}>Inativo</span>}
                       </td>
@@ -213,13 +230,7 @@ export default function ProgramacaoRepicagem() {
                           <>
                             Lote {l.detalhe.lote_atual.codigo} · {nf(l.detalhe.lote_atual.saldo_un)} peixes
                             {l.detalhe.peso_estimado_hoje_g !== null && ` · ${nf(l.detalhe.peso_estimado_hoje_g)}g`}
-                            {l.disponibilidade && (
-                              l.disponibilidade.pronto
-                                ? ` · pronto (${l.disponibilidade.motivo})`
-                                : l.disponibilidade.data_prevista
-                                  ? ` · disponível a partir de ${dataBr(l.disponibilidade.data_prevista)}`
-                                  : ""
-                            )}
+                            {l.disponibilidade && ` · ${l.disponibilidade.motivo}`}
                           </>
                         )}
                         {l.status === "disponivel" && `Cabem até ${nf(capacidadeUn(l.viveiro.area_m2, l.viveiro.tipo))} peixes`}
@@ -231,45 +242,9 @@ export default function ProgramacaoRepicagem() {
               </table>
             </div>
 
-            <div className={styles.section}>Vão ficar disponíveis em breve</div>
-            <p className={styles.hint} style={{ margin: "0 0 8px" }}>
-              Pré-engorda projeta pela repicagem (peso passa de 300g ou densidade passa do limite da fase — o que
-              vier primeiro); engorda projeta pela idade de abate, mesma base da Programação de abate.
-            </p>
-            {disponibilidadePrevista.length === 0 && (
-              <p className={styles.hint}>Nenhum tanque ocupado com previsão calculada.</p>
-            )}
             {disponibilidadePrevista.length > 0 && (
               <>
-                <div className={styles.tableWrap} style={{ marginBottom: 18 }}>
-                  <table className={styles.tabela}>
-                    <thead>
-                      <tr><th>Viveiro</th><th>Lote</th><th>Peso atual</th><th>Semana atual</th><th>Disponível a partir de</th><th>Motivo</th></tr>
-                    </thead>
-                    <tbody>
-                      {disponibilidadePrevista.map((l) => (
-                        <tr key={l.viveiro.id}>
-                          <td>{l.viveiro.codigo}</td>
-                          <td>{l.disponibilidade.lote_codigo}</td>
-                          <td>{nf(l.disponibilidade.peso_atual_g)} g</td>
-                          <td>{l.disponibilidade.semana_atual}</td>
-                          <td>
-                            {l.disponibilidade.pronto ? (
-                              <span className={`${styles.badge} ${styles.badgeCrit}`}>Pronto agora</span>
-                            ) : (
-                              <span className={`${styles.badge} ${styles.badgeNeutro}`}>
-                                {l.disponibilidade.data_prevista ? dataBr(l.disponibilidade.data_prevista) : "—"}
-                              </span>
-                            )}
-                          </td>
-                          <td className={styles.hint} style={{ margin: 0 }}>{l.disponibilidade.motivo}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                <div style={{ display: "flex", fontSize: "0.72rem", color: "var(--ink-faint)", marginBottom: 6, paddingLeft: 118 }}>
+                <div style={{ display: "flex", fontSize: "0.72rem", color: "var(--ink-faint)", margin: "18px 0 6px", paddingLeft: 118 }}>
                   <span style={{ flex: 1 }}>Hoje</span>
                   <span style={{ flex: 1, textAlign: "center" }}>{Math.round(horizonteSemanas / 2)} sem.</span>
                   <span style={{ width: 90, textAlign: "right" }}>{horizonteSemanas} sem.</span>
