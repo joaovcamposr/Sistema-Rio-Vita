@@ -48,18 +48,23 @@ def listar_viveiros(db: Session = Depends(get_db)):
 def listar_viveiros_todos(db: Session = Depends(get_db)):
     """Ativos e inativos — só pra tela de seleção. Os demais endpoints de
     viveiro (e os painéis) continuam só considerando os ativos."""
-    rows = db.execute(text("SELECT id, codigo, tipo, ativo FROM viveiro")).mappings().all()
+    rows = db.execute(text("SELECT id, codigo, tipo, area_m2, ativo FROM viveiro")).mappings().all()
     rows = sorted(rows, key=lambda r: _chave_ordem_viveiro(r["codigo"]))
-    return [ViveiroAtivoOut(id=r["id"], codigo=r["codigo"], tipo=r["tipo"], ativo=r["ativo"]) for r in rows]
+    return [
+        ViveiroAtivoOut(id=r["id"], codigo=r["codigo"], tipo=r["tipo"], area_m2=float(r["area_m2"]), ativo=r["ativo"])
+        for r in rows
+    ]
 
 
 @router.patch("/{viveiro_id}/ativo", response_model=ViveiroAtivoOut)
 def atualizar_ativo(viveiro_id: int, body: ViveiroAtivoIn, db: Session = Depends(get_db)):
     row = db.execute(
-        text("UPDATE viveiro SET ativo = :ativo WHERE id = :id RETURNING id, codigo, tipo, ativo"),
+        text("UPDATE viveiro SET ativo = :ativo WHERE id = :id RETURNING id, codigo, tipo, area_m2, ativo"),
         {"ativo": body.ativo, "id": viveiro_id},
     ).mappings().first()
     if row is None:
         raise HTTPException(404, "viveiro não encontrado")
     db.commit()
-    return ViveiroAtivoOut(id=row["id"], codigo=row["codigo"], tipo=row["tipo"], ativo=row["ativo"])
+    return ViveiroAtivoOut(
+        id=row["id"], codigo=row["codigo"], tipo=row["tipo"], area_m2=float(row["area_m2"]), ativo=row["ativo"]
+    )

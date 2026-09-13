@@ -29,6 +29,7 @@ export interface ViveiroAtivo {
   id: number;
   codigo: string;
   tipo: "pre_engorda" | "engorda" | "decantacao";
+  area_m2: number;
   ativo: boolean;
 }
 

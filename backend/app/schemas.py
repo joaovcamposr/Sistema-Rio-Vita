@@ -71,6 +71,7 @@ class ViveiroAtivoOut(BaseModel):
     id: int
     codigo: str
     tipo: str
+    area_m2: float
     ativo: bool
 
 
