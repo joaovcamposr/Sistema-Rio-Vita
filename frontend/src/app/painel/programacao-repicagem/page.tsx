@@ -118,18 +118,8 @@ export default function ProgramacaoRepicagem() {
     [disponiveisAgora, limitePorTipo]
   );
 
-  // horizonte da linha do tempo: até a previsão mais distante entre os
-  // "vão ficar disponíveis em breve" com data conhecida, arredondado pra
-  // cima em blocos de 4 semanas, com um mínimo de 8 pra não ficar apertado
-  const horizonteSemanas = useMemo(() => {
-    const max = disponibilidadePrevista.reduce(
-      (m, l) => Math.max(m, l.disponibilidade.semanas_ate_disponivel ?? 0), 0
-    );
-    return Math.max(8, Math.ceil((max + 1) / 4) * 4);
-  }, [disponibilidadePrevista]);
-
   return (
-    <div className={styles.page}>
+    <div className={styles.page} style={{ maxWidth: "none" }}>
       <div className={styles.appbar}>
         <button className={styles.backbtn} aria-label="Voltar" onClick={() => router.push("/painel")}>
           ←
@@ -241,47 +231,6 @@ export default function ProgramacaoRepicagem() {
                 </tbody>
               </table>
             </div>
-
-            {disponibilidadePrevista.length > 0 && (
-              <>
-                <div style={{ display: "flex", fontSize: "0.72rem", color: "var(--ink-faint)", margin: "18px 0 6px", paddingLeft: 118 }}>
-                  <span style={{ flex: 1 }}>Hoje</span>
-                  <span style={{ flex: 1, textAlign: "center" }}>{Math.round(horizonteSemanas / 2)} sem.</span>
-                  <span style={{ width: 90, textAlign: "right" }}>{horizonteSemanas} sem.</span>
-                </div>
-                {disponibilidadePrevista.map((l) => {
-                  const semanas = l.disponibilidade.semanas_ate_disponivel;
-                  const pct = semanas === null ? 100 : Math.min(100, (semanas / horizonteSemanas) * 100);
-                  const cor = l.disponibilidade.fase === "pre_engorda" ? "var(--brand)" : "var(--ok)";
-                  return (
-                    <div key={l.viveiro.id} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-                      <div style={{ width: 108, fontSize: "0.78rem", fontWeight: 700, flexShrink: 0 }}>
-                        {l.viveiro.codigo}
-                      </div>
-                      <div style={{ flex: 1, position: "relative", height: 20, background: "var(--surface-sunk)", borderRadius: 6 }}>
-                        <div
-                          style={{
-                            position: "absolute", left: 0, top: 0, bottom: 0, width: `${pct}%`,
-                            background: cor, opacity: l.disponibilidade.pronto ? 1 : 0.55, borderRadius: 6,
-                          }}
-                        />
-                      </div>
-                      <div style={{ width: 90, fontSize: "0.76rem", textAlign: "right", flexShrink: 0 }}>
-                        {l.disponibilidade.pronto
-                          ? "Pronto"
-                          : l.disponibilidade.data_prevista
-                            ? dataBr(l.disponibilidade.data_prevista)
-                            : "sem previsão"}
-                      </div>
-                    </div>
-                  );
-                })}
-                <p className={styles.hint} style={{ margin: "6px 0 0" }}>
-                  <span style={{ color: "var(--brand)" }}>■</span> Pré-engorda (repicagem) ·{" "}
-                  <span style={{ color: "var(--ok)" }}>■</span> Engorda (abate)
-                </p>
-              </>
-            )}
 
             <div className={styles.section}>Sugestões de repicagem</div>
             <PainelSugestaoRepicagem />
