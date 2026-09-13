@@ -177,7 +177,7 @@ export default function ProgramacaoRepicagem() {
                 <thead>
                   <tr>
                     <th>Viveiro</th><th>Tipo</th><th>Área (m²)</th><th>Densidade (kg/m²)</th>
-                    <th>Disponibilidade</th><th>Detalhe</th>
+                    <th>Disponibilidade</th><th>Lote</th><th>Nº de peixes</th><th>Peso médio (g)</th><th>Motivo</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -215,16 +215,14 @@ export default function ProgramacaoRepicagem() {
                         {l.status === "decantacao" && <span className={`${styles.badge} ${styles.badgeNeutro}`}>Decantação</span>}
                         {l.status === "inativo" && <span className={`${styles.badge} ${styles.badgeWarn}`}>Inativo</span>}
                       </td>
+                      <td>{l.detalhe?.lote_atual?.codigo ?? "—"}</td>
                       <td>
-                        {l.status === "ocupado" && l.detalhe?.lote_atual && (
-                          <>
-                            Lote {l.detalhe.lote_atual.codigo} · {nf(l.detalhe.lote_atual.saldo_un)} peixes
-                            {l.detalhe.peso_estimado_hoje_g !== null && ` · ${nf(l.detalhe.peso_estimado_hoje_g)}g`}
-                            {l.disponibilidade && ` · ${l.disponibilidade.motivo}`}
-                          </>
-                        )}
-                        {l.status === "disponivel" && `Cabem até ${nf(capacidadeUn(l.viveiro.area_m2, l.viveiro.tipo))} peixes`}
+                        {l.detalhe?.lote_atual ? nf(l.detalhe.lote_atual.saldo_un)
+                          : l.status === "disponivel" ? `até ${nf(capacidadeUn(l.viveiro.area_m2, l.viveiro.tipo))}`
+                          : "—"}
                       </td>
+                      <td>{l.detalhe?.peso_estimado_hoje_g !== null && l.detalhe?.peso_estimado_hoje_g !== undefined ? nf(l.detalhe.peso_estimado_hoje_g) : "—"}</td>
+                      <td className={styles.hint} style={{ margin: 0 }}>{l.status === "ocupado" ? l.disponibilidade?.motivo ?? "—" : "—"}</td>
                     </tr>
                     );
                   })}
