@@ -208,10 +208,10 @@ export default function PainelDashboard() {
             )}
 
             <p className={styles.hint} style={{ margin: "0 0 8px" }}>
-              Sugestões de repicagem e projeção de capacidade completas agora moraram na{" "}
+              Mais detalhes de disponibilidade dos tanques na{" "}
               <Link href="/painel/programacao-repicagem" style={{ color: "var(--brand-deep)", fontWeight: 700 }}>
                 Programação de repicagem
-              </Link>{" "}— resumo abaixo.
+              </Link>.
             </p>
             <PainelSugestaoRepicagem />
           </>

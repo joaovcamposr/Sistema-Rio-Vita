@@ -1,18 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import {
-  sugestaoRepicagem, projecaoCapacidade,
-  type SugestaoRepicagemGeral, type NivelRepicagem, type ProjecaoCapacidade,
-} from "@/lib/paineis";
+import { sugestaoRepicagem, type SugestaoRepicagemGeral, type NivelRepicagem } from "@/lib/paineis";
 import styles from "@/app/painel/painel.module.css";
 
 function nf(v: number, casas = 0): string {
   return v.toLocaleString("pt-BR", { minimumFractionDigits: casas, maximumFractionDigits: casas });
-}
-function dataBrLonga(iso: string): string {
-  const [a, m, d] = iso.split("-");
-  return `${d}/${m}/${a}`;
 }
 
 function NivelItens({ nivel }: { nivel: NivelRepicagem }) {
@@ -59,18 +52,15 @@ function NivelCard({ titulo, nivel }: { titulo: string; nivel: NivelRepicagem })
 }
 
 /**
- * Sugestão de repicagem (3 níveis, situação de hoje) + projeção de
- * capacidade (quando cada tanque ativo vai estourar a densidade, e como
- * resolver com antecedência) — mesmo motor usado pelo Dashboard, extraído
- * pra ser reaproveitado também na Programação de repicagem.
+ * Sugestão de repicagem (3 níveis, situação de hoje) — mesmo motor usado
+ * pelo Dashboard, extraído pra ser reaproveitado também na Programação de
+ * repicagem.
  */
 export default function PainelSugestaoRepicagem() {
   const [sugestoes, setSugestoes] = useState<SugestaoRepicagemGeral | null>(null);
-  const [projecao, setProjecao] = useState<ProjecaoCapacidade | null>(null);
 
   useEffect(() => {
     sugestaoRepicagem().then(setSugestoes).catch(() => {});
-    projecaoCapacidade().then(setProjecao).catch(() => {});
   }, []);
 
   return (
@@ -107,60 +97,6 @@ export default function PainelSugestaoRepicagem() {
       )}
       {sugestoes && sugestoes.tanques_acima_do_limite.length === 0 && (
         <p className={styles.hint}>Nenhum tanque está acima do limite de densidade agora.</p>
-      )}
-
-      <div className={styles.section}>Projeção de capacidade dos tanques</div>
-      {projecao && projecao.eventos.length === 0 && (
-        <p className={styles.hint}>
-          Nenhum tanque deve estourar o limite de densidade dentro do horizonte de {projecao.horizonte_semanas}{" "}
-          semanas — os lotes atuais devem chegar à idade de abate antes disso.
-        </p>
-      )}
-      {projecao && projecao.eventos.length > 0 && (
-        <>
-          <p className={styles.hint} style={{ margin: "0 0 8px" }}>
-            Projeção considerando a curva de crescimento de cada lote ativo, na ordem em que cada necessidade deve
-            surgir. Prioridade: repicar primeiro, despescar (≥ 600g) depois, ativar tanque hoje inativo só por
-            último.
-          </p>
-          <div className={styles.tableWrap}>
-            <table className={styles.tabela}>
-              <thead>
-                <tr><th>Viveiro</th><th>Lote</th><th>Quando</th><th>Como resolver</th></tr>
-              </thead>
-              <tbody>
-                {projecao.eventos.map((ev) => (
-                  <tr key={ev.viveiro_codigo}>
-                    <td>{ev.viveiro_codigo}</td>
-                    <td>{ev.lote_codigo}</td>
-                    <td>
-                      Semana {ev.semanas_a_partir_de_hoje} a partir de hoje ({dataBrLonga(ev.data_prevista)})
-                    </td>
-                    <td>
-                      <span
-                        className={`${styles.badge} ${
-                          !ev.resolvido ? styles.badgeCrit : ev.resolvido_com === "ativacao" ? styles.badgeWarn : ""
-                        }`}
-                      >
-                        {ev.detalhe}
-                      </span>
-                      {ev.tanques_a_despescar.length > 0 && (
-                        <div className={styles.hint} style={{ marginTop: 4 }}>
-                          Despescar: {ev.tanques_a_despescar.join(", ")}
-                        </div>
-                      )}
-                      {ev.tanques_a_ativar.length > 0 && (
-                        <div className={styles.hint} style={{ marginTop: 4 }}>
-                          Ativar (nessa ordem): {ev.tanques_a_ativar.join(", ")}
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
       )}
     </>
   );
