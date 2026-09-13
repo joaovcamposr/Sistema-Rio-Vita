@@ -1728,8 +1728,13 @@ def disponibilidade_tanques(db: Session = Depends(get_db)):
     for v in viveiros:
         if v.lote_atual is None:
             continue
-        semana_atual = v.idade_semanas if v.idade_semanas is not None else 0
         peso_atual = v.peso_estimado_hoje_g if v.peso_estimado_hoje_g is not None else 0.0
+        # ancora pelo peso real projetado (mesma convenção de
+        # sugestao_repicagem/projecao_capacidade/painel_abate), não pela
+        # idade do lote — um lote crescendo mais rápido que a curva padrão
+        # (cor "verde") já pode ter passado do peso/densidade mesmo sem
+        # ainda ter completado as semanas "esperadas" pra idade dele
+        semana_atual = _semana_para_peso(curva, peso_atual) if v.peso_estimado_hoje_g is not None else 0
 
         if v.tipo == "pre_engorda":
             limite = _limite_de(limites, v.tipo)
