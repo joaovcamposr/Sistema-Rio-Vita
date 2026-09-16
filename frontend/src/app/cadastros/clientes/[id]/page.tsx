@@ -4,19 +4,27 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   atualizarCliente,
+  concluirLembrete,
   criarInteracao,
+  criarLembrete,
   definirPrecoCliente,
   editarInteracao,
+  editarLembrete,
   excluirCliente,
   excluirInteracao,
+  excluirLembrete,
   listarInteracoes,
+  listarLembretesCliente,
   listarPrecosCliente,
   listarVendedores,
   obterCliente,
+  reabrirLembrete,
   restaurarInteracao,
+  restaurarLembrete,
   type ClienteDetalhe,
   type ClienteProdutoPreco,
   type InteracaoCliente,
+  type LembreteCliente,
   type Vendedor,
 } from "@/lib/cadastros";
 import styles from "../../cadastros.module.css";
@@ -142,6 +150,118 @@ export default function EditarCliente() {
       setTimeout(() => setToast(null), 3000);
     } finally {
       setProcessandoInteracaoId(null);
+    }
+  }
+
+  const [lembretes, setLembretes] = useState<LembreteCliente[] | null>(null);
+  const [novaDataLembrete, setNovaDataLembrete] = useState(hojeISO());
+  const [novoVendedorLembreteId, setNovoVendedorLembreteId] = useState<number | null>(null);
+  const [novaDescricaoLembrete, setNovaDescricaoLembrete] = useState("");
+  const [registrandoLembrete, setRegistrandoLembrete] = useState(false);
+  const [editandoLembreteId, setEditandoLembreteId] = useState<number | null>(null);
+  const [formEdicaoLembrete, setFormEdicaoLembrete] = useState<{ data_prevista: string; descricao: string; vendedor_id: number | null } | null>(null);
+  const [processandoLembreteId, setProcessandoLembreteId] = useState<number | null>(null);
+  const [mostrarExcluidosLembretes, setMostrarExcluidosLembretes] = useState(false);
+
+  function carregarLembretes(excluidos = mostrarExcluidosLembretes) {
+    listarLembretesCliente(clienteId, excluidos).then(setLembretes).catch(() => undefined);
+  }
+
+  useEffect(() => {
+    carregarLembretes(mostrarExcluidosLembretes);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clienteId, mostrarExcluidosLembretes]);
+
+  async function registrarLembrete() {
+    if (!novaDescricaoLembrete.trim()) return;
+    setRegistrandoLembrete(true);
+    try {
+      await criarLembrete({
+        cliente_id: clienteId, data_prevista: novaDataLembrete,
+        descricao: novaDescricaoLembrete.trim(), vendedor_id: novoVendedorLembreteId,
+      });
+      setNovaDescricaoLembrete("");
+      carregarLembretes();
+      setToast("Lembrete registrado");
+      setTimeout(() => setToast(null), 2000);
+    } catch {
+      setErro("Não foi possível registrar — verifique a conexão.");
+    } finally {
+      setRegistrandoLembrete(false);
+    }
+  }
+
+  function iniciarEdicaoLembrete(l: LembreteCliente) {
+    setEditandoLembreteId(l.id);
+    setFormEdicaoLembrete({ data_prevista: l.data_prevista, descricao: l.descricao, vendedor_id: l.vendedor_id });
+  }
+
+  async function salvarEdicaoLembrete(id: number) {
+    if (!formEdicaoLembrete) return;
+    setProcessandoLembreteId(id);
+    try {
+      await editarLembrete(id, formEdicaoLembrete);
+      setEditandoLembreteId(null);
+      setFormEdicaoLembrete(null);
+      carregarLembretes();
+    } catch {
+      setToast("Não foi possível salvar — confira a conexão");
+      setTimeout(() => setToast(null), 3000);
+    } finally {
+      setProcessandoLembreteId(null);
+    }
+  }
+
+  async function concluirLembreteClick(l: LembreteCliente) {
+    setProcessandoLembreteId(l.id);
+    try {
+      await concluirLembrete(l.id);
+      carregarLembretes();
+    } catch {
+      setToast("Não foi possível concluir");
+      setTimeout(() => setToast(null), 3000);
+    } finally {
+      setProcessandoLembreteId(null);
+    }
+  }
+
+  async function reabrirLembreteClick(l: LembreteCliente) {
+    setProcessandoLembreteId(l.id);
+    try {
+      await reabrirLembrete(l.id);
+      carregarLembretes();
+    } catch {
+      setToast("Não foi possível reabrir");
+      setTimeout(() => setToast(null), 3000);
+    } finally {
+      setProcessandoLembreteId(null);
+    }
+  }
+
+  async function excluirLembreteClick(l: LembreteCliente) {
+    if (!window.confirm("Excluir esse lembrete? Pode ser restaurado depois.")) return;
+    setProcessandoLembreteId(l.id);
+    try {
+      await excluirLembrete(l.id);
+      carregarLembretes();
+    } catch {
+      setToast("Não foi possível excluir");
+      setTimeout(() => setToast(null), 3000);
+    } finally {
+      setProcessandoLembreteId(null);
+    }
+  }
+
+  async function restaurarLembreteClick(l: LembreteCliente) {
+    setProcessandoLembreteId(l.id);
+    try {
+      await restaurarLembrete(l.id);
+      carregarLembretes();
+    } catch {
+      setToast("Não foi possível restaurar");
+      setTimeout(() => setToast(null), 3000);
+    } finally {
+      setProcessandoLembreteId(null);
     }
   }
 
@@ -515,6 +635,157 @@ export default function EditarCliente() {
             )}
           </div>
         ))}
+
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+          <p className={styles.section} style={{ margin: "22px 0 10px" }}>Lembretes / follow-up</p>
+          <button
+            type="button"
+            onClick={() => setMostrarExcluidosLembretes((v) => !v)}
+            style={{ background: "none", border: "none", color: "var(--ink-faint)", fontSize: "0.76rem", cursor: "pointer" }}
+          >
+            {mostrarExcluidosLembretes ? "Vendo excluídos" : "Ver excluídos"}
+          </button>
+        </div>
+
+        {!mostrarExcluidosLembretes && (
+          <div style={{ border: "1px solid var(--rule)", borderRadius: 12, padding: 14, marginBottom: 16 }}>
+            <div className={styles.field} style={{ marginBottom: 10 }}>
+              <label>Data prevista</label>
+              <input
+                className={styles.inp} type="date"
+                value={novaDataLembrete} onChange={(e) => setNovaDataLembrete(e.target.value)}
+              />
+            </div>
+            <div className={styles.field} style={{ marginBottom: 10 }}>
+              <label>Vendedor (opcional)</label>
+              <select
+                className={styles.inp} value={novoVendedorLembreteId ?? ""}
+                onChange={(e) => setNovoVendedorLembreteId(e.target.value ? Number(e.target.value) : null)}
+              >
+                <option value="">Sem vendedor definido</option>
+                {vendedores.map((v) => <option key={v.id} value={v.id}>{v.nome}</option>)}
+              </select>
+            </div>
+            <div className={styles.field} style={{ marginBottom: 10 }}>
+              <label>O que precisa ser feito</label>
+              <textarea
+                className={styles.inp} rows={2} style={{ resize: "vertical", fontFamily: "inherit" }}
+                value={novaDescricaoLembrete} onChange={(e) => setNovaDescricaoLembrete(e.target.value)}
+              />
+            </div>
+            <button
+              className={styles.btnPrimary} disabled={!novaDescricaoLembrete.trim() || registrandoLembrete}
+              onClick={registrarLembrete}
+            >
+              {registrandoLembrete ? "Registrando…" : "Criar lembrete"}
+            </button>
+          </div>
+        )}
+
+        {lembretes === null && <p className={styles.hint}>Carregando…</p>}
+        {lembretes !== null && lembretes.length === 0 && (
+          <p className={styles.hint}>
+            {mostrarExcluidosLembretes ? "Nenhum lembrete excluído." : "Nenhum lembrete registrado ainda."}
+          </p>
+        )}
+        {lembretes?.map((l) => {
+          const atrasado = !l.concluido && l.data_prevista < hojeISO();
+          return (
+            <div key={l.id} style={{ padding: "10px 0", borderBottom: "1px solid var(--rule)" }}>
+              {editandoLembreteId === l.id && formEdicaoLembrete ? (
+                <>
+                  <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+                    <input
+                      className={styles.inp} type="date" style={{ width: 150 }}
+                      value={formEdicaoLembrete.data_prevista}
+                      onChange={(e) => setFormEdicaoLembrete({ ...formEdicaoLembrete, data_prevista: e.target.value })}
+                    />
+                    <select
+                      className={styles.inp} style={{ width: 180 }}
+                      value={formEdicaoLembrete.vendedor_id ?? ""}
+                      onChange={(e) => setFormEdicaoLembrete({ ...formEdicaoLembrete, vendedor_id: e.target.value ? Number(e.target.value) : null })}
+                    >
+                      <option value="">Sem vendedor definido</option>
+                      {vendedores.map((v) => <option key={v.id} value={v.id}>{v.nome}</option>)}
+                    </select>
+                  </div>
+                  <textarea
+                    className={styles.inp} rows={2} style={{ resize: "vertical", fontFamily: "inherit", marginBottom: 8 }}
+                    value={formEdicaoLembrete.descricao}
+                    onChange={(e) => setFormEdicaoLembrete({ ...formEdicaoLembrete, descricao: e.target.value })}
+                  />
+                  <button
+                    className={styles.btnLink} disabled={processandoLembreteId === l.id}
+                    onClick={() => salvarEdicaoLembrete(l.id)}
+                  >
+                    OK
+                  </button>
+                  {" · "}
+                  <button
+                    className={styles.btnLink} style={{ color: "var(--ink-muted)" }}
+                    onClick={() => { setEditandoLembreteId(null); setFormEdicaoLembrete(null); }}
+                  >
+                    Cancelar
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div style={{ fontSize: "0.78rem", color: "var(--ink-muted)", marginBottom: 4 }}>
+                    {dataBr(l.data_prevista)}{l.vendedor_nome ? ` · ${l.vendedor_nome}` : ""}
+                    {l.concluido && <span style={{ marginLeft: 6, color: "var(--ok)", fontWeight: 700 }}> · Concluído</span>}
+                    {atrasado && <span style={{ marginLeft: 6, color: "var(--crit)", fontWeight: 700 }}> · Atrasado</span>}
+                  </div>
+                  <div style={{ fontSize: "0.9rem", marginBottom: 6, textDecoration: l.concluido ? "line-through" : "none" }}>
+                    {l.descricao}
+                  </div>
+                  {mostrarExcluidosLembretes ? (
+                    <>
+                      <span style={{ fontSize: "0.72rem", color: "var(--ink-faint)" }}>
+                        {l.excluido_em ? `Excluído ${dataBr(l.excluido_em.slice(0, 10))}` : ""}
+                        {l.excluido_por ? ` · ${l.excluido_por}` : ""}
+                      </span>
+                      {" · "}
+                      <button
+                        className={styles.btnLink} disabled={processandoLembreteId === l.id}
+                        onClick={() => restaurarLembreteClick(l)}
+                      >
+                        Restaurar
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      {l.concluido ? (
+                        <button
+                          className={styles.btnLink} disabled={processandoLembreteId === l.id}
+                          onClick={() => reabrirLembreteClick(l)}
+                        >
+                          Reabrir
+                        </button>
+                      ) : (
+                        <button
+                          className={styles.btnLink} disabled={processandoLembreteId === l.id}
+                          onClick={() => concluirLembreteClick(l)}
+                        >
+                          Concluir
+                        </button>
+                      )}
+                      {" · "}
+                      <button className={styles.btnLink} onClick={() => iniciarEdicaoLembrete(l)}>Editar</button>
+                      {" · "}
+                      <button
+                        className={styles.btnLink} style={{ color: "var(--crit)" }}
+                        disabled={processandoLembreteId === l.id}
+                        onClick={() => excluirLembreteClick(l)}
+                      >
+                        Excluir
+                      </button>
+                    </>
+                  )}
+                </>
+              )}
+            </div>
+          );
+        })}
       </div>
       {toast && <div className={styles.toast}>{toast}</div>}
     </div>

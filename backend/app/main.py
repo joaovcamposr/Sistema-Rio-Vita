@@ -14,6 +14,7 @@ from .routers import (
     despescas,
     expedicoes,
     interacoes,
+    lembretes,
     lotes,
     paineis,
     parametros,
@@ -56,6 +57,7 @@ app.include_router(arracoamento.router, dependencies=_exige_login)
 app.include_router(analise_agua.router, dependencies=_exige_login)
 app.include_router(clientes.router, dependencies=_exige_login)
 app.include_router(interacoes.router, dependencies=_exige_login)
+app.include_router(lembretes.router, dependencies=_exige_login)
 app.include_router(vendas.router, dependencies=_exige_login)
 app.include_router(vendedores.router, dependencies=_exige_login)
 app.include_router(expedicoes.router, dependencies=_exige_login)

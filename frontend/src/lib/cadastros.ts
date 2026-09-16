@@ -90,6 +90,22 @@ export interface InteracaoCliente {
   excluido_por: string | null;
 }
 
+export interface LembreteCliente {
+  id: number;
+  cliente_id: number;
+  cliente_nome: string;
+  data_prevista: string;
+  descricao: string;
+  vendedor_id: number | null;
+  vendedor_nome: string | null;
+  concluido: boolean;
+  concluido_em: string | null;
+  criado_em: string;
+  criado_por: string | null;
+  excluido_em: string | null;
+  excluido_por: string | null;
+}
+
 export interface ExpedicaoItem {
   produto_id: number;
   produto_nome: string;
@@ -278,3 +294,20 @@ export const editarInteracao = (id: number, body: {
 export const excluirInteracao = (id: number) => excluir(`/interacoes/${id}`);
 export const restaurarInteracao = (id: number) =>
   enviar<InteracaoCliente>(`/interacoes/${id}/restaurar`, "POST", undefined);
+
+export const listarLembretesCliente = (clienteId: number, excluidos?: boolean) =>
+  cachedGet<LembreteCliente[]>(
+    `cache:lembretes-cliente:${clienteId}:${excluidos ? "excluidos" : ""}`,
+    `/clientes/${clienteId}/lembretes${excluidos ? "?excluidos=true" : ""}`
+  );
+export const criarLembrete = (body: {
+  cliente_id: number; data_prevista: string; descricao: string; vendedor_id: number | null;
+}) => enviar<LembreteCliente>("/lembretes", "POST", body);
+export const editarLembrete = (id: number, body: {
+  data_prevista: string; descricao: string; vendedor_id: number | null;
+}) => enviar<LembreteCliente>(`/lembretes/${id}`, "PATCH", body);
+export const concluirLembrete = (id: number) => enviar<LembreteCliente>(`/lembretes/${id}/concluir`, "PATCH", undefined);
+export const reabrirLembrete = (id: number) => enviar<LembreteCliente>(`/lembretes/${id}/reabrir`, "PATCH", undefined);
+export const excluirLembrete = (id: number) => excluir(`/lembretes/${id}`);
+export const restaurarLembrete = (id: number) =>
+  enviar<LembreteCliente>(`/lembretes/${id}/restaurar`, "POST", undefined);

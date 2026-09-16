@@ -4,6 +4,7 @@
  * de api.ts para continuar funcionando (com o último dado visto) sem rede.
  */
 import { authHeader, sessaoInvalida } from "./auth";
+import type { LembreteCliente } from "./cadastros";
 
 export interface LoteAtual {
   id: number;
@@ -769,3 +770,9 @@ export interface HistoricoLote {
 
 export const historicoLote = (viveiroId: number) =>
   cachedGet<HistoricoLote>(`cache:historico-lote:${viveiroId}`, `/paineis/viveiros/${viveiroId}/historico-lote`);
+
+export const painelLembretes = (situacao: string, vendedorId?: number | null) => {
+  const qs = new URLSearchParams({ situacao });
+  if (vendedorId) qs.set("vendedor_id", String(vendedorId));
+  return cachedGet<LembreteCliente[]>(`cache:lembretes:${situacao}:${vendedorId ?? ""}`, `/lembretes?${qs}`);
+};

@@ -1055,6 +1055,35 @@ class InteracaoClienteEditarIn(BaseModel):
     vendedor_id: int | None = None
 
 
+class LembreteClienteOut(BaseModel):
+    id: int
+    cliente_id: int
+    cliente_nome: str
+    data_prevista: date
+    descricao: str
+    vendedor_id: int | None
+    vendedor_nome: str | None
+    concluido: bool
+    concluido_em: datetime | None
+    criado_em: datetime
+    criado_por: str | None
+    excluido_em: datetime | None
+    excluido_por: str | None
+
+
+class LembreteClienteIn(BaseModel):
+    cliente_id: int
+    data_prevista: date
+    descricao: str
+    vendedor_id: int | None = None
+
+
+class LembreteClienteEditarIn(BaseModel):
+    data_prevista: date
+    descricao: str
+    vendedor_id: int | None = None
+
+
 # ---------- Expedição ----------
 
 
