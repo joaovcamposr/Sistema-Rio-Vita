@@ -623,7 +623,7 @@ def painel_mortalidade(db: Session = Depends(get_db)):
     saída: mortalidade da fase (ver Etapa 1, pedido do usuário)."""
     rows = db.execute(text("""
         SELECT l.id, l.codigo, l.fase, v.codigo AS viveiro_codigo, l.data_inicio, l.data_fim,
-               l.quantidade_inicial, s.saldo_un
+               l.quantidade_inicial, l.peso_medio_inicial_g, s.saldo_un
         FROM lote l
         JOIN viveiro v ON v.id = l.viveiro_id
         JOIN vw_saldo_lote s ON s.lote_id = l.id
@@ -643,7 +643,8 @@ def painel_mortalidade(db: Session = Depends(get_db)):
             lote_id=r["id"], lote_codigo=r["codigo"], fase=r["fase"], viveiro_codigo=r["viveiro_codigo"],
             data_inicio=r["data_inicio"], data_fim=r["data_fim"],
             dias=(r["data_fim"] - r["data_inicio"]).days,
-            quantidade_inicial=inicial, quantidade_perdida=perdida, taxa=taxa,
+            quantidade_inicial=inicial, peso_medio_inicial_g=float(r["peso_medio_inicial_g"]),
+            quantidade_perdida=perdida, taxa=taxa,
         ))
 
     def media(fase: str) -> float | None:

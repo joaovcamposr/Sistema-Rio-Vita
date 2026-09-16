@@ -786,6 +786,7 @@ class MortalidadeLoteOut(BaseModel):
     data_fim: date
     dias: int
     quantidade_inicial: int
+    peso_medio_inicial_g: float
     quantidade_perdida: int
     taxa: float
 

@@ -139,6 +139,7 @@ export interface MortalidadeLote {
   data_fim: string;
   dias: number;
   quantidade_inicial: number;
+  peso_medio_inicial_g: number;
   quantidade_perdida: number;
   taxa: number;
 }

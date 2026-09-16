@@ -65,6 +65,7 @@ export default function PainelMortalidade() {
                       <th>Início → Fim</th>
                       <th>Dias</th>
                       <th>Inicial</th>
+                      <th>Peso povoamento</th>
                       <th>Perdida</th>
                       <th>Taxa</th>
                     </tr>
@@ -78,6 +79,9 @@ export default function PainelMortalidade() {
                         <td>{dataBr(l.data_inicio)} → {dataBr(l.data_fim)}</td>
                         <td>{l.dias}</td>
                         <td>{l.quantidade_inicial.toLocaleString("pt-BR")}</td>
+                        <td>
+                          {l.peso_medio_inicial_g.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} g
+                        </td>
                         <td>{l.quantidade_perdida.toLocaleString("pt-BR")}</td>
                         <td style={{ fontWeight: 700 }}>{pct(l.taxa)}</td>
                       </tr>
