@@ -4,19 +4,34 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   atualizarCliente,
+  criarInteracao,
   definirPrecoCliente,
+  editarInteracao,
   excluirCliente,
+  excluirInteracao,
+  listarInteracoes,
   listarPrecosCliente,
   listarVendedores,
   obterCliente,
+  restaurarInteracao,
   type ClienteDetalhe,
   type ClienteProdutoPreco,
+  type InteracaoCliente,
   type Vendedor,
 } from "@/lib/cadastros";
 import styles from "../../cadastros.module.css";
 
 export const FASES = ["Prospecção", "Negociação", "Cliente ativo", "Inativo"];
 export const TEMPERATURAS = ["Frio", "Morno", "Quente"];
+export const TIPOS_INTERACAO = ["Ligação", "Visita", "WhatsApp", "E-mail", "Outro"];
+
+function hojeISO(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+function dataBr(iso: string): string {
+  const [a, m, d] = iso.split("-");
+  return `${d}/${m}/${a}`;
+}
 
 export default function EditarCliente() {
   const router = useRouter();
@@ -31,6 +46,21 @@ export default function EditarCliente() {
   const [toast, setToast] = useState<string | null>(null);
   const [precoEditando, setPrecoEditando] = useState<Record<number, string>>({});
 
+  const [interacoes, setInteracoes] = useState<InteracaoCliente[] | null>(null);
+  const [novaData, setNovaData] = useState(hojeISO());
+  const [novoTipo, setNovoTipo] = useState(TIPOS_INTERACAO[0]);
+  const [novoVendedorId, setNovoVendedorId] = useState<number | null>(null);
+  const [novaDescricao, setNovaDescricao] = useState("");
+  const [registrandoInteracao, setRegistrandoInteracao] = useState(false);
+  const [editandoInteracaoId, setEditandoInteracaoId] = useState<number | null>(null);
+  const [formEdicao, setFormEdicao] = useState<{ data: string; tipo: string; descricao: string; vendedor_id: number | null } | null>(null);
+  const [processandoInteracaoId, setProcessandoInteracaoId] = useState<number | null>(null);
+  const [mostrarExcluidasInteracoes, setMostrarExcluidasInteracoes] = useState(false);
+
+  function carregarInteracoes(excluidos = mostrarExcluidasInteracoes) {
+    listarInteracoes(clienteId, excluidos).then(setInteracoes).catch(() => undefined);
+  }
+
   useEffect(() => {
     Promise.all([obterCliente(clienteId), listarPrecosCliente(clienteId), listarVendedores()])
       .then(([c, ps, vs]) => {
@@ -40,7 +70,80 @@ export default function EditarCliente() {
         setPrecoEditando(Object.fromEntries(ps.map((p) => [p.produto_id, p.preco > 0 ? String(p.preco) : ""])));
       })
       .catch(() => setErro("Sem conexão e sem dado salvo deste aparelho ainda."));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clienteId]);
+
+  useEffect(() => {
+    carregarInteracoes(mostrarExcluidasInteracoes);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clienteId, mostrarExcluidasInteracoes]);
+
+  async function registrarInteracao() {
+    if (!novaDescricao.trim()) return;
+    setRegistrandoInteracao(true);
+    try {
+      await criarInteracao({
+        cliente_id: clienteId, data: novaData, tipo: novoTipo,
+        descricao: novaDescricao.trim(), vendedor_id: novoVendedorId,
+      });
+      setNovaDescricao("");
+      carregarInteracoes();
+      setToast("Interação registrada");
+      setTimeout(() => setToast(null), 2000);
+    } catch {
+      setErro("Não foi possível registrar — verifique a conexão.");
+    } finally {
+      setRegistrandoInteracao(false);
+    }
+  }
+
+  function iniciarEdicaoInteracao(i: InteracaoCliente) {
+    setEditandoInteracaoId(i.id);
+    setFormEdicao({ data: i.data, tipo: i.tipo, descricao: i.descricao, vendedor_id: i.vendedor_id });
+  }
+
+  async function salvarEdicaoInteracao(id: number) {
+    if (!formEdicao) return;
+    setProcessandoInteracaoId(id);
+    try {
+      await editarInteracao(id, formEdicao);
+      setEditandoInteracaoId(null);
+      setFormEdicao(null);
+      carregarInteracoes();
+    } catch {
+      setToast("Não foi possível salvar — confira a conexão");
+      setTimeout(() => setToast(null), 3000);
+    } finally {
+      setProcessandoInteracaoId(null);
+    }
+  }
+
+  async function excluirInteracaoClick(i: InteracaoCliente) {
+    if (!window.confirm("Excluir essa interação? Pode ser restaurada depois.")) return;
+    setProcessandoInteracaoId(i.id);
+    try {
+      await excluirInteracao(i.id);
+      carregarInteracoes();
+    } catch {
+      setToast("Não foi possível excluir");
+      setTimeout(() => setToast(null), 3000);
+    } finally {
+      setProcessandoInteracaoId(null);
+    }
+  }
+
+  async function restaurarInteracaoClick(i: InteracaoCliente) {
+    setProcessandoInteracaoId(i.id);
+    try {
+      await restaurarInteracao(i.id);
+      carregarInteracoes();
+    } catch {
+      setToast("Não foi possível restaurar");
+      setTimeout(() => setToast(null), 3000);
+    } finally {
+      setProcessandoInteracaoId(null);
+    }
+  }
 
   function atualizarCampo<K extends keyof ClienteDetalhe>(campo: K, valor: ClienteDetalhe[K]) {
     setCliente((c) => (c ? { ...c, [campo]: valor } : c));
@@ -275,6 +378,141 @@ export default function EditarCliente() {
               />
               <button className={styles.btnLink} onClick={() => salvarPreco(p.produto_id)}>Salvar</button>
             </div>
+          </div>
+        ))}
+
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+          <p className={styles.section} style={{ margin: "22px 0 10px" }}>Histórico de interações</p>
+          <button
+            type="button"
+            onClick={() => setMostrarExcluidasInteracoes((v) => !v)}
+            style={{ background: "none", border: "none", color: "var(--ink-faint)", fontSize: "0.76rem", cursor: "pointer" }}
+          >
+            {mostrarExcluidasInteracoes ? "Vendo excluídas" : "Ver excluídas"}
+          </button>
+        </div>
+
+        {!mostrarExcluidasInteracoes && (
+          <div style={{ border: "1px solid var(--rule)", borderRadius: 12, padding: 14, marginBottom: 16 }}>
+            <div className={styles.field} style={{ marginBottom: 10 }}>
+              <label>Data</label>
+              <input className={styles.inp} type="date" value={novaData} onChange={(e) => setNovaData(e.target.value)} />
+            </div>
+            <div className={styles.field} style={{ marginBottom: 10 }}>
+              <label>Tipo</label>
+              <select className={styles.inp} value={novoTipo} onChange={(e) => setNovoTipo(e.target.value)}>
+                {TIPOS_INTERACAO.map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <div className={styles.field} style={{ marginBottom: 10 }}>
+              <label>Vendedor (opcional)</label>
+              <select
+                className={styles.inp} value={novoVendedorId ?? ""}
+                onChange={(e) => setNovoVendedorId(e.target.value ? Number(e.target.value) : null)}
+              >
+                <option value="">Sem vendedor definido</option>
+                {vendedores.map((v) => <option key={v.id} value={v.id}>{v.nome}</option>)}
+              </select>
+            </div>
+            <div className={styles.field} style={{ marginBottom: 10 }}>
+              <label>Descrição</label>
+              <textarea
+                className={styles.inp} rows={2} style={{ resize: "vertical", fontFamily: "inherit" }}
+                value={novaDescricao} onChange={(e) => setNovaDescricao(e.target.value)}
+              />
+            </div>
+            <button
+              className={styles.btnPrimary} disabled={!novaDescricao.trim() || registrandoInteracao}
+              onClick={registrarInteracao}
+            >
+              {registrandoInteracao ? "Registrando…" : "Registrar interação"}
+            </button>
+          </div>
+        )}
+
+        {interacoes === null && <p className={styles.hint}>Carregando…</p>}
+        {interacoes !== null && interacoes.length === 0 && (
+          <p className={styles.hint}>
+            {mostrarExcluidasInteracoes ? "Nenhuma interação excluída." : "Nenhuma interação registrada ainda."}
+          </p>
+        )}
+        {interacoes?.map((i) => (
+          <div key={i.id} style={{ padding: "10px 0", borderBottom: "1px solid var(--rule)" }}>
+            {editandoInteracaoId === i.id && formEdicao ? (
+              <>
+                <div style={{ display: "flex", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+                  <input
+                    className={styles.inp} type="date" style={{ width: 150 }}
+                    value={formEdicao.data} onChange={(e) => setFormEdicao({ ...formEdicao, data: e.target.value })}
+                  />
+                  <select
+                    className={styles.inp} style={{ width: 150 }}
+                    value={formEdicao.tipo} onChange={(e) => setFormEdicao({ ...formEdicao, tipo: e.target.value })}
+                  >
+                    {TIPOS_INTERACAO.map((t) => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                  <select
+                    className={styles.inp} style={{ width: 180 }}
+                    value={formEdicao.vendedor_id ?? ""}
+                    onChange={(e) => setFormEdicao({ ...formEdicao, vendedor_id: e.target.value ? Number(e.target.value) : null })}
+                  >
+                    <option value="">Sem vendedor definido</option>
+                    {vendedores.map((v) => <option key={v.id} value={v.id}>{v.nome}</option>)}
+                  </select>
+                </div>
+                <textarea
+                  className={styles.inp} rows={2} style={{ resize: "vertical", fontFamily: "inherit", marginBottom: 8 }}
+                  value={formEdicao.descricao} onChange={(e) => setFormEdicao({ ...formEdicao, descricao: e.target.value })}
+                />
+                <button
+                  className={styles.btnLink} disabled={processandoInteracaoId === i.id}
+                  onClick={() => salvarEdicaoInteracao(i.id)}
+                >
+                  OK
+                </button>
+                {" · "}
+                <button
+                  className={styles.btnLink} style={{ color: "var(--ink-muted)" }}
+                  onClick={() => { setEditandoInteracaoId(null); setFormEdicao(null); }}
+                >
+                  Cancelar
+                </button>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: "0.78rem", color: "var(--ink-muted)", marginBottom: 4 }}>
+                  {dataBr(i.data)} · {i.tipo}{i.vendedor_nome ? ` · ${i.vendedor_nome}` : ""}
+                </div>
+                <div style={{ fontSize: "0.9rem", marginBottom: 6 }}>{i.descricao}</div>
+                {mostrarExcluidasInteracoes ? (
+                  <>
+                    <span style={{ fontSize: "0.72rem", color: "var(--ink-faint)" }}>
+                      {i.excluido_em ? `Excluída ${dataBr(i.excluido_em.slice(0, 10))}` : ""}
+                      {i.excluido_por ? ` · ${i.excluido_por}` : ""}
+                    </span>
+                    {" · "}
+                    <button
+                      className={styles.btnLink} disabled={processandoInteracaoId === i.id}
+                      onClick={() => restaurarInteracaoClick(i)}
+                    >
+                      Restaurar
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button className={styles.btnLink} onClick={() => iniciarEdicaoInteracao(i)}>Editar</button>
+                    {" · "}
+                    <button
+                      className={styles.btnLink} style={{ color: "var(--crit)" }}
+                      disabled={processandoInteracaoId === i.id}
+                      onClick={() => excluirInteracaoClick(i)}
+                    >
+                      Excluir
+                    </button>
+                  </>
+                )}
+              </>
+            )}
           </div>
         ))}
       </div>

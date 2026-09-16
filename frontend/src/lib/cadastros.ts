@@ -76,6 +76,20 @@ export interface ClienteProdutoPreco {
   preco: number;
 }
 
+export interface InteracaoCliente {
+  id: number;
+  cliente_id: number;
+  data: string;
+  tipo: string;
+  descricao: string;
+  vendedor_id: number | null;
+  vendedor_nome: string | null;
+  criado_em: string;
+  criado_por: string | null;
+  excluido_em: string | null;
+  excluido_por: string | null;
+}
+
 export interface ExpedicaoItem {
   produto_id: number;
   produto_nome: string;
@@ -249,3 +263,18 @@ export const listarPrecosCliente = (id: number) =>
   cachedGet<ClienteProdutoPreco[]>(`cache:precos:${id}`, `/clientes/${id}/precos`);
 export const definirPrecoCliente = (clienteId: number, produtoId: number, preco: number) =>
   enviar<ClienteProdutoPreco[]>(`/clientes/${clienteId}/precos`, "PUT", { produto_id: produtoId, preco });
+
+export const listarInteracoes = (clienteId: number, excluidos?: boolean) =>
+  cachedGet<InteracaoCliente[]>(
+    `cache:interacoes:${clienteId}:${excluidos ? "excluidos" : ""}`,
+    `/clientes/${clienteId}/interacoes${excluidos ? "?excluidos=true" : ""}`
+  );
+export const criarInteracao = (body: {
+  cliente_id: number; data: string; tipo: string; descricao: string; vendedor_id: number | null;
+}) => enviar<InteracaoCliente>("/interacoes", "POST", body);
+export const editarInteracao = (id: number, body: {
+  data: string; tipo: string; descricao: string; vendedor_id: number | null;
+}) => enviar<InteracaoCliente>(`/interacoes/${id}`, "PATCH", body);
+export const excluirInteracao = (id: number) => excluir(`/interacoes/${id}`);
+export const restaurarInteracao = (id: number) =>
+  enviar<InteracaoCliente>(`/interacoes/${id}/restaurar`, "POST", undefined);

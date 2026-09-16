@@ -1026,6 +1026,35 @@ class ClienteProdutoPrecoIn(BaseModel):
     preco: float = Field(ge=0)
 
 
+class InteracaoClienteOut(BaseModel):
+    id: int
+    cliente_id: int
+    data: date
+    tipo: str
+    descricao: str
+    vendedor_id: int | None
+    vendedor_nome: str | None
+    criado_em: datetime
+    criado_por: str | None
+    excluido_em: datetime | None
+    excluido_por: str | None
+
+
+class InteracaoClienteIn(BaseModel):
+    cliente_id: int
+    data: date
+    tipo: str
+    descricao: str
+    vendedor_id: int | None = None
+
+
+class InteracaoClienteEditarIn(BaseModel):
+    data: date
+    tipo: str
+    descricao: str
+    vendedor_id: int | None = None
+
+
 # ---------- Expedição ----------
 
 
