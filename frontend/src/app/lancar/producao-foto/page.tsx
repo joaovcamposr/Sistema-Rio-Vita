@@ -82,6 +82,15 @@ export default function ProducaoPorFoto() {
     }).catch(() => setDespescas([]));
   }, [lote?.id]);
 
+  // sincroniza a despesca selecionada com a Data (inclusive a lida da foto)
+  // sempre que ela muda — sem isso, processar filé em dias diferentes
+  // (despesca de uma semana inteira) deixa lançamentos presos na primeira
+  // despesca escolhida, puxando o peso médio errado pro rendimento
+  useEffect(() => {
+    const doDia = despescas.find((d) => d.data === data);
+    if (doDia) setDespescaId(doDia.id);
+  }, [data, despescas]);
+
   async function aoEscolherFoto(arquivo: File) {
     setLendo(true);
     setErroLeitura(null);
@@ -253,6 +262,12 @@ export default function ProducaoPorFoto() {
                   </option>
                 ))}
               </select>
+              {despescas.find((d) => d.id === despescaId)?.data !== data && despescaId !== null && (
+                <p style={{ margin: "8px 0 0", fontSize: "0.82rem", color: "var(--warn)", fontWeight: 700 }}>
+                  ⚠ Essa despesca não é da mesma data da produção ({new Date(data + "T00:00:00").toLocaleDateString("pt-BR")}).
+                  Confira se é mesmo essa antes de salvar.
+                </p>
+              )}
             </div>
 
             {naoReconhecidos.length > 0 && (

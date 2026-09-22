@@ -76,6 +76,16 @@ export default function RegistrarProducao() {
       .catch(() => setDespescas([]));
   }, [lote?.id]);
 
+  // sincroniza a despesca selecionada com a Data sempre que ela muda — sem
+  // isso, quem processa filé em dias diferentes (despesca de uma semana
+  // inteira) esquece de trocar a despesca manualmente e todo lançamento
+  // seguinte fica preso na primeira despesca escolhida, puxando o peso
+  // médio errado pro rendimento (ver relato da Kaylanne, lote ENG-2026-05)
+  useEffect(() => {
+    const doDia = despescas.find((d) => d.data === data);
+    if (doDia) setDespescaId(doDia.id);
+  }, [data, despescas]);
+
   // busca o resumo (peso despescado + Kg de filé já lançado) da despesca escolhida
   useEffect(() => {
     if (despescaId === null) {
@@ -251,6 +261,13 @@ export default function RegistrarProducao() {
               </option>
             ))}
           </select>
+          {despescaSelecionada && despescaSelecionada.data !== data && (
+            <p style={{ margin: "8px 0 0", fontSize: "0.82rem", color: "var(--warn)", fontWeight: 700 }}>
+              ⚠ Essa despesca é de {new Date(despescaSelecionada.data + "T00:00:00").toLocaleDateString("pt-BR")},
+              diferente da data da produção ({new Date(data + "T00:00:00").toLocaleDateString("pt-BR")}). Confira se é
+              mesmo essa antes de salvar.
+            </p>
+          )}
         </div>
 
         {ehFile && rendimento !== null && (
