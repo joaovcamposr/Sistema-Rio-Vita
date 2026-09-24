@@ -362,6 +362,62 @@ async function cachedGet<T>(cacheKey: string, path: string): Promise<T> {
   }
 }
 
+export interface MortalidadeConsiderada {
+  fase: "pre_engorda" | "engorda";
+  taxa_considerada: number;
+  lotes_base: number;
+  fonte: string;
+}
+
+export interface ItemDespescaProgramada {
+  viveiro_codigo: string;
+  lote_codigo: string;
+  fase: string;
+  saldo_atual_un: number;
+  peixes_vivos_esperados: number;
+  peixes_a_despescar: number;
+  peso_medio_esperado_g: number;
+  kg_esperado: number;
+  data_prevista: string;
+  parcial: boolean;
+}
+
+export interface MesProgramacao {
+  mes: string;
+  meta_kg: number;
+  planejado_kg: number;
+  diferenca_kg: number;
+  itens: ItemDespescaProgramada[];
+}
+
+export interface LoteNaoAlocado {
+  viveiro_codigo: string;
+  lote_codigo: string;
+  fase: string;
+  peixes_restantes: number;
+  peso_medio_fim_horizonte_g: number;
+  kg_fim_horizonte: number;
+}
+
+export interface ProgramacaoAbate {
+  mortalidade: MortalidadeConsiderada[];
+  meses: MesProgramacao[];
+  nao_alocados: LoteNaoAlocado[];
+}
+
+export const programacaoAbate = () =>
+  cachedGet<ProgramacaoAbate>("cache:programacao-abate", "/paineis/programacao-abate");
+
+export async function salvarMetasAbate(metas: { mes: string; kg: number }[]): Promise<void> {
+  const r = await fetch(`${apiBase()}/metas-abate`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...authHeader() },
+    body: JSON.stringify({ metas }),
+  });
+  if (r.status === 401) sessaoInvalida();
+  if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+}
+
 export const painelViveiros = () => cachedGet<PainelViveiro[]>("cache:painel:viveiros", "/paineis/viveiros");
 export const painelAbate = () => cachedGet<Abate[]>("cache:painel:abate", "/paineis/abate");
 

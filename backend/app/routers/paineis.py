@@ -4,6 +4,7 @@ tudo é derivado das mesmas tabelas que os módulos operacionais alimentam.
 """
 from __future__ import annotations
 
+import math
 from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -32,7 +33,12 @@ from ..schemas import (
     EventoProjetadoOut,
     ExpedicaoAbertaOut,
     HistoricoLoteOut,
+    ItemDespescaProgramadaOut,
     ItemRepicagemOut,
+    LoteNaoAlocadoOut,
+    MesProgramacaoOut,
+    MortalidadeConsideradaOut,
+    ProgramacaoAbateOut,
     LoteAtual,
     MisturaOut,
     MortalidadeLoteOut,
@@ -362,6 +368,124 @@ def painel_abate(db: Session = Depends(get_db)):
 
     out.sort(key=lambda a: (0 if a.pronto else 1, a.previsao_abate or hoje))
     return out
+
+
+_MESES_PROGRAMACAO = 6
+
+
+def _primeiro_dia_mes(base: date, deslocamento: int) -> date:
+    total = base.year * 12 + (base.month - 1) + deslocamento
+    return date(total // 12, total % 12 + 1, 1)
+
+
+@router.get("/programacao-abate", response_model=ProgramacaoAbateOut)
+def programacao_abate(db: Session = Depends(get_db)):
+    """Distribui a meta mensal de Kg abatido (tabela meta_abate_mensal) entre
+    os lotes ativos, mês a mês: quantos peixes despescar de cada tanque e
+    com que peso médio esperado. Cada lote fica disponível a partir da
+    semana de abate da curva (mesma regra da Programação de abate); os
+    mais antigos em condição de abate saem primeiro. O peso na data da
+    despesca vem da curva de crescimento, ancorada no peso estimado de
+    hoje. A mortalidade que ainda não foi lançada (só aparece quando o lote
+    fecha) é descontada do saldo pela taxa média dos lotes já encerrados,
+    fase a fase — pré-engorda sofre as duas taxas até o abate. Só considera
+    os lotes ativos hoje: não projeta novos povoamentos."""
+    curva = _carregar_curva(db)
+    viveiros = painel_viveiros(db)
+    mortalidade = painel_mortalidade(db)
+    hoje = date.today()
+
+    def fase_mortalidade(fase: str, taxa: float | None) -> MortalidadeConsideradaOut:
+        base = sum(1 for l in mortalidade.lotes if l.fase == fase)
+        if taxa is None:
+            return MortalidadeConsideradaOut(
+                fase=fase, taxa_considerada=0.0, lotes_base=0,
+                fonte="sem lote encerrado ainda nessa fase — considerando 0%",
+            )
+        return MortalidadeConsideradaOut(
+            fase=fase, taxa_considerada=taxa, lotes_base=base,
+            fonte=f"média ponderada dos {base} lote(s) encerrado(s) na fase",
+        )
+
+    m_pre = fase_mortalidade("pre_engorda", mortalidade.taxa_media_pre_engorda)
+    m_eng = fase_mortalidade("engorda", mortalidade.taxa_media_engorda)
+
+    inicio = _primeiro_dia_mes(hoje, 0)
+    fim_horizonte = _primeiro_dia_mes(hoje, _MESES_PROGRAMACAO) - timedelta(days=1)
+    metas = {
+        r["mes"]: float(r["kg"])
+        for r in db.execute(
+            text("SELECT mes, kg FROM meta_abate_mensal WHERE mes >= :inicio"), {"inicio": inicio}
+        ).mappings().all()
+    }
+
+    lotes = []
+    for v in viveiros:
+        if v.lote_atual is None or v.peso_estimado_hoje_g is None:
+            continue
+        lote = v.lote_atual
+        semana_hoje = _semana_para_peso(curva, v.peso_estimado_hoje_g)
+        if lote.fase == "pre_engorda":
+            vivos = (lote.saldo_un - m_pre.taxa_considerada * lote.quantidade_inicial) * (1 - m_eng.taxa_considerada)
+        else:
+            vivos = lote.saldo_un - m_eng.taxa_considerada * lote.quantidade_inicial
+        vivos = max(0, int(vivos))
+        lotes.append({
+            "viveiro": v.codigo, "lote": lote.codigo, "fase": lote.fase, "saldo": lote.saldo_un,
+            "vivos_esperados": vivos, "restantes": vivos, "semana_hoje": semana_hoje,
+            "pronto_em": hoje + timedelta(weeks=max(0, SEMANA_LIMITE_ABATE - semana_hoje)),
+        })
+
+    def peso_em(lote: dict, data: date) -> float:
+        semanas = round((data - hoje).days / 7)
+        return _peso_para_semana(curva, lote["semana_hoje"] + semanas)
+
+    meses_out = []
+    for i in range(_MESES_PROGRAMACAO):
+        mes = _primeiro_dia_mes(hoje, i)
+        fim_mes = _primeiro_dia_mes(hoje, i + 1) - timedelta(days=1)
+        meta = metas.get(mes, 0.0)
+        referencia = max(mes + timedelta(days=14), hoje)
+        falta = meta
+        itens = []
+        candidatos = sorted(
+            (l for l in lotes if l["restantes"] > 0 and l["pronto_em"] <= fim_mes),
+            key=lambda l: l["pronto_em"],
+        )
+        for l in candidatos:
+            if falta <= 0.0005:
+                break
+            colheita = max(referencia, l["pronto_em"])
+            peso = peso_em(l, colheita)
+            if l["restantes"] * peso / 1000 <= falta:
+                pegar = l["restantes"]
+            else:
+                pegar = min(l["restantes"], math.ceil(falta * 1000 / peso))
+            kg = pegar * peso / 1000
+            itens.append(ItemDespescaProgramadaOut(
+                viveiro_codigo=l["viveiro"], lote_codigo=l["lote"], fase=l["fase"],
+                saldo_atual_un=l["saldo"], peixes_vivos_esperados=l["vivos_esperados"],
+                peixes_a_despescar=pegar, peso_medio_esperado_g=peso, kg_esperado=kg,
+                data_prevista=colheita, parcial=pegar < l["restantes"],
+            ))
+            l["restantes"] -= pegar
+            falta -= kg
+        planejado = sum(it.kg_esperado for it in itens)
+        meses_out.append(MesProgramacaoOut(
+            mes=mes, meta_kg=meta, planejado_kg=planejado, diferenca_kg=planejado - meta, itens=itens,
+        ))
+
+    nao_alocados = []
+    for l in lotes:
+        if l["restantes"] > 0 and l["pronto_em"] <= fim_horizonte:
+            peso = peso_em(l, fim_horizonte)
+            nao_alocados.append(LoteNaoAlocadoOut(
+                viveiro_codigo=l["viveiro"], lote_codigo=l["lote"], fase=l["fase"],
+                peixes_restantes=l["restantes"], peso_medio_fim_horizonte_g=peso,
+                kg_fim_horizonte=l["restantes"] * peso / 1000,
+            ))
+
+    return ProgramacaoAbateOut(mortalidade=[m_pre, m_eng], meses=meses_out, nao_alocados=nao_alocados)
 
 
 def _rendimento_por_destino(db: Session, de: date, ate: date, like_padrao: str, destino: str) -> float | None:

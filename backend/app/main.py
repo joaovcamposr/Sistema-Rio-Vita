@@ -16,6 +16,7 @@ from .routers import (
     interacoes,
     lembretes,
     lotes,
+    metas_abate,
     paineis,
     parametros,
     producao,
@@ -52,6 +53,7 @@ app.include_router(produtos.router, dependencies=_exige_login)
 app.include_router(despescas.router, dependencies=_exige_login)
 app.include_router(producao.router, dependencies=_exige_login)
 app.include_router(lotes.router, dependencies=_exige_login)
+app.include_router(metas_abate.router, dependencies=_exige_login)
 app.include_router(biometria.router, dependencies=_exige_login)
 app.include_router(arracoamento.router, dependencies=_exige_login)
 app.include_router(analise_agua.router, dependencies=_exige_login)

@@ -712,6 +712,63 @@ class AbateOut(BaseModel):
     pronto: bool
 
 
+class MetaAbateMesIn(BaseModel):
+    mes: date
+    kg: float = Field(ge=0)
+
+
+class MetasAbateIn(BaseModel):
+    metas: list[MetaAbateMesIn]
+
+
+class MetaAbateMesOut(BaseModel):
+    mes: date
+    kg: float
+
+
+class MortalidadeConsideradaOut(BaseModel):
+    fase: str
+    taxa_considerada: float
+    lotes_base: int
+    fonte: str
+
+
+class ItemDespescaProgramadaOut(BaseModel):
+    viveiro_codigo: str
+    lote_codigo: str
+    fase: str
+    saldo_atual_un: int
+    peixes_vivos_esperados: int
+    peixes_a_despescar: int
+    peso_medio_esperado_g: float
+    kg_esperado: float
+    data_prevista: date
+    parcial: bool
+
+
+class MesProgramacaoOut(BaseModel):
+    mes: date
+    meta_kg: float
+    planejado_kg: float
+    diferenca_kg: float
+    itens: list[ItemDespescaProgramadaOut]
+
+
+class LoteNaoAlocadoOut(BaseModel):
+    viveiro_codigo: str
+    lote_codigo: str
+    fase: str
+    peixes_restantes: int
+    peso_medio_fim_horizonte_g: float
+    kg_fim_horizonte: float
+
+
+class ProgramacaoAbateOut(BaseModel):
+    mortalidade: list[MortalidadeConsideradaOut]
+    meses: list[MesProgramacaoOut]
+    nao_alocados: list[LoteNaoAlocadoOut]
+
+
 class DisponibilidadeTanqueOut(BaseModel):
     viveiro_codigo: str
     lote_codigo: str
