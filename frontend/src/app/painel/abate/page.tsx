@@ -119,7 +119,7 @@ export default function PainelAbate() {
             <p className={styles.hint}>
               O saldo dos tanques só perde peixe quando o lote fecha, então a mortalidade que ainda não foi lançada é
               descontada por essas taxas (lote hoje em pré-engorda sofre as duas até o abate). O peso esperado vem da
-              curva de crescimento, a partir do peso estimado de hoje. Considera só os lotes ativos hoje — não inclui
+              curva de crescimento, a partir do peso estimado de hoje, com o crescimento 1 semana mais lento que a curva. Considera só os lotes ativos hoje — não inclui
               novos povoamentos. Lote de pré-engorda aparece pelo tanque onde está hoje; até o abate ele será
               repicado.
             </p>

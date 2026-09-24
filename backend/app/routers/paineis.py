@@ -78,6 +78,11 @@ router = APIRouter(prefix="/paineis", tags=["paineis"])
 # original para todos os viveiros.
 SEMANA_LIMITE_ABATE = 26
 
+# O peixe cresce mais devagar do que a curva promete: todo peso projetado
+# (peso estimado hoje, esperado pela idade, datas de abate/repicagem,
+# programação) fica esse tanto de semanas atrasado em relação à curva.
+ATRASO_CRESCIMENTO_SEMANAS = 1
+
 # Pré-engorda esvazia por repicagem pro tanque de engorda, não por abate —
 # regra prática do campo: sai de lá assim que o peixe passa desse peso ou
 # a densidade do tanque estoura o limite da fase (o que vier primeiro).
@@ -128,6 +133,13 @@ def _carregar_curva(db: Session) -> list[dict]:
     return [{"semana": r["semana"], "peso_final_g": float(r["peso_final_g"])} for r in rows]
 
 
+def _avanco_semanas(semanas_decorridas: int) -> int:
+    """Quantas semanas a curva realmente avança depois de `semanas_decorridas`
+    de calendário — o atraso de crescimento é descontado uma vez só, não a
+    cada semana (e nunca fica negativo)."""
+    return max(0, semanas_decorridas - ATRASO_CRESCIMENTO_SEMANAS)
+
+
 def _semana_para_peso(curva: list[dict], peso: float) -> int:
     """Primeira semana da curva cujo peso final já alcança `peso` — mesma
     regra usada pela Programação de abate da planilha original."""
@@ -149,8 +161,8 @@ def _semanas_ate_peso(curva: list[dict], semana_atual: int, peso_alvo: float) ->
     """Semanas a partir de `semana_atual` até a curva atingir `peso_alvo`,
     ou None se a curva nunca chega lá dentro do horizonte."""
     semana_maxima = curva[-1]["semana"]
-    for w in range(0, semana_maxima - semana_atual + 1):
-        if _peso_para_semana(curva, semana_atual + w) >= peso_alvo:
+    for w in range(0, semana_maxima - semana_atual + ATRASO_CRESCIMENTO_SEMANAS + 1):
+        if _peso_para_semana(curva, semana_atual + _avanco_semanas(w)) >= peso_alvo:
             return w
     return None
 
@@ -159,8 +171,8 @@ def _semanas_ate_densidade(curva: list[dict], semana_atual: int, saldo_un: int, 
     """Semanas a partir de `semana_atual` até a densidade projetada (saldo
     de peixe fixo, peso crescendo pela curva) estourar `limite` kg/m²."""
     semana_maxima = curva[-1]["semana"]
-    for w in range(0, semana_maxima - semana_atual + 1):
-        peso_w = _peso_para_semana(curva, semana_atual + w)
+    for w in range(0, semana_maxima - semana_atual + ATRASO_CRESCIMENTO_SEMANAS + 1):
+        peso_w = _peso_para_semana(curva, semana_atual + _avanco_semanas(w))
         if saldo_un * peso_w / 1000 / area_m2 >= limite:
             return w
     return None
@@ -219,14 +231,14 @@ def _calcular_indicadores_lote(
 
     semana_biometria = _semana_para_peso(curva, peso_biometria_g)
     semanas_decorridas = max(0, (hoje - data_biometria).days // 7)
-    semana_projetada = min(semana_biometria + semanas_decorridas, semana_maxima)
+    semana_projetada = min(semana_biometria + _avanco_semanas(semanas_decorridas), semana_maxima)
     peso_estimado_hoje_g = _peso_para_semana(curva, semana_projetada)
 
     idade_semanas = max(1, min((hoje - data_inicio).days // 7, semana_maxima))
 
     semana_inicial = _semana_para_peso(curva, peso_medio_inicial_g)
     semanas_desde_inicio = max(0, (hoje - data_inicio).days // 7)
-    semana_esperada = min(semana_inicial + semanas_desde_inicio, semana_maxima)
+    semana_esperada = min(semana_inicial + _avanco_semanas(semanas_desde_inicio), semana_maxima)
     peso_esperado_pela_idade_g = _peso_para_semana(curva, semana_esperada)
 
     if semana_projetada < semana_esperada:
@@ -358,7 +370,7 @@ def painel_abate(db: Session = Depends(get_db)):
         peso = float(r["peso_medio_g"])
         semana_atual = _semana_para_peso(curva, peso)
         pronto = semana_atual >= SEMANA_LIMITE_ABATE
-        previsao = None if pronto else hoje + timedelta(weeks=SEMANA_LIMITE_ABATE - semana_atual)
+        previsao = None if pronto else hoje + timedelta(weeks=SEMANA_LIMITE_ABATE - semana_atual + ATRASO_CRESCIMENTO_SEMANAS)
         out.append(AbateOut(
             lote_id=r["id"], lote_codigo=r["codigo"], fase=r["fase"], viveiro_codigo=r["viveiro_codigo"],
             quantidade_un=r["saldo_un"], peso_medio_g=peso, data_biometria=r["data_biometria"],
@@ -433,12 +445,15 @@ def programacao_abate(db: Session = Depends(get_db)):
         lotes.append({
             "viveiro": v.codigo, "lote": lote.codigo, "fase": lote.fase, "saldo": lote.saldo_un,
             "vivos_esperados": vivos, "restantes": vivos, "semana_hoje": semana_hoje,
-            "pronto_em": hoje + timedelta(weeks=max(0, SEMANA_LIMITE_ABATE - semana_hoje)),
+            "pronto_em": hoje + timedelta(
+                weeks=(SEMANA_LIMITE_ABATE - semana_hoje + ATRASO_CRESCIMENTO_SEMANAS)
+                if semana_hoje < SEMANA_LIMITE_ABATE else 0
+            ),
         })
 
     def peso_em(lote: dict, data: date) -> float:
         semanas = round((data - hoje).days / 7)
-        return _peso_para_semana(curva, lote["semana_hoje"] + semanas)
+        return _peso_para_semana(curva, lote["semana_hoje"] + _avanco_semanas(semanas))
 
     meses_out = []
     for i in range(_MESES_PROGRAMACAO):
@@ -1395,7 +1410,7 @@ def arracoamento_previsto(
             fim_bloco = min(inicio_bloco + timedelta(days=6), ate)
 
             semanas_decorridas = max(0, (inicio_bloco - data_biometria).days // 7)
-            semana_projetada = min(semana_biometria + semanas_decorridas, semana_maxima_curva)
+            semana_projetada = min(semana_biometria + _avanco_semanas(semanas_decorridas), semana_maxima_curva)
             peso_estimado = _peso_para_semana(curva, semana_projetada)
 
             semana_tabela = min(semana_projetada, semana_maxima_tabela)
@@ -1878,7 +1893,7 @@ def disponibilidade_tanques(db: Session = Depends(get_db)):
                 semanas, motivo = None, "sem previsão dentro do horizonte da curva"
         else:
             pronto_abate = semana_atual >= SEMANA_LIMITE_ABATE
-            semanas = 0 if pronto_abate else SEMANA_LIMITE_ABATE - semana_atual
+            semanas = 0 if pronto_abate else SEMANA_LIMITE_ABATE - semana_atual + ATRASO_CRESCIMENTO_SEMANAS
             motivo = f"abate — idade limite (semana {SEMANA_LIMITE_ABATE})"
 
         out.append(DisponibilidadeTanqueOut(
@@ -1948,8 +1963,8 @@ def projecao_capacidade(db: Session = Depends(get_db)):
         if sem_atual is None or v.lote_atual is None:
             return None
         saldo_un = v.lote_atual.saldo_un
-        for w in range(0, SEMANA_LIMITE_ABATE - sem_atual + 1):
-            sem_futura = sem_atual + w
+        for w in range(0, SEMANA_LIMITE_ABATE - sem_atual + ATRASO_CRESCIMENTO_SEMANAS + 1):
+            sem_futura = sem_atual + _avanco_semanas(w)
             if sem_futura >= SEMANA_LIMITE_ABATE:
                 return None
             peso_futuro_g = _peso_para_semana(curva, sem_futura)
@@ -1964,8 +1979,8 @@ def projecao_capacidade(db: Session = Depends(get_db)):
         sem_atual = semana_atual_de(v)
         if sem_atual is None:
             return None
-        for w in range(0, semana_maxima_curva - sem_atual + 1):
-            if _peso_para_semana(curva, sem_atual + w) >= 600:
+        for w in range(0, semana_maxima_curva - sem_atual + ATRASO_CRESCIMENTO_SEMANAS + 1):
+            if _peso_para_semana(curva, sem_atual + _avanco_semanas(w)) >= 600:
                 return w
         return None
 
@@ -2022,7 +2037,7 @@ def projecao_capacidade(db: Session = Depends(get_db)):
         if origem.codigo in resolvidos_antecipadamente:
             continue
 
-        sem_origem_no_evento = min((semana_atual_por_codigo[origem.codigo] or 0) + w, semana_maxima_curva)
+        sem_origem_no_evento = min((semana_atual_por_codigo[origem.codigo] or 0) + _avanco_semanas(w), semana_maxima_curva)
         semana_por_codigo_global[origem.codigo] = sem_origem_no_evento
         origem_proj = _DestinoProjetado(origem.codigo, origem.tipo, origem.area_m2, origem.lote_atual)
 
@@ -2042,7 +2057,7 @@ def projecao_capacidade(db: Session = Depends(get_db)):
                 sem600 = semana_600_por_codigo.get(c.codigo)
                 if sem600 is None or sem600 > w:
                     continue
-                sem_c_no_evento = min((semana_atual_por_codigo[c.codigo] or 0) + w, semana_maxima_curva)
+                sem_c_no_evento = min((semana_atual_por_codigo[c.codigo] or 0) + _avanco_semanas(w), semana_maxima_curva)
                 peso_c_no_evento = _peso_para_semana(curva, sem_c_no_evento)
                 candidatos.append((c, peso_c_no_evento))
             candidatos.sort(key=lambda item: (-item[1], item[0].lote_atual.saldo_un))
@@ -2155,7 +2170,7 @@ def historico_lote(viveiro_id: int, db: Session = Depends(get_db)):
 
     def semana_esperada_em(data_ponto: date) -> int:
         semanas = max(0, (data_ponto - data_inicio).days // 7)
-        return min(semana_inicial + semanas, semana_maxima)
+        return min(semana_inicial + _avanco_semanas(semanas), semana_maxima)
 
     def saldo_ate(data_referencia: date) -> int:
         # mesma regra da vw_saldo_lote, só que avaliada numa data
