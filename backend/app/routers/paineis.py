@@ -462,8 +462,11 @@ def programacao_abate(db: Session = Depends(get_db)):
     }
 
     def semana_em(lote: dict, data: date) -> int:
+        # semana de cultivo real, sem limitar à última semana da curva —
+        # só o peso (via _peso_para_semana, que clampa por conta própria)
+        # fica congelado depois da última semana com dado na curva.
         semanas = round((data - hoje).days / 7)
-        return min(lote["semana_hoje"] + _avanco_semanas(semanas), curva[-1]["semana"])
+        return lote["semana_hoje"] + _avanco_semanas(semanas)
 
     def peso_em(lote: dict, data: date) -> float:
         return _peso_para_semana(curva, semana_em(lote, data))
