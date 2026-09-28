@@ -371,6 +371,7 @@ export interface MortalidadeConsiderada {
 }
 
 export interface ItemDespescaProgramada {
+  viveiro_id: number;
   viveiro_codigo: string;
   lote_codigo: string;
   fase: string;
@@ -394,6 +395,7 @@ export interface MesProgramacao {
 }
 
 export interface LoteNaoAlocado {
+  viveiro_id: number;
   viveiro_codigo: string;
   lote_codigo: string;
   fase: string;
@@ -890,6 +892,10 @@ export interface HistoricoLote {
   lote_codigo: string;
   area_m2: number;
   data_inicio: string;
+  origem: string;
+  data_povoamento: string;
+  pronto_para_abate: boolean;
+  previsao_abate: string | null;
   pontos: PontoHistoricoLote[];
 }
 

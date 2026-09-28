@@ -3,9 +3,10 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  painelAbate, programacaoAbate, salvarMetasAbate,
-  type Abate, type ProgramacaoAbate,
+  historicoLote, painelAbate, programacaoAbate, salvarMetasAbate,
+  type Abate, type HistoricoLote, type ProgramacaoAbate,
 } from "@/lib/paineis";
+import Modal from "@/components/Modal";
 import styles from "../painel.module.css";
 
 function dataBr(iso: string): string {
@@ -35,6 +36,22 @@ export default function PainelAbate() {
   const [erro, setErro] = useState<string | null>(null);
   const [mostrarMortalidade, setMostrarMortalidade] = useState(false);
   const [mostrarPorLote, setMostrarPorLote] = useState(false);
+
+  const [tanqueSelecionado, setTanqueSelecionado] = useState<{ viveiro_codigo: string; lote_codigo: string } | null>(null);
+  const [historico, setHistorico] = useState<HistoricoLote | null>(null);
+  const [erroHistorico, setErroHistorico] = useState<string | null>(null);
+
+  function abrirLote(viveiroId: number, viveiroCodigo: string, loteCodigo: string) {
+    setTanqueSelecionado({ viveiro_codigo: viveiroCodigo, lote_codigo: loteCodigo });
+    setHistorico(null);
+    setErroHistorico(null);
+    historicoLote(viveiroId).then(setHistorico).catch(() => setErroHistorico("Sem conexão e sem dado salvo deste aparelho ainda."));
+  }
+  function fecharLote() {
+    setTanqueSelecionado(null);
+    setHistorico(null);
+    setErroHistorico(null);
+  }
 
   function carregarPlano() {
     programacaoAbate()
@@ -142,7 +159,11 @@ export default function PainelAbate() {
                         </thead>
                         <tbody>
                           {m.itens.map((it) => (
-                            <tr key={`${m.mes}-${it.viveiro_codigo}`}>
+                            <tr
+                              key={`${m.mes}-${it.viveiro_codigo}`}
+                              style={{ cursor: "pointer" }}
+                              onClick={() => abrirLote(it.viveiro_id, it.viveiro_codigo, it.lote_codigo)}
+                            >
                               <td>{it.viveiro_codigo}</td>
                               <td>{it.lote_codigo}</td>
                               <td>{FASE_LABEL[it.fase] ?? it.fase}</td>
@@ -178,7 +199,11 @@ export default function PainelAbate() {
                     </thead>
                     <tbody>
                       {plano.nao_alocados.map((n) => (
-                        <tr key={n.viveiro_codigo}>
+                        <tr
+                          key={n.viveiro_codigo}
+                          style={{ cursor: "pointer" }}
+                          onClick={() => abrirLote(n.viveiro_id, n.viveiro_codigo, n.lote_codigo)}
+                        >
                           <td>{n.viveiro_codigo}</td>
                           <td>{n.lote_codigo}</td>
                           <td>{nf(n.peixes_restantes)}</td>
@@ -282,6 +307,76 @@ export default function PainelAbate() {
           </>
         )}
       </div>
+
+      {tanqueSelecionado && (
+        <Modal
+          titulo={`Tanque ${tanqueSelecionado.viveiro_codigo} — lote ${tanqueSelecionado.lote_codigo}`}
+          subtitulo="Origem, povoamento e previsão de abate"
+          onFechar={fecharLote}
+        >
+          {erroHistorico && <div className={styles.erro}>{erroHistorico}</div>}
+          {!historico && !erroHistorico && <div className={styles.carregando}>Carregando…</div>}
+
+          {historico && (
+            <>
+              <div className={styles.linha}>
+                <span className={styles.k}>Origem</span>
+                <span className={styles.v}>{historico.origem}</span>
+              </div>
+              <div className={styles.linha}>
+                <span className={styles.k}>Data de povoamento</span>
+                <span className={styles.v}>{dataBr(historico.data_povoamento)}</span>
+              </div>
+              <div className={styles.linha}>
+                <span className={styles.k}>Entrada nesse tanque</span>
+                <span className={styles.v}>{dataBr(historico.data_inicio)}</span>
+              </div>
+              {historico.pontos.length > 0 && (
+                <div className={styles.linha}>
+                  <span className={styles.k}>Última biometria</span>
+                  <span className={styles.v}>
+                    {nf(historico.pontos[historico.pontos.length - 1].peso_real_g)} g em{" "}
+                    {dataBr(historico.pontos[historico.pontos.length - 1].data)}
+                  </span>
+                </div>
+              )}
+              <div className={styles.linha}>
+                <span className={styles.k}>Previsão de abate</span>
+                <span className={styles.v}>
+                  {historico.pronto_para_abate ? (
+                    <span className={`${styles.badge} ${styles.badgeCrit}`}>PRONTO PARA ABATE</span>
+                  ) : (
+                    <span className={`${styles.badge} ${styles.badgeNeutro}`}>
+                      {historico.previsao_abate ? dataBr(historico.previsao_abate) : "—"}
+                    </span>
+                  )}
+                </span>
+              </div>
+
+              <div className={styles.section} style={{ marginTop: 16 }}>Biometrias</div>
+              <div className={styles.tableWrap}>
+                <table className={styles.tabela}>
+                  <thead>
+                    <tr>
+                      <th>Data</th><th>Peso real</th><th>Peso esperado</th><th>Saldo</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {historico.pontos.map((p, i) => (
+                      <tr key={i}>
+                        <td>{dataBr(p.data)}</td>
+                        <td>{nf(p.peso_real_g, 1)} g</td>
+                        <td>{nf(p.peso_esperado_g, 1)} g</td>
+                        <td>{nf(p.saldo_un)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </Modal>
+      )}
 
       {toast && (
         <div style={{

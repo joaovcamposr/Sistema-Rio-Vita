@@ -734,6 +734,7 @@ class MortalidadeConsideradaOut(BaseModel):
 
 
 class ItemDespescaProgramadaOut(BaseModel):
+    viveiro_id: int
     viveiro_codigo: str
     lote_codigo: str
     fase: str
@@ -757,6 +758,7 @@ class MesProgramacaoOut(BaseModel):
 
 
 class LoteNaoAlocadoOut(BaseModel):
+    viveiro_id: int
     viveiro_codigo: str
     lote_codigo: str
     fase: str
@@ -1525,4 +1527,8 @@ class HistoricoLoteOut(BaseModel):
     lote_codigo: str
     area_m2: float
     data_inicio: date
+    origem: str
+    data_povoamento: date
+    pronto_para_abate: bool
+    previsao_abate: date | None
     pontos: list[PontoHistoricoLoteOut]

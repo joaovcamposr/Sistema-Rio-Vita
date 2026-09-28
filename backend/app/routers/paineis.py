@@ -446,7 +446,7 @@ def programacao_abate(db: Session = Depends(get_db)):
             vivos = lote.saldo_un - m_eng.taxa_considerada * lote.quantidade_inicial
         vivos = max(0, int(vivos))
         lotes.append({
-            "viveiro": v.codigo, "lote": lote.codigo, "fase": lote.fase, "saldo": lote.saldo_un,
+            "viveiro_id": v.id, "viveiro": v.codigo, "lote": lote.codigo, "fase": lote.fase, "saldo": lote.saldo_un,
             "vivos_esperados": vivos, "restantes": vivos, "semana_hoje": semana_hoje,
             "pronto_em": hoje + timedelta(
                 weeks=(SEMANA_LIMITE_ABATE - semana_hoje + ATRASO_CRESCIMENTO_SEMANAS)
@@ -503,7 +503,7 @@ def programacao_abate(db: Session = Depends(get_db)):
                 pegar = min(l["restantes"], math.ceil(falta * 1000 / peso))
             kg = pegar * peso / 1000
             itens.append(ItemDespescaProgramadaOut(
-                viveiro_codigo=l["viveiro"], lote_codigo=l["lote"], fase=l["fase"],
+                viveiro_id=l["viveiro_id"], viveiro_codigo=l["viveiro"], lote_codigo=l["lote"], fase=l["fase"],
                 saldo_atual_un=l["saldo"], peixes_vivos_esperados=l["vivos_esperados"],
                 peixes_a_despescar=pegar, peso_medio_esperado_g=peso, semana_abate=semana_em(l, colheita),
                 kg_esperado=kg, data_prevista=colheita, parcial=pegar < l["restantes"],
@@ -533,7 +533,7 @@ def programacao_abate(db: Session = Depends(get_db)):
         if l["restantes"] > 0 and l["pronto_em"] <= fim_horizonte:
             peso = peso_em(l, fim_horizonte)
             nao_alocados.append(LoteNaoAlocadoOut(
-                viveiro_codigo=l["viveiro"], lote_codigo=l["lote"], fase=l["fase"],
+                viveiro_id=l["viveiro_id"], viveiro_codigo=l["viveiro"], lote_codigo=l["lote"], fase=l["fase"],
                 peixes_restantes=l["restantes"], peso_medio_fim_horizonte_g=peso,
                 kg_fim_horizonte=l["restantes"] * peso / 1000,
             ))
@@ -2362,6 +2362,44 @@ def projecao_capacidade(db: Session = Depends(get_db)):
     )
 
 
+def _origem_lote(db: Session, lote_id: int, data_inicio: date) -> tuple[str, date]:
+    """Descreve de onde o lote veio (repicagem ou povoamento direto) e sobe
+    a cadeia de repicagens até achar o ancestral povoado direto — a data
+    dele é a data de povoamento real do peixe, mesmo que o lote atual só
+    tenha chegado nesse tanque bem depois."""
+    row = db.execute(text("""
+        SELECT o.data, lo.codigo AS lote_origem_codigo, vo.codigo AS viveiro_origem_codigo, o.lote_origem_id
+        FROM lote_origem o
+        JOIN lote lo ON lo.id = o.lote_origem_id
+        JOIN viveiro vo ON vo.id = lo.viveiro_id
+        WHERE o.lote_id = :lote_id AND o.excluido_em IS NULL
+        ORDER BY o.data DESC LIMIT 1
+    """), {"lote_id": lote_id}).mappings().first()
+    if row is None:
+        return "Povoamento direto nesse tanque", data_inicio
+
+    origem = (
+        f"Repicado do tanque {row['viveiro_origem_codigo']} (lote {row['lote_origem_codigo']}) "
+        f"em {row['data'].strftime('%d/%m/%Y')}"
+    )
+
+    data_povoamento = data_inicio
+    ancestral_id = row["lote_origem_id"]
+    for _ in range(10):
+        ancestral = db.execute(text("SELECT data_inicio FROM lote WHERE id = :id"), {"id": ancestral_id}).mappings().first()
+        if ancestral is None:
+            break
+        data_povoamento = ancestral["data_inicio"]
+        anterior = db.execute(text("""
+            SELECT lote_origem_id FROM lote_origem WHERE lote_id = :id AND excluido_em IS NULL
+            ORDER BY data DESC LIMIT 1
+        """), {"id": ancestral_id}).mappings().first()
+        if anterior is None:
+            break
+        ancestral_id = anterior["lote_origem_id"]
+    return origem, data_povoamento
+
+
 @router.get("/viveiros/{viveiro_id}/historico-lote", response_model=HistoricoLoteOut)
 def historico_lote(viveiro_id: int, db: Session = Depends(get_db)):
     """Histórico de crescimento do lote ativo desse viveiro: povoamento +
@@ -2410,6 +2448,17 @@ def historico_lote(viveiro_id: int, db: Session = Depends(get_db)):
     data_inicio = lote["data_inicio"]
     peso_inicial_g = float(lote["peso_medio_inicial_g"])
     semana_inicial = _semana_para_peso(curva, peso_inicial_g)
+
+    origem, data_povoamento = _origem_lote(db, lote["id"], data_inicio)
+
+    hoje = date.today()
+    peso_atual_g = float(biometrias[-1]["peso_medio_g"]) if biometrias else peso_inicial_g
+    semana_atual = _semana_para_peso(curva, peso_atual_g)
+    pronto_para_abate = semana_atual >= SEMANA_LIMITE_ABATE
+    previsao_abate = (
+        None if pronto_para_abate
+        else hoje + timedelta(weeks=SEMANA_LIMITE_ABATE - semana_atual + ATRASO_CRESCIMENTO_SEMANAS)
+    )
 
     def semana_esperada_em(data_ponto: date) -> int:
         semanas = max(0, (data_ponto - data_inicio).days // 7)
@@ -2470,5 +2519,6 @@ def historico_lote(viveiro_id: int, db: Session = Depends(get_db)):
 
     return HistoricoLoteOut(
         viveiro_codigo=lote["viveiro_codigo"], lote_codigo=lote["lote_codigo"],
-        area_m2=area_m2, data_inicio=data_inicio, pontos=pontos,
+        area_m2=area_m2, data_inicio=data_inicio, origem=origem, data_povoamento=data_povoamento,
+        pronto_para_abate=pronto_para_abate, previsao_abate=previsao_abate, pontos=pontos,
     )
