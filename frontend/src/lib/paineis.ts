@@ -650,6 +650,15 @@ export interface DespesaPorForma {
   quantidade: number;
 }
 
+export interface DespesaConferencia {
+  id: number;
+  data: string;
+  categoria: string;
+  valor: number;
+  forma_pgto: string | null;
+  origem: string;
+}
+
 export interface CaixaConferencia {
   de: string;
   ate: string;
@@ -659,6 +668,7 @@ export interface CaixaConferencia {
   total_despesas_dinheiro: number;
   total_despesas_todas_formas: number;
   despesas_por_forma: DespesaPorForma[];
+  despesas_detalhe: DespesaConferencia[];
   saldo_recebido: number;
   dias: CaixaConferenciaDia[];
   formas_fora_padrao: FormaForaPadrao[];

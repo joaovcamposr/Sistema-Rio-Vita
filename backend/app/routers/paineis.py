@@ -28,6 +28,7 @@ from ..schemas import (
     ComercialSerieBucketOut,
     ComercialSerieOut,
     DashboardOut,
+    DespesaConferenciaOut,
     DespesaPorFormaOut,
     DespescaDetalheOut,
     DespescaPreviaOut,
@@ -1181,6 +1182,19 @@ def caixa_conferencia(
     ).mappings().all()
     total_despesas_todas_formas = sum(float(r["total"]) for r in despesas_por_forma)
 
+    despesas_detalhe = db.execute(
+        text("""
+            SELECT d.id, d.data, d.categoria, d.valor, d.forma_pgto,
+                   CASE WHEN d.expedicao_id IS NULL THEN 'Solta'
+                        ELSE 'Expedição — ' || v.nome END AS origem
+            FROM despesa d
+            LEFT JOIN expedicao e ON e.id = d.expedicao_id
+            LEFT JOIN vendedor v ON v.id = e.vendedor_id
+            WHERE d.excluido_em IS NULL AND d.data BETWEEN :de AND :ate
+            ORDER BY d.data DESC, d.id DESC
+        """), {"de": de, "ate": ate},
+    ).mappings().all()
+
     placeholders = ", ".join(f"'{f}'" for f in _FORMAS_PADRAO)
     fora_padrao = db.execute(
         text(f"""
@@ -1206,6 +1220,11 @@ def caixa_conferencia(
         despesas_por_forma=[
             DespesaPorFormaOut(forma_pgto=r["forma_pgto"], total=float(r["total"]), quantidade=r["quantidade"])
             for r in despesas_por_forma
+        ],
+        despesas_detalhe=[
+            DespesaConferenciaOut(id=r["id"], data=r["data"], categoria=r["categoria"], valor=float(r["valor"]),
+                                   forma_pgto=r["forma_pgto"], origem=r["origem"])
+            for r in despesas_detalhe
         ],
         saldo_recebido=total_recebido - total_despesas,
         dias=dias,

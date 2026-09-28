@@ -1363,6 +1363,15 @@ class DespesaPorFormaOut(BaseModel):
     quantidade: int
 
 
+class DespesaConferenciaOut(BaseModel):
+    id: int
+    data: date
+    categoria: str
+    valor: float
+    forma_pgto: str | None
+    origem: str  # "Solta" ou "Expedição — <entregador>"
+
+
 class CaixaConferenciaOut(BaseModel):
     de: date
     ate: date
@@ -1372,6 +1381,7 @@ class CaixaConferenciaOut(BaseModel):
     total_despesas_dinheiro: float
     total_despesas_todas_formas: float
     despesas_por_forma: list[DespesaPorFormaOut]
+    despesas_detalhe: list[DespesaConferenciaOut]
     saldo_recebido: float
     dias: list[CaixaConferenciaDiaOut]
     formas_fora_padrao: list[FormaForaPadraoOut]

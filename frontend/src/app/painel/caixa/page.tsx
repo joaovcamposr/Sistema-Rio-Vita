@@ -152,6 +152,31 @@ export default function PainelCaixa() {
                   </table>
                 </div>
 
+                <div className={styles.section}>Despesas do período, uma por uma</div>
+                <p className={styles.hint}>
+                  Inclui as despesas soltas e as lançadas dentro de um acerto de expedição — essas últimas aparecem
+                  como "Expedição — nome do entregador".
+                </p>
+                <div className={styles.tableWrap} style={{ marginBottom: 18 }}>
+                  <table className={styles.tabela}>
+                    <thead><tr><th>Data</th><th>Categoria</th><th>Origem</th><th>Forma</th><th>Valor</th></tr></thead>
+                    <tbody>
+                      {conferencia.despesas_detalhe.length === 0 && (
+                        <tr><td colSpan={5} className={styles.hint}>Nenhuma despesa no período.</td></tr>
+                      )}
+                      {conferencia.despesas_detalhe.map((d) => (
+                        <tr key={d.id}>
+                          <td>{dataBr(d.data)}</td>
+                          <td>{d.categoria}</td>
+                          <td>{d.origem}</td>
+                          <td>{d.forma_pgto ?? <em>vazio</em>}</td>
+                          <td>{moeda(d.valor)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
                 {conferencia.formas_fora_padrao.length > 0 && (
                   <>
                     <div className={styles.section}>
