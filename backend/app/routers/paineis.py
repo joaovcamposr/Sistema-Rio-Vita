@@ -454,17 +454,6 @@ def programacao_abate(db: Session = Depends(get_db)):
             ),
         })
 
-    # horizonte dinâmico: um mês além do lote que demora mais pra ficar
-    # pronto — depois disso não existe mais peixe novo virando disponível
-    # (não projeta povoamento novo), então não há mais o que mostrar
-    if lotes:
-        ultimo_pronto = max(l["pronto_em"] for l in lotes)
-        horizonte_meses = (ultimo_pronto.year - hoje.year) * 12 + (ultimo_pronto.month - hoje.month) + 1
-    else:
-        horizonte_meses = _MESES_PROGRAMACAO_MINIMO
-    horizonte_meses = max(_MESES_PROGRAMACAO_MINIMO, min(horizonte_meses, _MESES_PROGRAMACAO_MAXIMO))
-    fim_horizonte = _primeiro_dia_mes(hoje, horizonte_meses) - timedelta(days=1)
-
     metas = {
         r["mes"]: float(r["kg"])
         for r in db.execute(
@@ -479,13 +468,22 @@ def programacao_abate(db: Session = Depends(get_db)):
     def peso_em(lote: dict, data: date) -> float:
         return _peso_para_semana(curva, semana_em(lote, data))
 
+    # horizonte dinâmico: mês sem meta cadastrada não vira mês vazio — sem
+    # teto pra respeitar, despesca tudo que já estiver pronto naquele mês
+    # (a meta só limita quando o usuário de fato informa um valor). Some
+    # continua sendo gerado enquanto sobrar peixe de algum lote pra
+    # alocar, até o teto de segurança — sem projetar povoamento novo, todo
+    # lote acaba esgotado, então isso sempre converge antes do teto
     meses_out = []
-    for i in range(horizonte_meses):
+    i = 0
+    while i < _MESES_PROGRAMACAO_MAXIMO:
+        if i >= _MESES_PROGRAMACAO_MINIMO and all(l["restantes"] <= 0 for l in lotes):
+            break
         mes = _primeiro_dia_mes(hoje, i)
         fim_mes = _primeiro_dia_mes(hoje, i + 1) - timedelta(days=1)
         meta = metas.get(mes, 0.0)
         referencia = max(mes + timedelta(days=14), hoje)
-        falta = meta
+        falta = meta if meta > 0 else math.inf
         itens = []
         candidatos = sorted(
             (l for l in lotes if l["restantes"] > 0 and l["pronto_em"] <= fim_mes),
@@ -521,7 +519,12 @@ def programacao_abate(db: Session = Depends(get_db)):
             mes=mes, meta_kg=meta, planejado_kg=planejado, diferenca_kg=planejado - meta,
             sobra_kg=sobra_kg, itens=itens,
         ))
+        i += 1
 
+    # com mês sem meta despescando tudo que estiver pronto, isso só fica
+    # não-vazio se um mês com meta explícita e insuficiente for justamente
+    # o último gerado — mantido como rede de segurança
+    fim_horizonte = _primeiro_dia_mes(hoje, i) - timedelta(days=1)
     nao_alocados = []
     for l in lotes:
         if l["restantes"] > 0 and l["pronto_em"] <= fim_horizonte:

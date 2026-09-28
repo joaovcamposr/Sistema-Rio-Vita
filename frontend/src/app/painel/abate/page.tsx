@@ -96,7 +96,9 @@ export default function PainelAbate() {
               {salvando ? "Salvando…" : "Salvar metas"}
             </button>
             <p className={styles.hint} style={{ margin: "0 0 4px" }}>
-              Mostra todo mês em que ainda há peixe ficando pronto para abate — não só os próximos 6.
+              Mostra todo mês em que ainda há peixe ficando pronto para abate — não só os próximos 6. Mês sem meta
+              informada não fica parado: despesca tudo que já estiver pronto naquele mês (a meta só entra como teto
+              quando você informa um valor).
             </p>
 
             {plano.meses.map((m, i) => {
@@ -127,7 +129,7 @@ export default function PainelAbate() {
                     )}
                   </div>
                   {m.itens.length === 0 && (
-                    <p className={styles.hint}>{m.meta_kg > 0 ? "Nenhum lote pronto para abate nesse mês." : "Sem meta informada."}</p>
+                    <p className={styles.hint}>Nenhum lote pronto para abate nesse mês.</p>
                   )}
                   {m.itens.length > 0 && (
                     <div className={styles.tableWrap} style={{ marginBottom: 18 }}>
