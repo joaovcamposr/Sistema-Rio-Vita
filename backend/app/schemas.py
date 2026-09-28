@@ -746,6 +746,7 @@ class ItemDespescaProgramadaOut(BaseModel):
     kg_esperado: float
     data_prevista: date
     parcial: bool
+    abaixo_peso_ideal: bool
 
 
 class MesProgramacaoOut(BaseModel):
@@ -770,6 +771,7 @@ class LoteNaoAlocadoOut(BaseModel):
 
 class ProgramacaoAbateOut(BaseModel):
     mortalidade: list[MortalidadeConsideradaOut]
+    peso_ideal_abate_g: float
     meses: list[MesProgramacaoOut]
     nao_alocados: list[LoteNaoAlocadoOut]
 

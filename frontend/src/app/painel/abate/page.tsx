@@ -174,7 +174,18 @@ export default function PainelAbate() {
                                 {nf(it.peixes_a_despescar)}
                                 {it.parcial && <span className={`${styles.badge} ${styles.badgeWarn}`} style={{ marginLeft: 4 }}>parcial</span>}
                               </td>
-                              <td>{nf(it.peso_medio_esperado_g)} g</td>
+                              <td>
+                                {nf(it.peso_medio_esperado_g)} g
+                                {it.abaixo_peso_ideal && (
+                                  <span
+                                    className={`${styles.badge} ${styles.badgeCrit}`}
+                                    style={{ marginLeft: 4 }}
+                                    title={`Peso ideal de abate: ${nf(plano.peso_ideal_abate_g)} g`}
+                                  >
+                                    abaixo do peso ideal
+                                  </span>
+                                )}
+                              </td>
                               <td>{it.semana_abate}</td>
                               <td>{nf(it.kg_esperado)} kg</td>
                               <td>{dataBr(it.data_prevista)}</td>

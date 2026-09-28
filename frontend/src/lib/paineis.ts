@@ -383,6 +383,7 @@ export interface ItemDespescaProgramada {
   kg_esperado: number;
   data_prevista: string;
   parcial: boolean;
+  abaixo_peso_ideal: boolean;
 }
 
 export interface MesProgramacao {
@@ -407,6 +408,7 @@ export interface LoteNaoAlocado {
 
 export interface ProgramacaoAbate {
   mortalidade: MortalidadeConsiderada[];
+  peso_ideal_abate_g: number;
   meses: MesProgramacao[];
   nao_alocados: LoteNaoAlocado[];
 }

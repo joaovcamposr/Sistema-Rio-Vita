@@ -475,6 +475,10 @@ def programacao_abate(db: Session = Depends(get_db)):
         # que só é atingido no fim da semana da despesca).
         return _peso_para_semana(curva, semana_em(lote, data) - 1)
 
+    # peso "cheio" da semana limite — referência de peso ideal de abate;
+    # despescar abaixo disso é abater peixe que ainda não chegou lá
+    peso_ideal_abate_g = _peso_para_semana(curva, SEMANA_LIMITE_ABATE)
+
     # rendimento médio histórico (todo o período com dado) usado só pra
     # mostrar quanto do planejado (peixe vivo) deve virar filé — mesma
     # conta de /producao/resumo, sem filtro de data pra não depender de
@@ -542,6 +546,7 @@ def programacao_abate(db: Session = Depends(get_db)):
                 saldo_atual_un=l["saldo"], peixes_vivos_esperados=l["vivos_esperados"],
                 peixes_a_despescar=pegar, peso_medio_esperado_g=peso, semana_abate=semana_em(l, colheita),
                 kg_esperado=kg, data_prevista=colheita, parcial=pegar < p["restantes_antes"],
+                abaixo_peso_ideal=peso < peso_ideal_abate_g - 0.05,
             ))
         planejado = sum(it.kg_esperado for it in itens)
         # sobra do mês: peixe já pronto até esse mês, mas que ainda não foi
@@ -572,7 +577,10 @@ def programacao_abate(db: Session = Depends(get_db)):
                 kg_fim_horizonte=l["restantes"] * peso / 1000,
             ))
 
-    return ProgramacaoAbateOut(mortalidade=[m_pre, m_eng], meses=meses_out, nao_alocados=nao_alocados)
+    return ProgramacaoAbateOut(
+        mortalidade=[m_pre, m_eng], peso_ideal_abate_g=peso_ideal_abate_g,
+        meses=meses_out, nao_alocados=nao_alocados,
+    )
 
 
 def _rendimento_por_destino(db: Session, de: date, ate: date, like_padrao: str, destino: str) -> float | None:
