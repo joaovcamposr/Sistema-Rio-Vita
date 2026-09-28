@@ -628,6 +628,39 @@ export const painelCaixa = (de?: string, ate?: string) => {
   return cachedGet<CaixaResumo>(`cache:painel:caixa:${de ?? ""}:${ate ?? ""}`, `/paineis/caixa${qs}`);
 };
 
+export interface CaixaConferenciaDia {
+  dia: string;
+  recebido_dinheiro: number;
+  despesas_dinheiro: number;
+  saldo: number;
+}
+
+export interface FormaForaPadrao {
+  tipo: "venda" | "despesa";
+  id: number;
+  data: string;
+  valor: number;
+  forma_pgto: string | null;
+  referencia: string;
+}
+
+export interface CaixaConferencia {
+  de: string;
+  ate: string;
+  total_lancado_dinheiro: number;
+  total_recebido_dinheiro: number;
+  total_pendente_dinheiro: number;
+  total_despesas_dinheiro: number;
+  saldo_recebido: number;
+  dias: CaixaConferenciaDia[];
+  formas_fora_padrao: FormaForaPadrao[];
+}
+
+export const caixaConferencia = (de?: string, ate?: string) => {
+  const qs = de && ate ? `?de=${de}&ate=${ate}` : "";
+  return cachedGet<CaixaConferencia>(`cache:painel:caixa-conferencia:${de ?? ""}:${ate ?? ""}`, `/paineis/caixa/conferencia${qs}`);
+};
+
 export interface AcertoDiferenca {
   produto_id: number;
   produto_nome: string;

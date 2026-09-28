@@ -20,6 +20,8 @@ from ..schemas import (
     AguaViveiroOut,
     ArracoamentoDetalheOut,
     ArracoamentoPrevistoDiaOut,
+    CaixaConferenciaDiaOut,
+    CaixaConferenciaOut,
     CaixaDiaOut,
     CaixaResumoOut,
     ComercialResumoOut,
@@ -32,6 +34,7 @@ from ..schemas import (
     EstoqueItemOut,
     EventoProjetadoOut,
     ExpedicaoAbertaOut,
+    FormaForaPadraoOut,
     HistoricoLoteOut,
     ItemDespescaProgramadaOut,
     ItemRepicagemOut,
@@ -1091,6 +1094,108 @@ def painel_caixa(
             ExpedicaoAbertaOut(id=a["id"], vendedor_nome=a["vendedor_nome"], data_saida=a["data_saida"],
                                 dias_em_aberto=(hoje - a["data_saida"]).days)
             for a in abertas
+        ],
+    )
+
+
+_FORMAS_PADRAO = ("dinheiro", "pix", "boleto", "cheque")
+
+
+@router.get("/caixa/conferencia", response_model=CaixaConferenciaOut)
+def caixa_conferencia(
+    de: date | None = Query(default=None),
+    ate: date | None = Query(default=None),
+    db: Session = Depends(get_db),
+):
+    """Ajuda a conferir o Caixa contra o dinheiro físico. Duas diferenças
+    de propósito em relação ao Caixa normal (vw_caixa_dia), que continua
+    valendo como está — isto aqui é só uma lupa em cima do mesmo dado:
+
+    1. 'Recebido' agrupa pela data em que o dinheiro realmente entrou
+       (venda.data_pagamento), não pela data da venda — uma venda lançada
+       'a prazo' com forma Dinheiro só conta aqui no dia em que for
+       marcada como paga, não no dia em que foi vendida.
+    2. Casa a forma de pagamento ignorando maiúscula/espaço (ILIKE
+       trim), e lista à parte qualquer forma fora de Dinheiro/Pix/Boleto/
+       Cheque — provável erro de digitação que faria a venda ou despesa
+       sumir da conferência de caixa sem aviso."""
+    ate = ate or date.today()
+    de = de or (ate - timedelta(days=30))
+
+    lancado = db.execute(
+        text("""
+            SELECT COALESCE(SUM(valor_total), 0) FROM venda
+            WHERE lower(trim(forma_pgto)) = 'dinheiro' AND excluido_em IS NULL AND data BETWEEN :de AND :ate
+        """), {"de": de, "ate": ate},
+    ).scalar_one()
+
+    pendente = db.execute(
+        text("""
+            SELECT COALESCE(SUM(valor_total), 0) FROM venda
+            WHERE lower(trim(forma_pgto)) = 'dinheiro' AND excluido_em IS NULL AND data_pagamento IS NULL
+              AND data BETWEEN :de AND :ate
+        """), {"de": de, "ate": ate},
+    ).scalar_one()
+
+    recebido_por_dia = {
+        r["dia"]: float(r["total"])
+        for r in db.execute(
+            text("""
+                SELECT data_pagamento AS dia, SUM(valor_total) AS total FROM venda
+                WHERE lower(trim(forma_pgto)) = 'dinheiro' AND excluido_em IS NULL
+                  AND data_pagamento BETWEEN :de AND :ate
+                GROUP BY data_pagamento
+            """), {"de": de, "ate": ate},
+        ).mappings().all()
+    }
+    despesas_por_dia = {
+        r["dia"]: float(r["total"])
+        for r in db.execute(
+            text("""
+                SELECT data AS dia, SUM(valor) AS total FROM despesa
+                WHERE lower(trim(forma_pgto)) = 'dinheiro' AND excluido_em IS NULL AND data BETWEEN :de AND :ate
+                GROUP BY data
+            """), {"de": de, "ate": ate},
+        ).mappings().all()
+    }
+    todos_dias = sorted(set(recebido_por_dia) | set(despesas_por_dia))
+    dias = [
+        CaixaConferenciaDiaOut(
+            dia=d, recebido_dinheiro=recebido_por_dia.get(d, 0.0), despesas_dinheiro=despesas_por_dia.get(d, 0.0),
+            saldo=recebido_por_dia.get(d, 0.0) - despesas_por_dia.get(d, 0.0),
+        )
+        for d in todos_dias
+    ]
+    total_despesas = sum(d.despesas_dinheiro for d in dias)
+    total_recebido = sum(d.recebido_dinheiro for d in dias)
+
+    placeholders = ", ".join(f"'{f}'" for f in _FORMAS_PADRAO)
+    fora_padrao = db.execute(
+        text(f"""
+            SELECT 'venda' AS tipo, v.id, v.data, v.valor_total AS valor, v.forma_pgto,
+                   COALESCE(c.nome, v.vendedor, 'Sem cliente') AS referencia
+            FROM venda v LEFT JOIN cliente c ON c.id = v.cliente_id
+            WHERE v.excluido_em IS NULL AND v.data BETWEEN :de AND :ate
+              AND (v.forma_pgto IS NULL OR lower(trim(v.forma_pgto)) NOT IN ({placeholders}))
+            UNION ALL
+            SELECT 'despesa', d.id, d.data, d.valor, d.forma_pgto, d.categoria
+            FROM despesa d
+            WHERE d.excluido_em IS NULL AND d.data BETWEEN :de AND :ate
+              AND (d.forma_pgto IS NULL OR lower(trim(d.forma_pgto)) NOT IN ({placeholders}))
+            ORDER BY data DESC
+        """), {"de": de, "ate": ate},
+    ).mappings().all()
+
+    return CaixaConferenciaOut(
+        de=de, ate=ate,
+        total_lancado_dinheiro=float(lancado), total_recebido_dinheiro=total_recebido,
+        total_pendente_dinheiro=float(pendente), total_despesas_dinheiro=total_despesas,
+        saldo_recebido=total_recebido - total_despesas,
+        dias=dias,
+        formas_fora_padrao=[
+            FormaForaPadraoOut(tipo=r["tipo"], id=r["id"], data=r["data"], valor=float(r["valor"]),
+                                forma_pgto=r["forma_pgto"], referencia=r["referencia"])
+            for r in fora_padrao
         ],
     )
 

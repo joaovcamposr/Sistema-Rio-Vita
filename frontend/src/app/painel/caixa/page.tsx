@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { painelCaixa, type CaixaResumo } from "@/lib/paineis";
+import { caixaConferencia, painelCaixa, type CaixaConferencia, type CaixaResumo } from "@/lib/paineis";
 import styles from "../painel.module.css";
 
 function hojeISO(): string {
@@ -26,11 +26,14 @@ export default function PainelCaixa() {
   const [de, setDe] = useState(diasAtras(30));
   const [ate, setAte] = useState(hojeISO());
   const [dados, setDados] = useState<CaixaResumo | null>(null);
+  const [conferencia, setConferencia] = useState<CaixaConferencia | null>(null);
   const [erro, setErro] = useState<string | null>(null);
 
   useEffect(() => {
     setDados(null);
+    setConferencia(null);
     painelCaixa(de, ate).then(setDados).catch(() => setErro("Sem conexão e sem dado salvo deste aparelho ainda."));
+    caixaConferencia(de, ate).then(setConferencia).catch(() => undefined);
   }, [de, ate]);
 
   return (
@@ -93,6 +96,59 @@ export default function PainelCaixa() {
                     </tbody>
                   </table>
                 </div>
+              </>
+            )}
+
+            {conferencia && (
+              <>
+                <div className={styles.section}>Conferência — dinheiro que realmente entrou</div>
+                <p className={styles.hint}>
+                  Os cartões acima somam pela data da venda; venda "a prazo" já entra lá no dia em que foi lançada,
+                  mesmo sem o dinheiro ter chegado ainda. Aqui embaixo é pela data em que a venda foi marcada como
+                  paga — mais parecido com o que deveria estar na gaveta.
+                </p>
+                <div className={styles.cards}>
+                  <div className={styles.card}>
+                    <div className={styles.cardLabel}>Recebido em dinheiro no período</div>
+                    <div className={styles.cardValue}>{moeda(conferencia.total_recebido_dinheiro)}</div>
+                  </div>
+                  <div className={styles.card}>
+                    <div className={styles.cardLabel}>Ainda a receber (lançado, não pago)</div>
+                    <div className={styles.cardValue}>{moeda(conferencia.total_pendente_dinheiro)}</div>
+                  </div>
+                  <div className={styles.card}>
+                    <div className={styles.cardLabel}>Saldo real (recebido − despesas)</div>
+                    <div className={styles.cardValue}>{moeda(conferencia.saldo_recebido)}</div>
+                  </div>
+                </div>
+
+                {conferencia.formas_fora_padrao.length > 0 && (
+                  <>
+                    <div className={styles.section}>
+                      Forma de pagamento fora do padrão ({conferencia.formas_fora_padrao.length})
+                    </div>
+                    <p className={styles.hint}>
+                      Nem Dinheiro, nem Pix, Boleto ou Cheque — provável erro de digitação. Esses lançamentos não
+                      entram em nenhum total de dinheiro do Caixa, nem no de cima nem no de baixo.
+                    </p>
+                    <div className={styles.tableWrap} style={{ marginBottom: 18 }}>
+                      <table className={styles.tabela}>
+                        <thead><tr><th>Tipo</th><th>Data</th><th>Quem/o quê</th><th>Valor</th><th>Forma digitada</th></tr></thead>
+                        <tbody>
+                          {conferencia.formas_fora_padrao.map((f) => (
+                            <tr key={`${f.tipo}-${f.id}`}>
+                              <td>{f.tipo === "venda" ? "Venda" : "Despesa"}</td>
+                              <td>{dataBr(f.data)}</td>
+                              <td>{f.referencia}</td>
+                              <td>{moeda(f.valor)}</td>
+                              <td>{f.forma_pgto ?? <em>vazio</em>}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                )}
               </>
             )}
 

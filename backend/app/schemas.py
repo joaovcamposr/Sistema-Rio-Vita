@@ -1338,6 +1338,37 @@ class ExpedicaoAbertaOut(BaseModel):
     dias_em_aberto: int
 
 
+# ---------- Conferência de caixa ----------
+
+
+class CaixaConferenciaDiaOut(BaseModel):
+    dia: date
+    recebido_dinheiro: float
+    despesas_dinheiro: float
+    saldo: float
+
+
+class FormaForaPadraoOut(BaseModel):
+    tipo: str  # "venda" | "despesa"
+    id: int
+    data: date
+    valor: float
+    forma_pgto: str | None
+    referencia: str  # nome do cliente (venda) ou categoria (despesa)
+
+
+class CaixaConferenciaOut(BaseModel):
+    de: date
+    ate: date
+    total_lancado_dinheiro: float
+    total_recebido_dinheiro: float
+    total_pendente_dinheiro: float
+    total_despesas_dinheiro: float
+    saldo_recebido: float
+    dias: list[CaixaConferenciaDiaOut]
+    formas_fora_padrao: list[FormaForaPadraoOut]
+
+
 class CaixaResumoOut(BaseModel):
     de: date
     ate: date
