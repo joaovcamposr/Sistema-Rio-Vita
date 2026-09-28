@@ -659,6 +659,17 @@ export interface DespesaConferencia {
   origem: string;
 }
 
+export interface VendaConferencia {
+  id: number;
+  data: string;
+  data_pagamento: string | null;
+  cliente_nome: string;
+  produto_nome: string;
+  valor_total: number;
+  forma_pgto: string | null;
+  fora_do_periodo: boolean;
+}
+
 export interface CaixaConferencia {
   de: string;
   ate: string;
@@ -669,9 +680,13 @@ export interface CaixaConferencia {
   total_despesas_todas_formas: number;
   despesas_por_forma: DespesaPorForma[];
   despesas_detalhe: DespesaConferencia[];
+  vendas_recebidas: VendaConferencia[];
+  vendas_pendentes: VendaConferencia[];
+  total_recebido_fora_do_periodo: number;
   saldo_recebido: number;
   dias: CaixaConferenciaDia[];
   formas_fora_padrao: FormaForaPadrao[];
+  expedicoes_abertas: ExpedicaoAberta[];
 }
 
 export const caixaConferencia = (de?: string, ate?: string) => {

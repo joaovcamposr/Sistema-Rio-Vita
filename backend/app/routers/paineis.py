@@ -71,6 +71,7 @@ from ..schemas import (
     UltimaAgua,
     UltimaBiometria,
     VendaClienteProdutoOut,
+    VendaConferenciaOut,
     VendaPorClienteOut,
     VendaPorProdutoOut,
     ViveiroAlertaOut,
@@ -1123,6 +1124,14 @@ def caixa_conferencia(
        sumir da conferência de caixa sem aviso."""
     ate = ate or date.today()
     de = de or (ate - timedelta(days=30))
+    hoje = date.today()
+
+    abertas = db.execute(text("""
+        SELECT e.id, v.nome AS vendedor_nome, e.data_saida
+        FROM expedicao e JOIN vendedor v ON v.id = e.vendedor_id
+        WHERE e.data_acerto IS NULL
+        ORDER BY e.data_saida
+    """)).mappings().all()
 
     lancado = db.execute(
         text("""
@@ -1195,6 +1204,35 @@ def caixa_conferencia(
         """), {"de": de, "ate": ate},
     ).mappings().all()
 
+    _VENDA_CONFERENCIA_COLUNAS = """
+        v.id, v.data, v.data_pagamento, COALESCE(c.nome, v.vendedor, 'Sem cliente') AS cliente_nome,
+        pr.nome AS produto_nome, v.valor_total, v.forma_pgto
+    """
+    _VENDA_CONFERENCIA_FROM = """
+        FROM venda v
+        LEFT JOIN cliente c ON c.id = v.cliente_id
+        JOIN produto pr ON pr.id = v.produto_id
+    """
+    vendas_recebidas = db.execute(
+        text(f"""
+            SELECT {_VENDA_CONFERENCIA_COLUNAS} {_VENDA_CONFERENCIA_FROM}
+            WHERE lower(trim(v.forma_pgto)) = 'dinheiro' AND v.excluido_em IS NULL
+              AND v.data_pagamento BETWEEN :de AND :ate
+            ORDER BY v.data_pagamento DESC, v.id DESC
+        """), {"de": de, "ate": ate},
+    ).mappings().all()
+    vendas_pendentes = db.execute(
+        text(f"""
+            SELECT {_VENDA_CONFERENCIA_COLUNAS} {_VENDA_CONFERENCIA_FROM}
+            WHERE lower(trim(v.forma_pgto)) = 'dinheiro' AND v.excluido_em IS NULL
+              AND v.data_pagamento IS NULL AND v.data BETWEEN :de AND :ate
+            ORDER BY v.data DESC, v.id DESC
+        """), {"de": de, "ate": ate},
+    ).mappings().all()
+    total_recebido_fora_do_periodo = sum(
+        float(r["valor_total"]) for r in vendas_recebidas if r["data"] < de
+    )
+
     placeholders = ", ".join(f"'{f}'" for f in _FORMAS_PADRAO)
     fora_padrao = db.execute(
         text(f"""
@@ -1226,7 +1264,27 @@ def caixa_conferencia(
                                    forma_pgto=r["forma_pgto"], origem=r["origem"])
             for r in despesas_detalhe
         ],
+        vendas_recebidas=[
+            VendaConferenciaOut(id=r["id"], data=r["data"], data_pagamento=r["data_pagamento"],
+                                 cliente_nome=r["cliente_nome"], produto_nome=r["produto_nome"],
+                                 valor_total=float(r["valor_total"]), forma_pgto=r["forma_pgto"],
+                                 fora_do_periodo=r["data"] < de)
+            for r in vendas_recebidas
+        ],
+        vendas_pendentes=[
+            VendaConferenciaOut(id=r["id"], data=r["data"], data_pagamento=r["data_pagamento"],
+                                 cliente_nome=r["cliente_nome"], produto_nome=r["produto_nome"],
+                                 valor_total=float(r["valor_total"]), forma_pgto=r["forma_pgto"],
+                                 fora_do_periodo=False)
+            for r in vendas_pendentes
+        ],
+        total_recebido_fora_do_periodo=total_recebido_fora_do_periodo,
         saldo_recebido=total_recebido - total_despesas,
+        expedicoes_abertas=[
+            ExpedicaoAbertaOut(id=a["id"], vendedor_nome=a["vendedor_nome"], data_saida=a["data_saida"],
+                                dias_em_aberto=(hoje - a["data_saida"]).days)
+            for a in abertas
+        ],
         dias=dias,
         formas_fora_padrao=[
             FormaForaPadraoOut(tipo=r["tipo"], id=r["id"], data=r["data"], valor=float(r["valor"]),

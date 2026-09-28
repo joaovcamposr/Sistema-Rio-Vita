@@ -1372,6 +1372,17 @@ class DespesaConferenciaOut(BaseModel):
     origem: str  # "Solta" ou "Expedição — <entregador>"
 
 
+class VendaConferenciaOut(BaseModel):
+    id: int
+    data: date
+    data_pagamento: date | None
+    cliente_nome: str
+    produto_nome: str
+    valor_total: float
+    forma_pgto: str | None
+    fora_do_periodo: bool  # true = a venda em si é de antes do "De" do filtro
+
+
 class CaixaConferenciaOut(BaseModel):
     de: date
     ate: date
@@ -1382,9 +1393,13 @@ class CaixaConferenciaOut(BaseModel):
     total_despesas_todas_formas: float
     despesas_por_forma: list[DespesaPorFormaOut]
     despesas_detalhe: list[DespesaConferenciaOut]
+    vendas_recebidas: list[VendaConferenciaOut]
+    vendas_pendentes: list[VendaConferenciaOut]
+    total_recebido_fora_do_periodo: float
     saldo_recebido: float
     dias: list[CaixaConferenciaDiaOut]
     formas_fora_padrao: list[FormaForaPadraoOut]
+    expedicoes_abertas: list[ExpedicaoAbertaOut]
 
 
 class CaixaResumoOut(BaseModel):
