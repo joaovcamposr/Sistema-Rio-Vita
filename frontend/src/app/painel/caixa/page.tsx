@@ -122,6 +122,36 @@ export default function PainelCaixa() {
                   </div>
                 </div>
 
+                <div className={styles.section}>Todas as despesas do período, por forma de pagamento</div>
+                <p className={styles.hint}>
+                  O Caixa só soma despesas em Dinheiro. Aqui embaixo entram todas, de qualquer forma, pra comparar o
+                  total geral com o total só de dinheiro e ver se sobrou alguma coisa de fora.
+                </p>
+                <div className={styles.tableWrap} style={{ marginBottom: 18 }}>
+                  <table className={styles.tabela}>
+                    <thead><tr><th>Forma de pagamento</th><th>Quantidade</th><th>Total</th></tr></thead>
+                    <tbody>
+                      {conferencia.despesas_por_forma.length === 0 && (
+                        <tr><td colSpan={3} className={styles.hint}>Nenhuma despesa no período.</td></tr>
+                      )}
+                      {conferencia.despesas_por_forma.map((d) => (
+                        <tr key={d.forma_pgto}>
+                          <td>{d.forma_pgto}</td>
+                          <td>{d.quantidade}</td>
+                          <td>{moeda(d.total)}</td>
+                        </tr>
+                      ))}
+                      {conferencia.despesas_por_forma.length > 0 && (
+                        <tr style={{ fontWeight: 700 }}>
+                          <td>Total geral</td>
+                          <td></td>
+                          <td>{moeda(conferencia.total_despesas_todas_formas)}</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
                 {conferencia.formas_fora_padrao.length > 0 && (
                   <>
                     <div className={styles.section}>

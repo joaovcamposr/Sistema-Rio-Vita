@@ -644,6 +644,12 @@ export interface FormaForaPadrao {
   referencia: string;
 }
 
+export interface DespesaPorForma {
+  forma_pgto: string;
+  total: number;
+  quantidade: number;
+}
+
 export interface CaixaConferencia {
   de: string;
   ate: string;
@@ -651,6 +657,8 @@ export interface CaixaConferencia {
   total_recebido_dinheiro: number;
   total_pendente_dinheiro: number;
   total_despesas_dinheiro: number;
+  total_despesas_todas_formas: number;
+  despesas_por_forma: DespesaPorForma[];
   saldo_recebido: number;
   dias: CaixaConferenciaDia[];
   formas_fora_padrao: FormaForaPadrao[];

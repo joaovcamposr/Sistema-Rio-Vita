@@ -1357,6 +1357,12 @@ class FormaForaPadraoOut(BaseModel):
     referencia: str  # nome do cliente (venda) ou categoria (despesa)
 
 
+class DespesaPorFormaOut(BaseModel):
+    forma_pgto: str
+    total: float
+    quantidade: int
+
+
 class CaixaConferenciaOut(BaseModel):
     de: date
     ate: date
@@ -1364,6 +1370,8 @@ class CaixaConferenciaOut(BaseModel):
     total_recebido_dinheiro: float
     total_pendente_dinheiro: float
     total_despesas_dinheiro: float
+    total_despesas_todas_formas: float
+    despesas_por_forma: list[DespesaPorFormaOut]
     saldo_recebido: float
     dias: list[CaixaConferenciaDiaOut]
     formas_fora_padrao: list[FormaForaPadraoOut]

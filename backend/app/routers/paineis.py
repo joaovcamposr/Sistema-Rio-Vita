@@ -28,6 +28,7 @@ from ..schemas import (
     ComercialSerieBucketOut,
     ComercialSerieOut,
     DashboardOut,
+    DespesaPorFormaOut,
     DespescaDetalheOut,
     DespescaPreviaOut,
     DisponibilidadeTanqueOut,
@@ -1169,6 +1170,17 @@ def caixa_conferencia(
     total_despesas = sum(d.despesas_dinheiro for d in dias)
     total_recebido = sum(d.recebido_dinheiro for d in dias)
 
+    despesas_por_forma = db.execute(
+        text("""
+            SELECT COALESCE(NULLIF(TRIM(forma_pgto), ''), '(vazio)') AS forma_pgto,
+                   SUM(valor) AS total, COUNT(*) AS quantidade
+            FROM despesa
+            WHERE excluido_em IS NULL AND data BETWEEN :de AND :ate
+            GROUP BY 1 ORDER BY total DESC
+        """), {"de": de, "ate": ate},
+    ).mappings().all()
+    total_despesas_todas_formas = sum(float(r["total"]) for r in despesas_por_forma)
+
     placeholders = ", ".join(f"'{f}'" for f in _FORMAS_PADRAO)
     fora_padrao = db.execute(
         text(f"""
@@ -1190,6 +1202,11 @@ def caixa_conferencia(
         de=de, ate=ate,
         total_lancado_dinheiro=float(lancado), total_recebido_dinheiro=total_recebido,
         total_pendente_dinheiro=float(pendente), total_despesas_dinheiro=total_despesas,
+        total_despesas_todas_formas=total_despesas_todas_formas,
+        despesas_por_forma=[
+            DespesaPorFormaOut(forma_pgto=r["forma_pgto"], total=float(r["total"]), quantidade=r["quantidade"])
+            for r in despesas_por_forma
+        ],
         saldo_recebido=total_recebido - total_despesas,
         dias=dias,
         formas_fora_padrao=[
