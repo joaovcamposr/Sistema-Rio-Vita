@@ -388,7 +388,11 @@ def painel_abate(db: Session = Depends(get_db)):
     return out
 
 
-_MESES_PROGRAMACAO = 6
+_MESES_PROGRAMACAO_MINIMO = 1
+# trava de segurança — nenhum lote ativo hoje demora mais que isso pra
+# ficar pronto (SEMANA_LIMITE_ABATE=26 já limita isso), só evita loop
+# infinito se algo escapar da regra
+_MESES_PROGRAMACAO_MAXIMO = 24
 
 
 def _primeiro_dia_mes(base: date, deslocamento: int) -> date:
@@ -429,13 +433,6 @@ def programacao_abate(db: Session = Depends(get_db)):
     m_eng = fase_mortalidade("engorda", mortalidade.taxa_media_engorda)
 
     inicio = _primeiro_dia_mes(hoje, 0)
-    fim_horizonte = _primeiro_dia_mes(hoje, _MESES_PROGRAMACAO) - timedelta(days=1)
-    metas = {
-        r["mes"]: float(r["kg"])
-        for r in db.execute(
-            text("SELECT mes, kg FROM meta_abate_mensal WHERE mes >= :inicio"), {"inicio": inicio}
-        ).mappings().all()
-    }
 
     lotes = []
     for v in viveiros:
@@ -457,12 +454,33 @@ def programacao_abate(db: Session = Depends(get_db)):
             ),
         })
 
-    def peso_em(lote: dict, data: date) -> float:
+    # horizonte dinâmico: um mês além do lote que demora mais pra ficar
+    # pronto — depois disso não existe mais peixe novo virando disponível
+    # (não projeta povoamento novo), então não há mais o que mostrar
+    if lotes:
+        ultimo_pronto = max(l["pronto_em"] for l in lotes)
+        horizonte_meses = (ultimo_pronto.year - hoje.year) * 12 + (ultimo_pronto.month - hoje.month) + 1
+    else:
+        horizonte_meses = _MESES_PROGRAMACAO_MINIMO
+    horizonte_meses = max(_MESES_PROGRAMACAO_MINIMO, min(horizonte_meses, _MESES_PROGRAMACAO_MAXIMO))
+    fim_horizonte = _primeiro_dia_mes(hoje, horizonte_meses) - timedelta(days=1)
+
+    metas = {
+        r["mes"]: float(r["kg"])
+        for r in db.execute(
+            text("SELECT mes, kg FROM meta_abate_mensal WHERE mes >= :inicio"), {"inicio": inicio}
+        ).mappings().all()
+    }
+
+    def semana_em(lote: dict, data: date) -> int:
         semanas = round((data - hoje).days / 7)
-        return _peso_para_semana(curva, lote["semana_hoje"] + _avanco_semanas(semanas))
+        return min(lote["semana_hoje"] + _avanco_semanas(semanas), curva[-1]["semana"])
+
+    def peso_em(lote: dict, data: date) -> float:
+        return _peso_para_semana(curva, semana_em(lote, data))
 
     meses_out = []
-    for i in range(_MESES_PROGRAMACAO):
+    for i in range(horizonte_meses):
         mes = _primeiro_dia_mes(hoje, i)
         fim_mes = _primeiro_dia_mes(hoje, i + 1) - timedelta(days=1)
         meta = metas.get(mes, 0.0)
@@ -486,14 +504,22 @@ def programacao_abate(db: Session = Depends(get_db)):
             itens.append(ItemDespescaProgramadaOut(
                 viveiro_codigo=l["viveiro"], lote_codigo=l["lote"], fase=l["fase"],
                 saldo_atual_un=l["saldo"], peixes_vivos_esperados=l["vivos_esperados"],
-                peixes_a_despescar=pegar, peso_medio_esperado_g=peso, kg_esperado=kg,
-                data_prevista=colheita, parcial=pegar < l["restantes"],
+                peixes_a_despescar=pegar, peso_medio_esperado_g=peso, semana_abate=semana_em(l, colheita),
+                kg_esperado=kg, data_prevista=colheita, parcial=pegar < l["restantes"],
             ))
             l["restantes"] -= pegar
             falta -= kg
         planejado = sum(it.kg_esperado for it in itens)
+        # sobra do mês: peixe já pronto até esse mês, mas que ainda não foi
+        # usado em nenhum mês (nem esse nem os anteriores) — continua
+        # crescendo no tanque, não é perda, só mostra o que sobrou parado
+        sobra_kg = sum(
+            l["restantes"] * peso_em(l, fim_mes) / 1000
+            for l in lotes if l["restantes"] > 0 and l["pronto_em"] <= fim_mes
+        )
         meses_out.append(MesProgramacaoOut(
-            mes=mes, meta_kg=meta, planejado_kg=planejado, diferenca_kg=planejado - meta, itens=itens,
+            mes=mes, meta_kg=meta, planejado_kg=planejado, diferenca_kg=planejado - meta,
+            sobra_kg=sobra_kg, itens=itens,
         ))
 
     nao_alocados = []

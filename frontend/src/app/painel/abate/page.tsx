@@ -23,14 +23,13 @@ function nomeMes(iso: string): string {
   return nome.charAt(0).toUpperCase() + nome.slice(1);
 }
 
-const FASE_LABEL: Record<string, string> = { pre_engorda: "Pré-engorda", engorda: "Engorda" };
+const FASE_LABEL: Record<string, string> = { pre_engorda: "PE", engorda: "Eng" };
 
 export default function PainelAbate() {
   const router = useRouter();
   const [dados, setDados] = useState<Abate[] | null>(null);
   const [plano, setPlano] = useState<ProgramacaoAbate | null>(null);
   const [metas, setMetas] = useState<string[]>([]);
-  const [mesSelecionado, setMesSelecionado] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
@@ -42,7 +41,6 @@ export default function PainelAbate() {
       .then((p) => {
         setPlano(p);
         setMetas(p.meses.map((m) => (m.meta_kg > 0 ? String(m.meta_kg).replace(".", ",") : "")));
-        setMesSelecionado((atual) => atual ?? p.meses[0]?.mes ?? null);
       })
       .catch(() => undefined);
   }
@@ -70,10 +68,9 @@ export default function PainelAbate() {
   }
 
   const prontos = dados?.filter((a) => a.pronto).length ?? 0;
-  const mes = plano?.meses.find((m) => m.mes === mesSelecionado) ?? null;
 
   return (
-    <div className={styles.page}>
+    <div className={styles.page} style={{ maxWidth: "none" }}>
       <div className={styles.appbar}>
         <button className={styles.backbtn} aria-label="Voltar" onClick={() => router.push("/painel")}>
           ←
@@ -85,110 +82,92 @@ export default function PainelAbate() {
       </div>
       <div className={styles.body}>
         {erro && <div className={styles.erro}>{erro}</div>}
-
-        <div className={styles.section} style={{ marginTop: 0 }}>Meta por mês (Kg de peixe despescado)</div>
         {!plano && <div className={styles.carregando}>Carregando…</div>}
+
         {plano && (
           <>
-            <p className={styles.hint} style={{ margin: "0 0 10px" }}>
-              Clique num mês pra ver o detalhe por tanque logo abaixo.
+            <button
+              type="button" onClick={salvarMetas} disabled={salvando}
+              style={{
+                float: "right", padding: "9px 16px", borderRadius: 9, border: "none", background: "var(--brand)",
+                color: "var(--brand-ink)", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer",
+              }}
+            >
+              {salvando ? "Salvando…" : "Salvar metas"}
+            </button>
+            <p className={styles.hint} style={{ margin: "0 0 4px" }}>
+              Mostra todo mês em que ainda há peixe ficando pronto para abate — não só os próximos 6.
             </p>
-            <div className={styles.cards}>
-              {plano.meses.map((m, i) => {
-                const curto = m.meta_kg > 0 && m.diferenca_kg < -0.5;
-                const ativo = mesSelecionado === m.mes;
-                return (
-                  <button
-                    key={m.mes}
-                    type="button"
-                    onClick={() => setMesSelecionado(m.mes)}
-                    className={styles.card}
-                    style={{
-                      textAlign: "left", cursor: "pointer", font: "inherit", color: "inherit",
-                      border: ativo ? "2px solid var(--brand)" : undefined,
-                    }}
-                  >
-                    <div className={styles.cardLabel}>{nomeMes(m.mes)}</div>
-                    <div style={{ display: "flex", alignItems: "baseline", gap: 6, margin: "4px 0" }}>
+
+            {plano.meses.map((m, i) => {
+              const curto = m.meta_kg > 0 && m.diferenca_kg < -0.5;
+              return (
+                <div key={m.mes}>
+                  <div className={styles.section} style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10 }}>
+                    <span>{nomeMes(m.mes)}</span>
+                    <span style={{ display: "flex", alignItems: "center", gap: 4, fontWeight: 400, fontSize: "0.82rem" }}>
+                      meta
                       <input
-                        type="number" inputMode="decimal" placeholder="0" style={{ width: 100 }}
+                        type="number" inputMode="decimal" placeholder="0" style={{ width: 90 }}
                         value={metas[i] ?? ""}
-                        onClick={(e) => e.stopPropagation()}
                         onChange={(e) => setMetas((atual) => atual.map((v, j) => (j === i ? e.target.value : v)))}
                       />
-                      <span className={styles.cardSub} style={{ margin: 0 }}>kg meta</span>
-                    </div>
-                    <div className={styles.cardSub}>
-                      Planejado: {nf(m.planejado_kg)} kg
-                      {curto && (
-                        <span className={`${styles.badge} ${styles.badgeCrit}`} style={{ marginLeft: 6 }}>
-                          faltam {nf(-m.diferenca_kg)} kg
-                        </span>
-                      )}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-            <div style={{ margin: "12px 0 24px" }}>
-              <button
-                type="button" onClick={salvarMetas} disabled={salvando}
-                style={{
-                  padding: "9px 16px", borderRadius: 9, border: "none", background: "var(--brand)",
-                  color: "var(--brand-ink)", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer",
-                }}
-              >
-                {salvando ? "Salvando…" : "Salvar metas"}
-              </button>
-            </div>
-
-            {mes && (
-              <>
-                <div className={styles.section}>
-                  {nomeMes(mes.mes)} — o que despescar
-                </div>
-                {mes.itens.length === 0 && (
-                  <p className={styles.hint}>{mes.meta_kg > 0 ? "Nenhum lote pronto para abate nesse mês." : "Sem meta informada."}</p>
-                )}
-                {mes.itens.length > 0 && (
-                  <div className={styles.tableWrap} style={{ marginBottom: 18 }}>
-                    <table className={styles.tabela}>
-                      <thead>
-                        <tr>
-                          <th>Tanque</th><th>Lote</th><th>Fase hoje</th><th>Saldo no sistema</th>
-                          <th>Vivos esperados</th><th>Peixes a despescar</th><th>Peso médio esperado</th>
-                          <th>Kg esperados</th><th>Data prevista</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {mes.itens.map((it) => (
-                          <tr key={`${mes.mes}-${it.viveiro_codigo}`}>
-                            <td>{it.viveiro_codigo}</td>
-                            <td>{it.lote_codigo}</td>
-                            <td>{FASE_LABEL[it.fase] ?? it.fase}</td>
-                            <td>{nf(it.saldo_atual_un)}</td>
-                            <td>{nf(it.peixes_vivos_esperados)}</td>
-                            <td style={{ fontWeight: 700 }}>
-                              {nf(it.peixes_a_despescar)}
-                              {it.parcial && <span className={`${styles.badge} ${styles.badgeWarn}`} style={{ marginLeft: 6 }}>parcial</span>}
-                            </td>
-                            <td>{nf(it.peso_medio_esperado_g)} g</td>
-                            <td>{nf(it.kg_esperado)} kg</td>
-                            <td>{dataBr(it.data_prevista)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                      kg
+                    </span>
+                    <span style={{ fontWeight: 400, fontSize: "0.82rem", color: "var(--ink-muted)" }}>
+                      planejado {nf(m.planejado_kg)} kg
+                    </span>
+                    <span style={{ fontWeight: 400, fontSize: "0.82rem", color: "var(--ink-muted)" }}>
+                      sobra até o fim do mês {nf(m.sobra_kg)} kg
+                    </span>
+                    {curto && (
+                      <span className={`${styles.badge} ${styles.badgeCrit}`}>
+                        faltam {nf(-m.diferenca_kg)} kg
+                      </span>
+                    )}
                   </div>
-                )}
-              </>
-            )}
+                  {m.itens.length === 0 && (
+                    <p className={styles.hint}>{m.meta_kg > 0 ? "Nenhum lote pronto para abate nesse mês." : "Sem meta informada."}</p>
+                  )}
+                  {m.itens.length > 0 && (
+                    <div className={styles.tableWrap} style={{ marginBottom: 18 }}>
+                      <table className={`${styles.tabela} ${styles.tabelaCompacta}`}>
+                        <thead>
+                          <tr>
+                            <th>Tanque</th><th>Lote</th><th>Fase</th><th>Saldo (vivos esp.)</th>
+                            <th>A despescar</th><th>Peso médio</th><th>Semana</th><th>Kg</th><th>Data</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {m.itens.map((it) => (
+                            <tr key={`${m.mes}-${it.viveiro_codigo}`}>
+                              <td>{it.viveiro_codigo}</td>
+                              <td>{it.lote_codigo}</td>
+                              <td>{FASE_LABEL[it.fase] ?? it.fase}</td>
+                              <td>{nf(it.saldo_atual_un)} ({nf(it.peixes_vivos_esperados)})</td>
+                              <td style={{ fontWeight: 700 }}>
+                                {nf(it.peixes_a_despescar)}
+                                {it.parcial && <span className={`${styles.badge} ${styles.badgeWarn}`} style={{ marginLeft: 4 }}>parcial</span>}
+                              </td>
+                              <td>{nf(it.peso_medio_esperado_g)} g</td>
+                              <td>{it.semana_abate}</td>
+                              <td>{nf(it.kg_esperado)} kg</td>
+                              <td>{dataBr(it.data_prevista)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
 
             {plano.nao_alocados.length > 0 && (
               <>
-                <div className={styles.section}>Sobra dentro dos 6 meses (prontos, mas fora das metas)</div>
+                <div className={styles.section}>Sobra no fim do horizonte, lote a lote</div>
                 <div className={styles.tableWrap} style={{ marginBottom: 18 }}>
-                  <table className={styles.tabela}>
+                  <table className={`${styles.tabela} ${styles.tabelaCompacta}`}>
                     <thead>
                       <tr>
                         <th>Tanque</th><th>Lote</th><th>Peixes restantes</th>
@@ -223,7 +202,7 @@ export default function PainelAbate() {
                 <div className={styles.cards} style={{ marginBottom: 10 }}>
                   {plano.mortalidade.map((m) => (
                     <div key={m.fase} className={styles.card}>
-                      <div className={styles.cardLabel}>Mortalidade considerada — {FASE_LABEL[m.fase]}</div>
+                      <div className={styles.cardLabel}>Mortalidade considerada — {m.fase === "pre_engorda" ? "Pré-engorda" : "Engorda"}</div>
                       <div className={styles.cardValue}>{pct(m.taxa_considerada)}</div>
                       <div className={styles.cardSub}>{m.fonte}</div>
                     </div>
@@ -263,7 +242,7 @@ export default function PainelAbate() {
             </div>
 
             <div className={styles.tableWrap}>
-              <table className={styles.tabela}>
+              <table className={`${styles.tabela} ${styles.tabelaCompacta}`}>
                 <thead>
                   <tr>
                     <th>Viveiro</th>

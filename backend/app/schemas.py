@@ -741,6 +741,7 @@ class ItemDespescaProgramadaOut(BaseModel):
     peixes_vivos_esperados: int
     peixes_a_despescar: int
     peso_medio_esperado_g: float
+    semana_abate: int
     kg_esperado: float
     data_prevista: date
     parcial: bool
@@ -751,6 +752,7 @@ class MesProgramacaoOut(BaseModel):
     meta_kg: float
     planejado_kg: float
     diferenca_kg: float
+    sobra_kg: float
     itens: list[ItemDespescaProgramadaOut]
 
 

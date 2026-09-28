@@ -377,6 +377,7 @@ export interface ItemDespescaProgramada {
   peixes_vivos_esperados: number;
   peixes_a_despescar: number;
   peso_medio_esperado_g: number;
+  semana_abate: number;
   kg_esperado: number;
   data_prevista: string;
   parcial: boolean;
@@ -387,6 +388,7 @@ export interface MesProgramacao {
   meta_kg: number;
   planejado_kg: number;
   diferenca_kg: number;
+  sobra_kg: number;
   itens: ItemDespescaProgramada[];
 }
 
