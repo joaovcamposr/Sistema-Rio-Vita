@@ -33,12 +33,19 @@ def listar_despesas_soltas(
     de: date | None = Query(default=None),
     ate: date | None = Query(default=None),
     excluidos: bool = Query(default=False, description="true = só as excluídas (tela de restaurar)"),
+    id: int | None = Query(default=None, description="quando informado, ignora os demais filtros — busca só essa despesa (atalho de edição vindo de outra tela)"),
     db: Session = Depends(get_db),
     _usuario: UsuarioOut = Depends(get_current_user),
 ):
     """Tela de conferência das despesas soltas (sem vínculo com
     expedição) — as de acerto de expedição são revertidas junto do
     acerto (POST /expedicoes/{id}/acerto/cancelar), não aqui."""
+    if id is not None:
+        rows = db.execute(
+            text(f"SELECT {_COLUNAS} FROM despesa WHERE id = :id AND expedicao_id IS NULL"), {"id": id}
+        ).mappings().all()
+        return [DespesaOut(**r) for r in rows]
+
     ate = ate or date.today()
     de = de or (ate - timedelta(days=30))
     rows = db.execute(

@@ -331,6 +331,7 @@ export interface Dashboard {
   conversao_media_ponderada: number | null;
   mortalidade_media_ponderada: number | null;
   rendimento_medio_ponderado: number | null;
+  recebido_dinheiro_fora_do_periodo: number;
 }
 
 function apiBase(): string {

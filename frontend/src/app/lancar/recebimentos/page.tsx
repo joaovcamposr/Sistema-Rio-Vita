@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   atualizarObservacoesVenda,
   editarVenda,
@@ -86,6 +86,7 @@ function dataHoraBr(iso: string): string {
 
 export default function Recebimentos() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [de, setDe] = useState(DESDE_SEMPRE);
   const [ate, setAte] = useState(hojeISO());
   const [situacaoFiltro, setSituacaoFiltro] = useState("Em aberto");
@@ -141,6 +142,22 @@ export default function Recebimentos() {
     listarVendedoresDeVenda().then(setVendedores).catch(() => undefined);
     listarProdutos().then(setProdutos).catch(() => undefined);
   }, []);
+
+  // atalho vindo de outra tela (ex.: Caixa) — ?editar=<id> abre a edição
+  // dessa venda direto, mesmo que ela não apareça na listagem filtrada
+  useEffect(() => {
+    const idParam = searchParams.get("editar");
+    if (!idParam) return;
+    listarVendas({ id: Number(idParam) }).then(([v]) => {
+      if (!v) return;
+      setVendas((atual) => {
+        const lista = atual ?? [];
+        return lista.some((x) => x.id === v.id) ? lista : [v, ...lista];
+      });
+      iniciarEdicaoVenda(v);
+    }).catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   const totalEmAberto = useMemo(() => {
     if (!vendasFiltradas) return 0;

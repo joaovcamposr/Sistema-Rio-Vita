@@ -251,6 +251,8 @@ export const listarDespesasSoltas = (de?: string, ate?: string, excluidos?: bool
     `/despesas/soltas?${qs}`
   );
 };
+export const obterDespesaSolta = (id: number) =>
+  cachedGet<Despesa[]>(`cache:despesa-solta:${id}`, `/despesas/soltas?id=${id}`);
 export const excluirDespesa = (id: number) => excluir(`/despesas/${id}`);
 export const restaurarDespesa = (id: number) => enviar<Despesa>(`/despesas/${id}/restaurar`, "POST", undefined);
 

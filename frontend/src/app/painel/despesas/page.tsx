@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
-  editarDespesa, excluirDespesa, restaurarDespesa, listarDespesasSoltas, type Despesa,
+  editarDespesa, excluirDespesa, restaurarDespesa, listarDespesasSoltas, obterDespesaSolta, type Despesa,
 } from "@/lib/cadastros";
 import styles from "../painel.module.css";
 
@@ -40,6 +40,7 @@ interface EdicaoForm {
 
 export default function PainelDespesas() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [de, setDe] = useState(diasAtras(30));
   const [ate, setAte] = useState(hojeISO());
   const [dados, setDados] = useState<Despesa[] | null>(null);
@@ -61,6 +62,22 @@ export default function PainelDespesas() {
     carregar();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mostrarExcluidos]);
+
+  // atalho vindo de outra tela (ex.: Caixa) — ?editar=<id> abre a edição
+  // dessa despesa direto, mesmo que ela não apareça na listagem filtrada
+  useEffect(() => {
+    const idParam = searchParams.get("editar");
+    if (!idParam) return;
+    obterDespesaSolta(Number(idParam)).then(([d]) => {
+      if (!d) return;
+      setDados((atual) => {
+        const lista = atual ?? [];
+        return lista.some((x) => x.id === d.id) ? lista : [d, ...lista];
+      });
+      iniciarEdicao(d);
+    }).catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   function recarregar() {
     listarDespesasSoltas(de, ate, mostrarExcluidos).then(setDados).catch(() => {});

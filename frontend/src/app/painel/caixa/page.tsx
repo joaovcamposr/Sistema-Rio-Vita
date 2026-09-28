@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { caixaConferencia, type CaixaConferencia, type VendaConferencia, type DespesaConferencia } from "@/lib/paineis";
 import Modal from "@/components/Modal";
 import styles from "../painel.module.css";
@@ -26,34 +27,63 @@ type Modalidade =
   | { tipo: "recebido" }
   | { tipo: "pendente" }
   | { tipo: "fora_periodo" }
+  | { tipo: "despesas" }
   | { tipo: "dia"; dia: string };
 
-function TabelaVendas({ vendas }: { vendas: VendaConferencia[] }) {
-  if (vendas.length === 0) return <p className={styles.hint}>Nenhuma venda aqui.</p>;
+function TabelaVendas({ vendas, busca = false }: { vendas: VendaConferencia[]; busca?: boolean }) {
+  const [filtro, setFiltro] = useState("");
+  const filtradas = useMemo(() => {
+    const alvo = filtro.trim().toLowerCase();
+    if (!alvo) return vendas;
+    return vendas.filter(
+      (v) => v.cliente_nome.toLowerCase().includes(alvo) || v.produto_nome.toLowerCase().includes(alvo)
+    );
+  }, [vendas, filtro]);
+
   return (
-    <div className={styles.tableWrap}>
-      <table className={styles.tabela}>
-        <thead><tr><th>Cliente</th><th>Produto</th><th>Valor</th><th>Vendida em</th><th>Paga em</th></tr></thead>
-        <tbody>
-          {vendas.map((v) => (
-            <tr key={v.id}>
-              <td>{v.cliente_nome}</td>
-              <td>{v.produto_nome}</td>
-              <td>{moeda(v.valor_total)}</td>
-              <td>
-                {dataBr(v.data)}
-                {v.fora_do_periodo && (
-                  <span className={`${styles.badge} ${styles.badgeWarn}`} style={{ marginLeft: 6 }}>
-                    antes do período
-                  </span>
-                )}
-              </td>
-              <td>{v.data_pagamento ? dataBr(v.data_pagamento) : "—"}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <>
+      {busca && vendas.length > 8 && (
+        <input
+          type="text" placeholder="Filtrar por cliente ou produto…" value={filtro}
+          onChange={(e) => setFiltro(e.target.value)}
+          style={{
+            width: "100%", padding: "9px 12px", borderRadius: 9, border: "1px solid var(--rule-strong)",
+            background: "var(--surface)", color: "var(--ink)", fontSize: "0.85rem", marginBottom: 10,
+          }}
+        />
+      )}
+      {filtradas.length === 0 && <p className={styles.hint}>Nenhuma venda aqui.</p>}
+      {filtradas.length > 0 && (
+        <div className={styles.tableWrap}>
+          <table className={styles.tabela}>
+            <thead><tr><th>Cliente</th><th>Produto</th><th>Valor</th><th>Vendida em</th><th>Paga em</th><th></th></tr></thead>
+            <tbody>
+              {filtradas.map((v) => (
+                <tr key={v.id}>
+                  <td>{v.cliente_nome}</td>
+                  <td>{v.produto_nome}</td>
+                  <td>{moeda(v.valor_total)}</td>
+                  <td>
+                    {dataBr(v.data)}
+                    {v.fora_do_periodo && (
+                      <span className={`${styles.badge} ${styles.badgeWarn}`} style={{ marginLeft: 6 }}>
+                        antes do período
+                      </span>
+                    )}
+                  </td>
+                  <td>{v.data_pagamento ? dataBr(v.data_pagamento) : "—"}</td>
+                  <td>
+                    <Link href={`/lancar/recebimentos?editar=${v.id}`} style={{ color: "var(--brand-deep)", fontWeight: 700, fontSize: "0.82rem" }}>
+                      Editar
+                    </Link>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -62,7 +92,7 @@ function TabelaDespesas({ despesas }: { despesas: DespesaConferencia[] }) {
   return (
     <div className={styles.tableWrap}>
       <table className={styles.tabela}>
-        <thead><tr><th>Categoria</th><th>Origem</th><th>Forma</th><th>Valor</th></tr></thead>
+        <thead><tr><th>Categoria</th><th>Origem</th><th>Forma</th><th>Valor</th><th></th></tr></thead>
         <tbody>
           {despesas.map((d) => (
             <tr key={d.id}>
@@ -70,6 +100,17 @@ function TabelaDespesas({ despesas }: { despesas: DespesaConferencia[] }) {
               <td>{d.origem}</td>
               <td>{d.forma_pgto ?? <em>vazio</em>}</td>
               <td>{moeda(d.valor)}</td>
+              <td>
+                {d.origem === "Solta" ? (
+                  <Link href={`/painel/despesas?editar=${d.id}`} style={{ color: "var(--brand-deep)", fontWeight: 700, fontSize: "0.82rem" }}>
+                    Editar
+                  </Link>
+                ) : (
+                  <Link href="/painel/acertos" style={{ color: "var(--ink-faint)", fontSize: "0.78rem" }}>
+                    ver acerto
+                  </Link>
+                )}
+              </td>
             </tr>
           ))}
         </tbody>
@@ -101,6 +142,10 @@ export default function PainelCaixa() {
   }, [conferencia, modal]);
   const vendasForaPeriodo = useMemo(
     () => conferencia?.vendas_recebidas.filter((v) => v.fora_do_periodo) ?? [],
+    [conferencia]
+  );
+  const despesasDinheiro = useMemo(
+    () => conferencia?.despesas_detalhe.filter((d) => d.forma_pgto?.trim().toLowerCase() === "dinheiro") ?? [],
     [conferencia]
   );
 
@@ -150,10 +195,10 @@ export default function PainelCaixa() {
                 <div className={styles.cardLabel}>Ainda a receber (vendido, não pago)</div>
                 <div className={styles.cardValue}>{moeda(conferencia.total_pendente_dinheiro)}</div>
               </button>
-              <div className={styles.card}>
+              <button type="button" className={cardClicavel()} onClick={() => setModal({ tipo: "despesas" })}>
                 <div className={styles.cardLabel}>Despesas em dinheiro</div>
                 <div className={styles.cardValue}>{moeda(conferencia.total_despesas_dinheiro)}</div>
-              </div>
+              </button>
               <div className={styles.card}>
                 <div className={styles.cardLabel}>Saldo real (recebido − despesas)</div>
                 <div className={styles.cardValue}>{moeda(conferencia.saldo_recebido)}</div>
@@ -288,17 +333,22 @@ export default function PainelCaixa() {
 
       {modal?.tipo === "recebido" && (
         <Modal titulo="Recebido em dinheiro no período" subtitulo="Pela data em que a venda foi marcada como paga" onFechar={() => setModal(null)}>
-          <TabelaVendas vendas={conferencia?.vendas_recebidas ?? []} />
+          <TabelaVendas vendas={conferencia?.vendas_recebidas ?? []} busca />
         </Modal>
       )}
       {modal?.tipo === "pendente" && (
         <Modal titulo="Ainda a receber" subtitulo="Vendida em dinheiro no período, ainda sem data de pagamento" onFechar={() => setModal(null)}>
-          <TabelaVendas vendas={conferencia?.vendas_pendentes ?? []} />
+          <TabelaVendas vendas={conferencia?.vendas_pendentes ?? []} busca />
         </Modal>
       )}
       {modal?.tipo === "fora_periodo" && (
         <Modal titulo="Recebido agora, vendido antes do período" subtitulo={`Vendas anteriores a ${dataBr(de)}, pagas dentro do período filtrado`} onFechar={() => setModal(null)}>
-          <TabelaVendas vendas={vendasForaPeriodo} />
+          <TabelaVendas vendas={vendasForaPeriodo} busca />
+        </Modal>
+      )}
+      {modal?.tipo === "despesas" && (
+        <Modal titulo="Despesas em dinheiro no período" subtitulo="Mesmas despesas que compõem o cartão — pela data da despesa" onFechar={() => setModal(null)}>
+          <TabelaDespesas despesas={despesasDinheiro} />
         </Modal>
       )}
       {modal?.tipo === "dia" && (

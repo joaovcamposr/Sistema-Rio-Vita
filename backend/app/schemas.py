@@ -1002,6 +1002,7 @@ class DashboardOut(BaseModel):
     conversao_media_ponderada: float | None
     mortalidade_media_ponderada: float | None
     rendimento_medio_ponderado: float | None
+    recebido_dinheiro_fora_do_periodo: float
 
 
 # ---------- Vendedor ----------

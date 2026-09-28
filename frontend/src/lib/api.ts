@@ -343,10 +343,12 @@ export interface FiltroVendas {
   clienteId?: number | null;
   vendedor?: string | null;
   excluidos?: boolean;
+  id?: number;
 }
 
 export async function listarVendas(filtro: FiltroVendas): Promise<VendaLista[]> {
   const params = new URLSearchParams();
+  if (filtro.id) params.set("id", String(filtro.id));
   if (filtro.de) params.set("de", filtro.de);
   if (filtro.ate) params.set("ate", filtro.ate);
   if (filtro.situacao) params.set("situacao", filtro.situacao);

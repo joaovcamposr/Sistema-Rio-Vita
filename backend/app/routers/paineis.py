@@ -1517,6 +1517,17 @@ def painel_dashboard(
     dias_trabalhados = producao_tot["dias"]
     producao_total_kg = float(producao_tot["kg"])
 
+    # mesmo alerta do Caixa/Conferência: quanto do que foi recebido em
+    # dinheiro nesse período é pagamento de venda feita ANTES dele — avisa
+    # aqui pra não precisar entrar em Caixa só pra descobrir que existe
+    recebido_fora_periodo = db.execute(
+        text("""
+            SELECT COALESCE(SUM(valor_total), 0) FROM venda
+            WHERE lower(trim(forma_pgto)) = 'dinheiro' AND excluido_em IS NULL
+              AND data_pagamento BETWEEN :de AND :ate AND data < :de
+        """), {"de": de, "ate": ate},
+    ).scalar_one()
+
     return DashboardOut(
         de=de, ate=ate,
         producao_total_kg=producao_total_kg,
@@ -1537,6 +1548,7 @@ def painel_dashboard(
         viveiros_alerta=alertas,
         biomassa_total_kg=biomassa_total_kg,
         conversao_media_ponderada=conversao_media_ponderada,
+        recebido_dinheiro_fora_do_periodo=float(recebido_fora_periodo),
         mortalidade_media_ponderada=mortalidade_media_ponderada,
         rendimento_medio_ponderado=_f(rendimento),
     )

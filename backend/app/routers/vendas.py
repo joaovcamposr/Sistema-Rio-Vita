@@ -27,6 +27,16 @@ def listar_vendedores(db: Session = Depends(get_db), _usuario: UsuarioOut = Depe
     return list(rows)
 
 
+_COLUNAS_LISTA = """
+    v.id, v.data, v.cliente_id, COALESCE(c.nome, 'Consumidor final') AS cliente_nome,
+    c.prazo_dias AS cliente_prazo_dias, v.produto_id, pr.nome AS produto_nome,
+    v.quantidade_un, v.quantidade_kg, v.preco_kg, v.valor_total, v.forma_pgto, v.vendedor,
+    v.situacao, v.data_pagamento, v.data_prevista_recebimento, v.observacoes,
+    v.excluido_em, v.excluido_por
+"""
+_FROM_LISTA = "FROM venda v JOIN produto pr ON pr.id = v.produto_id LEFT JOIN cliente c ON c.id = v.cliente_id"
+
+
 @router.get("", response_model=list[VendaListaOut])
 def listar_vendas(
     de: date | None = Query(default=None),
@@ -35,22 +45,23 @@ def listar_vendas(
     cliente_id: int | None = Query(default=None),
     vendedor: str | None = Query(default=None),
     excluidos: bool = Query(default=False, description="true = só as excluídas (tela de restaurar)"),
+    id: int | None = Query(default=None, description="quando informado, ignora os demais filtros — busca só essa venda (atalho de edição vindo de outra tela)"),
     db: Session = Depends(get_db),
     _usuario: UsuarioOut = Depends(get_current_user),
 ):
     """Lista vendas para conferência/recebimento — não é o lançamento (esse
     é o POST), é a tela de controle de quais já foram pagas."""
+    if id is not None:
+        rows = db.execute(
+            text(f"SELECT {_COLUNAS_LISTA} {_FROM_LISTA} WHERE v.id = :id"), {"id": id}
+        ).mappings().all()
+        return [VendaListaOut(**r) for r in rows]
+
     ate = ate or date.today()
     de = de or (ate - timedelta(days=90))
     rows = db.execute(text(f"""
-        SELECT v.id, v.data, v.cliente_id, COALESCE(c.nome, 'Consumidor final') AS cliente_nome,
-               c.prazo_dias AS cliente_prazo_dias, v.produto_id, pr.nome AS produto_nome,
-               v.quantidade_un, v.quantidade_kg, v.preco_kg, v.valor_total, v.forma_pgto, v.vendedor,
-               v.situacao, v.data_pagamento, v.data_prevista_recebimento, v.observacoes,
-               v.excluido_em, v.excluido_por
-        FROM venda v
-        JOIN produto pr ON pr.id = v.produto_id
-        LEFT JOIN cliente c ON c.id = v.cliente_id
+        SELECT {_COLUNAS_LISTA}
+        {_FROM_LISTA}
         WHERE v.data BETWEEN :de AND :ate
           AND {"v.excluido_em IS NOT NULL" if excluidos else "v.excluido_em IS NULL"}
           AND (CAST(:situacao AS text) IS NULL OR COALESCE(v.situacao, 'Em aberto') = :situacao)

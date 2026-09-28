@@ -115,6 +115,19 @@ export default function PainelDashboard() {
         {erro && <div className={styles.erro}>{erro}</div>}
         {!dados && !erro && <div className={styles.carregando}>Carregando…</div>}
 
+        {dados && dados.recebido_dinheiro_fora_do_periodo > 0 && (
+          <Link
+            href="/painel/caixa"
+            style={{
+              display: "block", border: "1px solid var(--warn)", borderRadius: 12, padding: "12px 16px",
+              marginBottom: 18, background: "var(--warn-soft)", color: "var(--ink)", textDecoration: "none",
+            }}
+          >
+            <strong>⚠ {moeda(dados.recebido_dinheiro_fora_do_periodo)}</strong> recebidos em dinheiro nesse período
+            são de vendas feitas antes dele — confira em Caixa.
+          </Link>
+        )}
+
         {dados && (
           <>
             <p className={styles.hint}>Clique num card para ver a evolução diária dele no gráfico abaixo.</p>
