@@ -144,16 +144,18 @@ export default function Recebimentos() {
   }, []);
 
   // atalho vindo de outra tela (ex.: Caixa) — ?editar=<id> abre a edição
-  // dessa venda direto, mesmo que ela não apareça na listagem filtrada
+  // dessa venda direto, mesmo que ela não apareça na listagem filtrada.
+  // Guarda numa âncora à parte (não só dentro de `vendas`) porque o
+  // carregamento normal (filtro padrão) roda em paralelo e sobrescreveria
+  // `vendas` — sem a âncora, o modal abriria e fecharia sozinho na hora
+  // que essa outra busca terminasse.
+  const [vendaAncorada, setVendaAncorada] = useState<VendaLista | null>(null);
   useEffect(() => {
     const idParam = searchParams.get("editar");
     if (!idParam) return;
     listarVendas({ id: Number(idParam) }).then(([v]) => {
       if (!v) return;
-      setVendas((atual) => {
-        const lista = atual ?? [];
-        return lista.some((x) => x.id === v.id) ? lista : [v, ...lista];
-      });
+      setVendaAncorada(v);
       iniciarEdicaoVenda(v);
     }).catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -545,7 +547,9 @@ export default function Recebimentos() {
       </div>
 
       {editandoVendaId !== null && formVenda && (() => {
-        const vendaEditando = vendas?.find((v) => v.id === editandoVendaId);
+        const vendaEditando =
+          vendas?.find((v) => v.id === editandoVendaId) ??
+          (vendaAncorada?.id === editandoVendaId ? vendaAncorada : undefined);
         const produtoSelecionado = produtos.find((p) => p.id === formVenda.produto_id);
         if (!vendaEditando) return null;
         return (

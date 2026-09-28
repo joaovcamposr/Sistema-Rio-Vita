@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   editarDespesa, excluirDespesa, restaurarDespesa, listarDespesasSoltas, obterDespesaSolta, type Despesa,
@@ -64,20 +64,28 @@ export default function PainelDespesas() {
   }, [mostrarExcluidos]);
 
   // atalho vindo de outra tela (ex.: Caixa) — ?editar=<id> abre a edição
-  // dessa despesa direto, mesmo que ela não apareça na listagem filtrada
+  // dessa despesa direto, mesmo que ela não apareça na listagem filtrada.
+  // Guarda numa âncora à parte (não dentro de `dados`) e mescla na hora de
+  // exibir (abaixo) — o carregamento normal (filtro padrão) roda em
+  // paralelo e, se fosse mesclado direto em `dados`, a resposta dele
+  // chegando depois apagaria essa linha de novo sem aviso.
+  const [despesaAncorada, setDespesaAncorada] = useState<Despesa | null>(null);
   useEffect(() => {
     const idParam = searchParams.get("editar");
     if (!idParam) return;
     obterDespesaSolta(Number(idParam)).then(([d]) => {
       if (!d) return;
-      setDados((atual) => {
-        const lista = atual ?? [];
-        return lista.some((x) => x.id === d.id) ? lista : [d, ...lista];
-      });
+      setDespesaAncorada(d);
       iniciarEdicao(d);
     }).catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
+
+  const dadosExibidos = useMemo(() => {
+    if (!dados) return dados;
+    if (!despesaAncorada || dados.some((d) => d.id === despesaAncorada.id)) return dados;
+    return [despesaAncorada, ...dados];
+  }, [dados, despesaAncorada]);
 
   function recarregar() {
     listarDespesasSoltas(de, ate, mostrarExcluidos).then(setDados).catch(() => {});
@@ -193,12 +201,12 @@ export default function PainelDespesas() {
         </div>
 
         {erro && <div className={styles.erro}>{erro}</div>}
-        {!dados && !erro && <div className={styles.carregando}>Carregando…</div>}
-        {dados && dados.length === 0 && (
+        {!dadosExibidos && !erro && <div className={styles.carregando}>Carregando…</div>}
+        {dadosExibidos && dadosExibidos.length === 0 && (
           <p className={styles.hint}>{mostrarExcluidos ? "Nenhuma despesa excluída no período." : "Nenhuma despesa solta no período."}</p>
         )}
 
-        {dados && dados.length > 0 && (
+        {dadosExibidos && dadosExibidos.length > 0 && (
           <div className={styles.tableWrap}>
             <table className={styles.tabela}>
               <thead>
@@ -207,7 +215,7 @@ export default function PainelDespesas() {
                 </tr>
               </thead>
               <tbody>
-                {dados.map((d) => {
+                {dadosExibidos.map((d) => {
                   return (
                     <tr key={d.id}>
                       {editandoId === d.id && form ? (
