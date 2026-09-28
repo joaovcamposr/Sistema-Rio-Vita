@@ -469,7 +469,17 @@ def programacao_abate(db: Session = Depends(get_db)):
         return lote["semana_hoje"] + _avanco_semanas(semanas)
 
     def peso_em(lote: dict, data: date) -> float:
-        return _peso_para_semana(curva, semana_em(lote, data))
+        # peso do INÍCIO da semana em que o lote estará nessa data — a
+        # curva guarda o peso final de cada semana, então o início é o
+        # final da semana anterior (mais conservador que projetar o peso
+        # que só é atingido no fim da semana da despesca).
+        return _peso_para_semana(curva, semana_em(lote, data) - 1)
+
+    # rendimento médio histórico (todo o período com dado) usado só pra
+    # mostrar quanto do planejado (peixe vivo) deve virar filé — mesma
+    # conta de /producao/resumo, sem filtro de data pra não depender de
+    # quantas despescas caíram num mês curto
+    rendimento_file = _f(_rendimento_por_destino(db, date(2000, 1, 1), hoje, "Filé%", "file"))
 
     # horizonte dinâmico: mês sem meta cadastrada não vira mês vazio — sem
     # teto pra respeitar, despesca tudo que já estiver pronto naquele mês
@@ -484,32 +494,55 @@ def programacao_abate(db: Session = Depends(get_db)):
             break
         mes = _primeiro_dia_mes(hoje, i)
         fim_mes = _primeiro_dia_mes(hoje, i + 1) - timedelta(days=1)
+        dias_mes = (fim_mes - mes).days + 1
         meta = metas.get(mes, 0.0)
-        referencia = max(mes + timedelta(days=14), hoje)
         falta = meta if meta > 0 else math.inf
-        itens = []
+
+        # ordem de despesca dentro do mês: peixe mais pesado primeiro —
+        # quantidade decidida (pegar/kg) com o peso no ponto em que cada
+        # lote fica disponível (início do mês, ou a própria pronto_em se
+        # for depois disso)
         candidatos = sorted(
             (l for l in lotes if l["restantes"] > 0 and l["pronto_em"] <= fim_mes),
-            key=lambda l: l["pronto_em"],
+            key=lambda l: -peso_em(l, max(mes, l["pronto_em"])),
         )
+        provisorios = []
         for l in candidatos:
             if falta <= 0.0005:
                 break
-            colheita = max(referencia, l["pronto_em"])
-            peso = peso_em(l, colheita)
-            if l["restantes"] * peso / 1000 <= falta:
-                pegar = l["restantes"]
+            referencia = max(mes, l["pronto_em"])
+            peso_ref = peso_em(l, referencia)
+            restantes_antes = l["restantes"]
+            if restantes_antes * peso_ref / 1000 <= falta:
+                pegar = restantes_antes
             else:
-                pegar = min(l["restantes"], math.ceil(falta * 1000 / peso))
+                pegar = min(restantes_antes, math.ceil(falta * 1000 / peso_ref))
+            kg_ref = pegar * peso_ref / 1000
+            provisorios.append({"lote": l, "pegar": pegar, "kg_ref": kg_ref, "restantes_antes": restantes_antes})
+            l["restantes"] -= pegar
+            falta -= kg_ref
+
+        # datas espalhadas pelo mês, proporcional à participação de cada
+        # lote no total despescado — quem despesca mais cedo é quem foi
+        # ordenado primeiro (peso maior), sem nunca ficar antes da própria
+        # pronto_em nem depois do fim do mês
+        total_kg_ref = sum(p["kg_ref"] for p in provisorios)
+        itens = []
+        cum_kg = 0.0
+        for p in provisorios:
+            l, pegar, kg_ref = p["lote"], p["pegar"], p["kg_ref"]
+            meio_frac = (cum_kg + kg_ref / 2) / total_kg_ref if total_kg_ref > 0 else 0.0
+            cum_kg += kg_ref
+            colheita = mes + timedelta(days=round(meio_frac * (dias_mes - 1)))
+            colheita = min(max(colheita, l["pronto_em"]), fim_mes)
+            peso = peso_em(l, colheita)
             kg = pegar * peso / 1000
             itens.append(ItemDespescaProgramadaOut(
                 viveiro_id=l["viveiro_id"], viveiro_codigo=l["viveiro"], lote_codigo=l["lote"], fase=l["fase"],
                 saldo_atual_un=l["saldo"], peixes_vivos_esperados=l["vivos_esperados"],
                 peixes_a_despescar=pegar, peso_medio_esperado_g=peso, semana_abate=semana_em(l, colheita),
-                kg_esperado=kg, data_prevista=colheita, parcial=pegar < l["restantes"],
+                kg_esperado=kg, data_prevista=colheita, parcial=pegar < p["restantes_antes"],
             ))
-            l["restantes"] -= pegar
-            falta -= kg
         planejado = sum(it.kg_esperado for it in itens)
         # sobra do mês: peixe já pronto até esse mês, mas que ainda não foi
         # usado em nenhum mês (nem esse nem os anteriores) — continua
@@ -520,6 +553,7 @@ def programacao_abate(db: Session = Depends(get_db)):
         )
         meses_out.append(MesProgramacaoOut(
             mes=mes, meta_kg=meta, planejado_kg=planejado, diferenca_kg=planejado - meta,
+            planejado_file_kg=(planejado * rendimento_file) if rendimento_file is not None else None,
             sobra_kg=sobra_kg, itens=itens,
         ))
         i += 1

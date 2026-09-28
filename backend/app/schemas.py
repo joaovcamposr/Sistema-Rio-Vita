@@ -753,6 +753,7 @@ class MesProgramacaoOut(BaseModel):
     meta_kg: float
     planejado_kg: float
     diferenca_kg: float
+    planejado_file_kg: float | None
     sobra_kg: float
     itens: list[ItemDespescaProgramadaOut]
 

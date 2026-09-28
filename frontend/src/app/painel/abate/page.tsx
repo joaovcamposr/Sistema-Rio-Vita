@@ -134,7 +134,9 @@ export default function PainelAbate() {
                       kg
                     </span>
                     <span style={{ fontWeight: 400, fontSize: "0.82rem", color: "var(--ink-muted)" }}>
-                      planejado {nf(m.planejado_kg)} kg
+                      {m.planejado_file_kg !== null
+                        ? `planejado ${nf(m.planejado_file_kg)} kg de filé (rendimento médio)`
+                        : `planejado ${nf(m.planejado_kg)} kg`}
                     </span>
                     <span style={{ fontWeight: 400, fontSize: "0.82rem", color: "var(--ink-muted)" }}>
                       sobra até o fim do mês {nf(m.sobra_kg)} kg

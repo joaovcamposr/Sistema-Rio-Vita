@@ -390,6 +390,7 @@ export interface MesProgramacao {
   meta_kg: number;
   planejado_kg: number;
   diferenca_kg: number;
+  planejado_file_kg: number | null;
   sobra_kg: number;
   itens: ItemDespescaProgramada[];
 }
