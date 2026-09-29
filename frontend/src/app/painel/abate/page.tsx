@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   historicoLote, painelAbate, programacaoAbate, salvarMetasAbate,
-  type Abate, type HistoricoLote, type ProgramacaoAbate,
+  type Abate, type HistoricoLote, type ItemDespescaProgramada, type ProgramacaoAbate,
 } from "@/lib/paineis";
 import Modal from "@/components/Modal";
+import Chart, { type SeriePonto } from "@/components/Chart";
 import styles from "../painel.module.css";
 
 function dataBr(iso: string): string {
@@ -40,18 +41,44 @@ export default function PainelAbate() {
   const [tanqueSelecionado, setTanqueSelecionado] = useState<{ viveiro_codigo: string; lote_codigo: string } | null>(null);
   const [historico, setHistorico] = useState<HistoricoLote | null>(null);
   const [erroHistorico, setErroHistorico] = useState<string | null>(null);
+  const [loteReal, setLoteReal] = useState<ItemDespescaProgramada | null>(null);
 
   function abrirLote(viveiroId: number, viveiroCodigo: string, loteCodigo: string) {
     setTanqueSelecionado({ viveiro_codigo: viveiroCodigo, lote_codigo: loteCodigo });
     setHistorico(null);
     setErroHistorico(null);
-    historicoLote(viveiroId).then(setHistorico).catch(() => setErroHistorico("Sem conexão e sem dado salvo deste aparelho ainda."));
+
+    // despesca REAL desse lote na programação (com meta, ordem por peso,
+    // forçada ou não) — usada como previsão de abate no lugar da simples
+    // "quando chega na semana limite", e como horizonte da curva projetada
+    const item = plano?.meses.flatMap((m) => m.itens).find(
+      (it) => it.viveiro_id === viveiroId && it.lote_codigo === loteCodigo
+    ) ?? null;
+    setLoteReal(item);
+
+    historicoLote(viveiroId, item?.data_prevista)
+      .then(setHistorico)
+      .catch(() => setErroHistorico("Sem conexão e sem dado salvo deste aparelho ainda."));
   }
   function fecharLote() {
     setTanqueSelecionado(null);
     setHistorico(null);
     setErroHistorico(null);
+    setLoteReal(null);
   }
+
+  const pontosCrescimento: SeriePonto[] = useMemo(() => {
+    if (!historico) return [];
+    const reais = historico.pontos.map((p) => ({
+      bucket: p.data,
+      valores: { "Peso real (g)": p.peso_real_g, "Peso esperado (g)": p.peso_esperado_g },
+    }));
+    const futuros = historico.projecao.map((p) => ({
+      bucket: p.data,
+      valores: { "Peso esperado (g)": p.peso_esperado_g },
+    }));
+    return [...reais, ...futuros];
+  }, [historico]);
 
   function carregarPlano() {
     programacaoAbate()
@@ -356,15 +383,35 @@ export default function PainelAbate() {
               <div className={styles.linha}>
                 <span className={styles.k}>Previsão de abate</span>
                 <span className={styles.v}>
-                  {historico.pronto_para_abate ? (
+                  {loteReal ? (
+                    <>
+                      {dataBr(loteReal.data_prevista)} · {nf(loteReal.peso_medio_esperado_g)} g (semana {loteReal.semana_abate})
+                      {loteReal.abaixo_peso_ideal && (
+                        <span className={`${styles.badge} ${styles.badgeCrit}`} style={{ marginLeft: 6 }}>
+                          abaixo do peso ideal
+                        </span>
+                      )}
+                    </>
+                  ) : historico.pronto_para_abate ? (
                     <span className={`${styles.badge} ${styles.badgeCrit}`}>PRONTO PARA ABATE</span>
                   ) : (
                     <span className={`${styles.badge} ${styles.badgeNeutro}`}>
-                      {historico.previsao_abate ? dataBr(historico.previsao_abate) : "—"}
+                      {historico.previsao_abate ? dataBr(historico.previsao_abate) : "sem previsão dentro do horizonte"}
                     </span>
                   )}
                 </span>
               </div>
+
+              <div className={styles.section} style={{ marginTop: 16 }}>Curva de crescimento — real e projetada</div>
+              <p className={styles.hint}>
+                Linha do peso real medido em cada biometria, esperado pela curva desde a entrada nesse tanque, e a
+                projeção a partir de hoje ancorada na última biometria.
+                {loteReal && ` A despesca prevista (${dataBr(loteReal.data_prevista)}) está marcada na tabela abaixo.`}
+              </p>
+              <Chart
+                dados={pontosCrescimento} series={["Peso real (g)", "Peso esperado (g)"]} tipo="linha"
+                formatarBucket={dataBr} formatarValor={(v) => `${nf(v, 0)} g`}
+              />
 
               <div className={styles.section} style={{ marginTop: 16 }}>Biometrias</div>
               <div className={styles.tableWrap}>
@@ -383,6 +430,32 @@ export default function PainelAbate() {
                         <td>{nf(p.saldo_un)}</td>
                       </tr>
                     ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className={styles.section} style={{ marginTop: 16 }}>Projeção semana a semana</div>
+              <div className={styles.tableWrap}>
+                <table className={styles.tabela}>
+                  <thead>
+                    <tr>
+                      <th>Data</th><th>Semana</th><th>Peso esperado</th><th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {historico.projecao.map((p, i) => {
+                      const ehAbate = loteReal && p.data === loteReal.data_prevista;
+                      return (
+                        <tr key={i} style={ehAbate ? { fontWeight: 700 } : undefined}>
+                          <td>{dataBr(p.data)}</td>
+                          <td>{p.semana}</td>
+                          <td>{nf(p.peso_esperado_g, 1)} g</td>
+                          <td>
+                            {ehAbate && <span className={`${styles.badge} ${styles.badgeCrit}`}>despesca prevista</span>}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

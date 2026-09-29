@@ -2471,7 +2471,11 @@ def _origem_lote(db: Session, lote_id: int, data_inicio: date) -> tuple[str, dat
 
 
 @router.get("/viveiros/{viveiro_id}/historico-lote", response_model=HistoricoLoteOut)
-def historico_lote(viveiro_id: int, db: Session = Depends(get_db)):
+def historico_lote(
+    viveiro_id: int,
+    ate: date | None = Query(default=None, description="até quando projetar a curva futura — normalmente a despesca real da Programação de abate"),
+    db: Session = Depends(get_db),
+):
     """Histórico de crescimento do lote ativo desse viveiro: povoamento +
     cada biometria lançada desde então, comparando o peso real com o
     esperado pela curva (mesma regra do peso_esperado_pela_idade_g do
@@ -2587,8 +2591,28 @@ def historico_lote(viveiro_id: int, db: Session = Depends(get_db)):
             "semana_esp": semana_esp, "peso_esperado_g": peso_esperado_g,
         }
 
+    # curva projetada daqui pra frente, semana a semana, ancorada no peso
+    # da última biometria (não na idade) — mesma lógica da Programação de
+    # abate: peso do início de cada semana, projeta até a despesca real
+    # informada (ate) com folga, ou um horizonte padrão se não vier. A
+    # data de "ate" entra como ponto explícito (mesmo fora da grade
+    # semanal) pra sempre dar pra marcar a despesca prevista certinha.
+    horizonte = max(ate, hoje + timedelta(weeks=8)) if ate else hoje + timedelta(weeks=12)
+    n_semanas = min(30, max(0, (horizonte - hoje).days // 7 + 1))
+    datas_projetar = {hoje + timedelta(weeks=w) for w in range(0, n_semanas + 1)}
+    if ate is not None:
+        datas_projetar.add(ate)
+    projecao = []
+    for data_proj in sorted(datas_projetar):
+        semana_proj = semana_atual + _avanco_semanas(round((data_proj - hoje).days / 7))
+        projecao.append(PontoProjetadoOut(
+            data=data_proj, semana=semana_proj,
+            peso_esperado_g=_peso_para_semana(curva, semana_proj - 1),
+        ))
+
     return HistoricoLoteOut(
         viveiro_codigo=lote["viveiro_codigo"], lote_codigo=lote["lote_codigo"],
         area_m2=area_m2, data_inicio=data_inicio, origem=origem, data_povoamento=data_povoamento,
         pronto_para_abate=pronto_para_abate, previsao_abate=previsao_abate, pontos=pontos,
+        projecao=projecao,
     )

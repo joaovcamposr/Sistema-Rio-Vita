@@ -890,6 +890,12 @@ export interface PontoHistoricoLote {
   conversao_esperada_intervalo: number | null;
 }
 
+export interface PontoProjetado {
+  data: string;
+  semana: number;
+  peso_esperado_g: number;
+}
+
 export interface HistoricoLote {
   viveiro_codigo: string;
   lote_codigo: string;
@@ -900,10 +906,14 @@ export interface HistoricoLote {
   pronto_para_abate: boolean;
   previsao_abate: string | null;
   pontos: PontoHistoricoLote[];
+  projecao: PontoProjetado[];
 }
 
-export const historicoLote = (viveiroId: number) =>
-  cachedGet<HistoricoLote>(`cache:historico-lote:${viveiroId}`, `/paineis/viveiros/${viveiroId}/historico-lote`);
+export const historicoLote = (viveiroId: number, ate?: string) =>
+  cachedGet<HistoricoLote>(
+    `cache:historico-lote:${viveiroId}${ate ? `:${ate}` : ""}`,
+    `/paineis/viveiros/${viveiroId}/historico-lote${ate ? `?ate=${ate}` : ""}`
+  );
 
 export const painelLembretes = (situacao: string, vendedorId?: number | null) => {
   const qs = new URLSearchParams({ situacao });

@@ -1525,6 +1525,12 @@ class PontoHistoricoLoteOut(BaseModel):
     conversao_esperada_intervalo: float | None
 
 
+class PontoProjetadoOut(BaseModel):
+    data: date
+    semana: int
+    peso_esperado_g: float
+
+
 class HistoricoLoteOut(BaseModel):
     viveiro_codigo: str
     lote_codigo: str
@@ -1535,3 +1541,4 @@ class HistoricoLoteOut(BaseModel):
     pronto_para_abate: bool
     previsao_abate: date | None
     pontos: list[PontoHistoricoLoteOut]
+    projecao: list[PontoProjetadoOut]
