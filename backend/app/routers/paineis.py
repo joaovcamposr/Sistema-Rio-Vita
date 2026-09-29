@@ -526,6 +526,30 @@ def programacao_abate(db: Session = Depends(get_db)):
             l["restantes"] -= pegar
             falta -= kg_ref
 
+        # meta explícita e os lotes prontos não bastam pra cobrir: força a
+        # despesca de lotes que ainda não chegaram na semana limite, o mais
+        # próximo de pronto primeiro — melhor abater abaixo do peso ideal
+        # (fica marcado) do que deixar a meta descoberta sem necessidade
+        if meta > 0 and falta > 0.0005:
+            forcados = sorted(
+                (l for l in lotes if l["restantes"] > 0 and l["pronto_em"] > fim_mes),
+                key=lambda l: l["pronto_em"],
+            )
+            for l in forcados:
+                if falta <= 0.0005:
+                    break
+                referencia = max(mes, hoje)
+                peso_ref = peso_em(l, referencia)
+                restantes_antes = l["restantes"]
+                if restantes_antes * peso_ref / 1000 <= falta:
+                    pegar = restantes_antes
+                else:
+                    pegar = min(restantes_antes, math.ceil(falta * 1000 / peso_ref))
+                kg_ref = pegar * peso_ref / 1000
+                provisorios.append({"lote": l, "pegar": pegar, "kg_ref": kg_ref, "restantes_antes": restantes_antes})
+                l["restantes"] -= pegar
+                falta -= kg_ref
+
         # datas espalhadas pelo mês: o primeiro lote (peso maior) sempre no
         # dia 1; os demais avançam proporcionalmente ao que já foi
         # abatido antes deles no mês (fração do total já acumulada) sobre
