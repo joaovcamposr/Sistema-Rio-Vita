@@ -75,10 +75,15 @@ export default function PainelAbate() {
     }));
     const futuros = historico.projecao.map((p) => ({
       bucket: p.data,
-      valores: { "Peso esperado (g)": p.peso_esperado_g },
+      valores: {
+        "Peso esperado (g)": p.peso_esperado_g,
+        ...(loteReal && p.data === loteReal.data_prevista
+          ? { "Despesca prevista (g)": p.peso_esperado_g }
+          : {}),
+      },
     }));
     return [...reais, ...futuros];
-  }, [historico]);
+  }, [historico, loteReal]);
 
   function carregarPlano() {
     programacaoAbate()
@@ -405,11 +410,13 @@ export default function PainelAbate() {
               <div className={styles.section} style={{ marginTop: 16 }}>Curva de crescimento — real e projetada</div>
               <p className={styles.hint}>
                 Linha do peso real medido em cada biometria, esperado pela curva desde a entrada nesse tanque, e a
-                projeção a partir de hoje ancorada na última biometria.
-                {loteReal && ` A despesca prevista (${dataBr(loteReal.data_prevista)}) está marcada na tabela abaixo.`}
+                projeção a partir de hoje ancorada na última biometria, até o peso máximo da curva.
+                {loteReal && ` A despesca prevista (${dataBr(loteReal.data_prevista)}) está marcada no gráfico e na tabela abaixo.`}
               </p>
               <Chart
-                dados={pontosCrescimento} series={["Peso real (g)", "Peso esperado (g)"]} tipo="linha"
+                dados={pontosCrescimento}
+                series={loteReal ? ["Peso real (g)", "Peso esperado (g)", "Despesca prevista (g)"] : ["Peso real (g)", "Peso esperado (g)"]}
+                tipo="linha"
                 formatarBucket={dataBr} formatarValor={(v) => `${nf(v, 0)} g`}
               />
 

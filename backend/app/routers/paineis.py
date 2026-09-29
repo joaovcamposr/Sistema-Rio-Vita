@@ -2605,8 +2605,12 @@ def historico_lote(
     # informada (ate) com folga, ou um horizonte padrão se não vier. A
     # data de "ate" entra como ponto explícito (mesmo fora da grade
     # semanal) pra sempre dar pra marcar a despesca prevista certinha.
-    horizonte = max(ate, hoje + timedelta(weeks=8)) if ate else hoje + timedelta(weeks=12)
-    n_semanas = min(30, max(0, (horizonte - hoje).days // 7 + 1))
+    # cobre a despesca informada com folga, e sempre chega até o peso
+    # máximo da curva (com uma folga de 2 semanas) pra mostrar o platô
+    # final, mesmo quando a despesca real é bem antes disso
+    semanas_ate_despesca = ((ate - hoje).days // 7 + 8) if ate else 12
+    semanas_ate_plato = max(0, semana_maxima - semana_atual) + 2
+    n_semanas = min(52, max(semanas_ate_despesca, semanas_ate_plato, 1))
     datas_projetar = {hoje + timedelta(weeks=w) for w in range(0, n_semanas + 1)}
     if ate is not None:
         datas_projetar.add(ate)
