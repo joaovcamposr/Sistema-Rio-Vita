@@ -41,6 +41,11 @@ from ..schemas import (
     ItemDespescaProgramadaOut,
     ItemRepicagemOut,
     LoteNaoAlocadoOut,
+    LoteResumoOut,
+    LoteDetalheOut,
+    DespescaLoteOut,
+    RepicagemSaidaLoteOut,
+    ProducaoLoteOut,
     MesProgramacaoOut,
     MortalidadeConsideradaOut,
     ProgramacaoAbateOut,
@@ -2660,4 +2665,236 @@ def historico_lote(
         area_m2=area_m2, data_inicio=data_inicio, origem=origem, data_povoamento=data_povoamento,
         pronto_para_abate=pronto_para_abate, previsao_abate=previsao_abate, pontos=pontos,
         projecao=projecao,
+    )
+
+
+@router.get("/lotes", response_model=list[LoteResumoOut])
+def listar_lotes(db: Session = Depends(get_db)):
+    """Lista todo lote, ativo ou encerrado, pra alimentar o seletor do
+    Painel de lotes — peso estimado hoje/semana/previsão só fazem
+    sentido pra lote ainda ativo."""
+    curva = _carregar_curva(db)
+    semana_maxima = curva[-1]["semana"]
+    hoje = date.today()
+    rows = db.execute(text("""
+        SELECT l.id, l.codigo, l.fase, l.data_inicio, l.data_fim, l.quantidade_inicial,
+               l.peso_medio_inicial_g, v.codigo AS viveiro_codigo, s.saldo_un,
+               b.data AS biometria_data, b.peso_medio_g AS biometria_peso
+        FROM lote l
+        JOIN viveiro v ON v.id = l.viveiro_id
+        JOIN vw_saldo_lote s ON s.lote_id = l.id
+        LEFT JOIN LATERAL (
+          SELECT data, peso_medio_g FROM biometria
+          WHERE lote_id = l.id AND excluido_em IS NULL ORDER BY data DESC LIMIT 1
+        ) b ON true
+        ORDER BY l.data_inicio DESC, l.id DESC
+    """)).mappings().all()
+
+    out = []
+    for r in rows:
+        ativo = r["data_fim"] is None
+        peso_estimado_hoje_g = None
+        semana_atual = None
+        pronto_para_abate = None
+        if ativo:
+            peso_base = float(r["biometria_peso"]) if r["biometria_peso"] is not None else float(r["peso_medio_inicial_g"])
+            data_base = r["biometria_data"] or r["data_inicio"]
+            semana_base = _semana_para_peso(curva, peso_base)
+            semanas_decorridas = max(0, (hoje - data_base).days // 7)
+            semana_atual = min(semana_base + _avanco_semanas(semanas_decorridas), semana_maxima)
+            peso_estimado_hoje_g = _peso_para_semana(curva, semana_atual)
+            pronto_para_abate = semana_atual >= SEMANA_LIMITE_ABATE
+        fim_referencia = r["data_fim"] or hoje
+        idade_dias = (fim_referencia - r["data_inicio"]).days
+        out.append(LoteResumoOut(
+            id=r["id"], codigo=r["codigo"], fase=r["fase"], viveiro_codigo=r["viveiro_codigo"],
+            ativo=ativo, data_inicio=r["data_inicio"], data_fim=r["data_fim"], idade_dias=idade_dias,
+            quantidade_inicial=r["quantidade_inicial"], saldo_atual_un=r["saldo_un"],
+            peso_estimado_hoje_g=peso_estimado_hoje_g, semana_atual=semana_atual,
+            pronto_para_abate=pronto_para_abate,
+        ))
+    return out
+
+
+@router.get("/lotes/{lote_id}", response_model=LoteDetalheOut)
+def lote_detalhe(lote_id: int, db: Session = Depends(get_db)):
+    """Visão completa de um lote (ativo ou encerrado): origem, curva de
+    crescimento real x esperada, projeção futura (se ativo), despescas,
+    repicagens de saída, produção/rendimento e os mesmos indicadores do
+    Painel do viveiro (peso estimado hoje, biomassa, conversão, densidade
+    — já descontando mortalidade esperada)."""
+    lote = db.execute(text("""
+        SELECT l.id, l.codigo, l.fase, l.data_inicio, l.data_fim, l.quantidade_inicial,
+               l.peso_medio_inicial_g, v.codigo AS viveiro_codigo, v.area_m2
+        FROM lote l JOIN viveiro v ON v.id = l.viveiro_id
+        WHERE l.id = :id
+    """), {"id": lote_id}).mappings().first()
+    if lote is None:
+        raise HTTPException(404, "Lote não encontrado.")
+
+    curva = _carregar_curva(db)
+    semana_maxima = curva[-1]["semana"]
+    hoje = date.today()
+    ativo = lote["data_fim"] is None
+    data_inicio = lote["data_inicio"]
+    quantidade_inicial = lote["quantidade_inicial"]
+    peso_inicial_g = float(lote["peso_medio_inicial_g"])
+    area_m2 = float(lote["area_m2"])
+
+    origem, data_povoamento = _origem_lote(db, lote["id"], data_inicio)
+
+    saldo_un = db.execute(
+        text("SELECT saldo_un FROM vw_saldo_lote WHERE lote_id = :id"), {"id": lote_id},
+    ).scalar()
+
+    mortalidade = painel_mortalidade(db)
+    taxa_mortalidade = (
+        mortalidade.taxa_media_pre_engorda if lote["fase"] == "pre_engorda" else mortalidade.taxa_media_engorda
+    ) or 0.0
+    peixes_vivos_esperados = int(_saldo_com_mortalidade(saldo_un, quantidade_inicial, taxa_mortalidade))
+
+    biometrias = db.execute(text("""
+        SELECT data, peso_medio_g FROM biometria WHERE lote_id = :id AND excluido_em IS NULL ORDER BY data
+    """), {"id": lote_id}).mappings().all()
+
+    despesca_rows = db.execute(text("""
+        SELECT data, destino, quantidade_un, peso_medio_g, peso_total_kg
+        FROM despesca WHERE lote_id = :id AND excluido_em IS NULL ORDER BY data
+    """), {"id": lote_id}).mappings().all()
+
+    origem_rows_saida = db.execute(text("""
+        SELECT o.data, o.quantidade, o.peso_medio_g,
+               vd.codigo AS viveiro_destino_codigo, ld.codigo AS lote_destino_codigo
+        FROM lote_origem o
+        JOIN lote ld ON ld.id = o.lote_id
+        JOIN viveiro vd ON vd.id = ld.viveiro_id
+        WHERE o.lote_origem_id = :id AND o.excluido_em IS NULL
+        ORDER BY o.data
+    """), {"id": lote_id}).mappings().all()
+
+    arracoamento_rows = db.execute(text("""
+        SELECT data, sacos FROM arracoamento WHERE lote_id = :id AND excluido_em IS NULL
+    """), {"id": lote_id}).mappings().all()
+    racao_acumulada_kg = sum(float(a["sacos"]) for a in arracoamento_rows) * 25 if arracoamento_rows else None
+
+    producao_rows = db.execute(text("""
+        SELECT d.data, pr.nome AS produto_nome, d.quantidade_kg, d.data_despesca, d.rendimento
+        FROM vw_producao_detalhe d JOIN produto pr ON pr.id = d.produto_id
+        WHERE d.lote_id = :id AND d.excluido_em IS NULL
+        ORDER BY d.data
+    """), {"id": lote_id}).mappings().all()
+
+    tabela = db.execute(text("SELECT semana, consumo_semanal_kg FROM tabela_arracoamento ORDER BY semana")).mappings().all()
+    consumo_por_semana = {t["semana"]: float(t["consumo_semanal_kg"]) for t in tabela}
+    semana_maxima_tabela = max(consumo_por_semana) if consumo_por_semana else semana_maxima
+
+    semana_inicial = _semana_para_peso(curva, peso_inicial_g)
+
+    def semana_esperada_em(data_ponto: date) -> int:
+        semanas = max(0, (data_ponto - data_inicio).days // 7)
+        return min(semana_inicial + _avanco_semanas(semanas), semana_maxima)
+
+    def saldo_ate(data_referencia: date) -> int:
+        despescado = sum(r["quantidade_un"] for r in despesca_rows if r["data"] <= data_referencia)
+        repicado = sum(r["quantidade"] for r in origem_rows_saida if r["data"] <= data_referencia)
+        return quantidade_inicial - despescado - repicado
+
+    def racao_intervalo_kg(data_de: date, data_ate: date) -> float:
+        sacos = sum(float(a["sacos"]) for a in arracoamento_rows if data_de < a["data"] <= data_ate)
+        return sacos * 25
+
+    fim_janela = lote["data_fim"] or hoje
+    linha = [{"data": data_inicio, "peso_real_g": peso_inicial_g}]
+    linha += [{"data": b["data"], "peso_real_g": float(b["peso_medio_g"])} for b in biometrias if b["data"] <= fim_janela]
+
+    pontos = []
+    anterior = None
+    for p in linha:
+        semana_esp = semana_esperada_em(p["data"])
+        peso_esperado_g = _peso_para_semana(curva, semana_esp)
+        saldo_ponto = saldo_ate(p["data"])
+        densidade_kg_m2 = (saldo_ponto * p["peso_real_g"] / 1000 / area_m2) if area_m2 else None
+        biomassa_kg = saldo_ponto * p["peso_real_g"] / 1000
+
+        conversao_realizada = None
+        conversao_esperada = None
+        if anterior is not None:
+            ganho_real_kg = biomassa_kg - anterior["biomassa_kg"]
+            if ganho_real_kg > 0:
+                conversao_realizada = racao_intervalo_kg(anterior["data"], p["data"]) / ganho_real_kg
+            if semana_esp > anterior["semana_esp"]:
+                consumo_semanal_total = sum(
+                    consumo_por_semana.get(min(s, semana_maxima_tabela), 0.0)
+                    for s in range(anterior["semana_esp"] + 1, semana_esp + 1)
+                )
+                ganho_esperado_g = peso_esperado_g - anterior["peso_esperado_g"]
+                if ganho_esperado_g > 0:
+                    conversao_esperada = consumo_semanal_total / ganho_esperado_g
+
+        pontos.append(PontoHistoricoLoteOut(
+            data=p["data"], peso_real_g=p["peso_real_g"], peso_esperado_g=peso_esperado_g,
+            saldo_un=saldo_ponto, densidade_kg_m2=densidade_kg_m2,
+            conversao_realizada_intervalo=conversao_realizada, conversao_esperada_intervalo=conversao_esperada,
+        ))
+        anterior = {"data": p["data"], "biomassa_kg": biomassa_kg, "semana_esp": semana_esp, "peso_esperado_g": peso_esperado_g}
+
+    indicadores: dict = {}
+    projecao: list[PontoProjetadoOut] = []
+    semana_atual = None
+    pronto_para_abate = None
+    previsao_abate = None
+    if ativo:
+        data_biometria = biometrias[-1]["data"] if biometrias else data_inicio
+        peso_biometria = float(biometrias[-1]["peso_medio_g"]) if biometrias else peso_inicial_g
+        indicadores = _calcular_indicadores_lote(
+            curva, hoje, data_inicio, quantidade_inicial, peso_inicial_g,
+            data_biometria, peso_biometria, saldo_un, area_m2, racao_acumulada_kg,
+            taxa_mortalidade=taxa_mortalidade,
+        )
+        semana_biometria = _semana_para_peso(curva, peso_biometria)
+        semanas_decorridas = max(0, (hoje - data_biometria).days // 7)
+        semana_atual = min(semana_biometria + _avanco_semanas(semanas_decorridas), semana_maxima)
+        pronto_para_abate = semana_atual >= SEMANA_LIMITE_ABATE
+        previsao_abate = (
+            None if pronto_para_abate
+            else hoje + timedelta(weeks=SEMANA_LIMITE_ABATE - semana_atual + ATRASO_CRESCIMENTO_SEMANAS)
+        )
+        semanas_ate_plato = max(0, semana_maxima - semana_atual) + 2
+        n_semanas = min(52, max(semanas_ate_plato, 1))
+        for w in range(0, n_semanas + 1):
+            semana_proj = semana_atual + _avanco_semanas(w)
+            projecao.append(PontoProjetadoOut(
+                data=hoje + timedelta(weeks=w), semana=semana_proj,
+                peso_esperado_g=_peso_para_semana(curva, semana_proj - 1),
+            ))
+
+    peso_ideal_abate_g = _peso_para_semana(curva, SEMANA_LIMITE_ABATE)
+    total_despescado_un = sum(r["quantidade_un"] for r in despesca_rows)
+    total_despescado_kg = sum(float(r["peso_total_kg"]) for r in despesca_rows)
+    total_producao_kg = sum(float(r["quantidade_kg"]) for r in producao_rows)
+    fim_referencia_idade = lote["data_fim"] or hoje
+
+    return LoteDetalheOut(
+        id=lote["id"], codigo=lote["codigo"], fase=lote["fase"], ativo=ativo,
+        viveiro_codigo=lote["viveiro_codigo"], data_inicio=data_inicio, data_fim=lote["data_fim"],
+        quantidade_inicial=quantidade_inicial, peso_medio_inicial_g=peso_inicial_g, area_m2=area_m2,
+        origem=origem, data_povoamento=data_povoamento,
+        saldo_atual_un=saldo_un, peixes_vivos_esperados=peixes_vivos_esperados,
+        idade_dias=(fim_referencia_idade - data_inicio).days,
+        idade_semanas=indicadores.get("idade_semanas"),
+        peso_estimado_hoje_g=indicadores.get("peso_estimado_hoje_g"),
+        peso_esperado_pela_idade_g=indicadores.get("peso_esperado_pela_idade_g"),
+        cor_crescimento=indicadores.get("cor_crescimento"),
+        semana_atual=semana_atual,
+        biomassa_atual_kg=indicadores.get("biomassa_atual_kg"),
+        densidade_kg_m2=indicadores.get("densidade_kg_m2"),
+        conversao_alimentar=indicadores.get("conversao_alimentar"),
+        racao_acumulada_kg=racao_acumulada_kg,
+        pronto_para_abate=pronto_para_abate, previsao_abate=previsao_abate, peso_ideal_abate_g=peso_ideal_abate_g,
+        pontos=pontos, projecao=projecao,
+        despescas=[DespescaLoteOut(**r) for r in despesca_rows],
+        repicagens_saida=[RepicagemSaidaLoteOut(**r) for r in origem_rows_saida],
+        producao=[ProducaoLoteOut(**r) for r in producao_rows],
+        total_despescado_un=total_despescado_un, total_despescado_kg=total_despescado_kg,
+        total_producao_kg=total_producao_kg,
     )

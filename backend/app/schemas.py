@@ -1542,3 +1542,86 @@ class HistoricoLoteOut(BaseModel):
     previsao_abate: date | None
     pontos: list[PontoHistoricoLoteOut]
     projecao: list[PontoProjetadoOut]
+
+
+class LoteResumoOut(BaseModel):
+    id: int
+    codigo: str
+    fase: str
+    viveiro_codigo: str
+    ativo: bool
+    data_inicio: date
+    data_fim: date | None
+    idade_dias: int
+    quantidade_inicial: int
+    saldo_atual_un: int
+    peso_estimado_hoje_g: float | None
+    semana_atual: int | None
+    pronto_para_abate: bool | None
+
+
+class DespescaLoteOut(BaseModel):
+    data: date
+    destino: str
+    quantidade_un: int
+    peso_medio_g: float
+    peso_total_kg: float
+
+
+class RepicagemSaidaLoteOut(BaseModel):
+    data: date
+    viveiro_destino_codigo: str
+    lote_destino_codigo: str
+    quantidade: int
+    peso_medio_g: float
+
+
+class ProducaoLoteOut(BaseModel):
+    data: date
+    produto_nome: str
+    quantidade_kg: float
+    data_despesca: date | None
+    rendimento: float | None
+
+
+class LoteDetalheOut(BaseModel):
+    id: int
+    codigo: str
+    fase: str
+    ativo: bool
+    viveiro_codigo: str
+    data_inicio: date
+    data_fim: date | None
+    quantidade_inicial: int
+    peso_medio_inicial_g: float
+    area_m2: float
+
+    origem: str
+    data_povoamento: date
+
+    saldo_atual_un: int
+    peixes_vivos_esperados: int
+    idade_dias: int
+    idade_semanas: int | None
+    peso_estimado_hoje_g: float | None
+    peso_esperado_pela_idade_g: float | None
+    cor_crescimento: str | None
+    semana_atual: int | None
+    biomassa_atual_kg: float | None
+    densidade_kg_m2: float | None
+    conversao_alimentar: float | None
+    racao_acumulada_kg: float | None
+
+    pronto_para_abate: bool | None
+    previsao_abate: date | None
+    peso_ideal_abate_g: float
+
+    pontos: list[PontoHistoricoLoteOut]
+    projecao: list[PontoProjetadoOut]
+    despescas: list[DespescaLoteOut]
+    repicagens_saida: list[RepicagemSaidaLoteOut]
+    producao: list[ProducaoLoteOut]
+
+    total_despescado_un: int
+    total_despescado_kg: float
+    total_producao_kg: float

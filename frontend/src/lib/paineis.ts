@@ -915,6 +915,94 @@ export const historicoLote = (viveiroId: number, ate?: string) =>
     `/paineis/viveiros/${viveiroId}/historico-lote${ate ? `?ate=${ate}` : ""}`
   );
 
+export interface LoteResumo {
+  id: number;
+  codigo: string;
+  fase: string;
+  viveiro_codigo: string;
+  ativo: boolean;
+  data_inicio: string;
+  data_fim: string | null;
+  idade_dias: number;
+  quantidade_inicial: number;
+  saldo_atual_un: number;
+  peso_estimado_hoje_g: number | null;
+  semana_atual: number | null;
+  pronto_para_abate: boolean | null;
+}
+
+export const listarLotes = () => cachedGet<LoteResumo[]>("cache:lotes", "/paineis/lotes");
+
+export interface DespescaLote {
+  data: string;
+  destino: string;
+  quantidade_un: number;
+  peso_medio_g: number;
+  peso_total_kg: number;
+}
+
+export interface RepicagemSaidaLote {
+  data: string;
+  viveiro_destino_codigo: string;
+  lote_destino_codigo: string;
+  quantidade: number;
+  peso_medio_g: number;
+}
+
+export interface ProducaoLote {
+  data: string;
+  produto_nome: string;
+  quantidade_kg: number;
+  data_despesca: string | null;
+  rendimento: number | null;
+}
+
+export interface LoteDetalhe {
+  id: number;
+  codigo: string;
+  fase: string;
+  ativo: boolean;
+  viveiro_codigo: string;
+  data_inicio: string;
+  data_fim: string | null;
+  quantidade_inicial: number;
+  peso_medio_inicial_g: number;
+  area_m2: number;
+
+  origem: string;
+  data_povoamento: string;
+
+  saldo_atual_un: number;
+  peixes_vivos_esperados: number;
+  idade_dias: number;
+  idade_semanas: number | null;
+  peso_estimado_hoje_g: number | null;
+  peso_esperado_pela_idade_g: number | null;
+  cor_crescimento: string | null;
+  semana_atual: number | null;
+  biomassa_atual_kg: number | null;
+  densidade_kg_m2: number | null;
+  conversao_alimentar: number | null;
+  racao_acumulada_kg: number | null;
+
+  pronto_para_abate: boolean | null;
+  previsao_abate: string | null;
+  peso_ideal_abate_g: number;
+
+  pontos: PontoHistoricoLote[];
+  projecao: PontoProjetado[];
+  despescas: DespescaLote[];
+  repicagens_saida: RepicagemSaidaLote[];
+  producao: ProducaoLote[];
+
+  total_despescado_un: number;
+  total_despescado_kg: number;
+  total_producao_kg: number;
+}
+
+export const loteDetalhe = (loteId: number) =>
+  cachedGet<LoteDetalhe>(`cache:lote-detalhe:${loteId}`, `/paineis/lotes/${loteId}`);
+
 export const painelLembretes = (situacao: string, vendedorId?: number | null) => {
   const qs = new URLSearchParams({ situacao });
   if (vendedorId) qs.set("vendedor_id", String(vendedorId));

@@ -7,6 +7,7 @@ import styles from "./painel.module.css";
 const PAINEIS = [
   { href: "/painel/dashboard", ico: "📊", nome: "Dashboard", desc: "Visão geral do período — produção, vendas e alertas" },
   { href: "/painel/viveiros", ico: "🌊", nome: "Painel do viveiro", desc: "Saldo, densidade, biometria e água por tanque" },
+  { href: "/painel/lotes", ico: "🐟", nome: "Painel de lotes", desc: "Tudo sobre um lote — origem, crescimento, despescas e produção" },
   { href: "/painel/biometria", ico: "⚖️", nome: "Biometria", desc: "Conferência dos lançamentos, com opção de corrigir" },
   { href: "/painel/abate", ico: "📅", nome: "Programação de abate", desc: "Previsão por lote, a partir da última biometria" },
   { href: "/painel/producao", ico: "📦", nome: "Produção e rendimento", desc: "Peso sujo e rendimento ponderados por período" },
