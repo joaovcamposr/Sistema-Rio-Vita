@@ -2527,8 +2527,15 @@ def historico_lote(
     origem, data_povoamento = _origem_lote(db, lote["id"], data_inicio)
 
     hoje = date.today()
+    # mesma conta do peso_estimado_hoje_g usado no resto do sistema
+    # (painel do viveiro, Programação de abate): projeta a partir da
+    # última biometria pro dia de hoje, não trata o peso dela como se
+    # fosse de hoje — senão a curva projetada fica atrasada
     peso_atual_g = float(biometrias[-1]["peso_medio_g"]) if biometrias else peso_inicial_g
-    semana_atual = _semana_para_peso(curva, peso_atual_g)
+    data_biometria_atual = biometrias[-1]["data"] if biometrias else data_inicio
+    semana_biometria_atual = _semana_para_peso(curva, peso_atual_g)
+    semanas_decorridas_atual = max(0, (hoje - data_biometria_atual).days // 7)
+    semana_atual = min(semana_biometria_atual + _avanco_semanas(semanas_decorridas_atual), semana_maxima)
     pronto_para_abate = semana_atual >= SEMANA_LIMITE_ABATE
     previsao_abate = (
         None if pronto_para_abate
