@@ -52,6 +52,7 @@ from ..schemas import (
     NivelRepicagemOut,
     PainelViveiroOut,
     PontoHistoricoLoteOut,
+    PontoProjetadoOut,
     EstoqueRacaoOut,
     EstoqueRacaoTipoOut,
     ProducaoDetalheOut,
