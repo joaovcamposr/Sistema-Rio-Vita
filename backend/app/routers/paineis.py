@@ -447,7 +447,8 @@ def programacao_abate(db: Session = Depends(get_db)):
             vivos = lote.saldo_un - m_eng.taxa_considerada * lote.quantidade_inicial
         vivos = max(0, int(vivos))
         lotes.append({
-            "viveiro_id": v.id, "viveiro": v.codigo, "lote": lote.codigo, "fase": lote.fase, "saldo": lote.saldo_un,
+            "viveiro_id": v.id, "viveiro": v.codigo, "lote": lote.codigo, "fase": lote.fase,
+            "saldo_restante": lote.saldo_un,
             "vivos_esperados": vivos, "restantes": vivos, "semana_hoje": semana_hoje,
             "pronto_em": hoje + timedelta(
                 weeks=(SEMANA_LIMITE_ABATE - semana_hoje + ATRASO_CRESCIMENTO_SEMANAS)
@@ -521,13 +522,18 @@ def programacao_abate(db: Session = Depends(get_db)):
             referencia = max(mes, l["pronto_em"])
             peso_ref = peso_em(l, referencia)
             restantes_antes = l["restantes"]
+            saldo_restante_antes = l["saldo_restante"]
             if restantes_antes * peso_ref / 1000 <= falta:
                 pegar = restantes_antes
             else:
                 pegar = min(restantes_antes, math.ceil(falta * 1000 / peso_ref))
             kg_ref = pegar * peso_ref / 1000
-            provisorios.append({"lote": l, "pegar": pegar, "kg_ref": kg_ref, "restantes_antes": restantes_antes})
+            provisorios.append({
+                "lote": l, "pegar": pegar, "kg_ref": kg_ref,
+                "restantes_antes": restantes_antes, "saldo_restante_antes": saldo_restante_antes,
+            })
             l["restantes"] -= pegar
+            l["saldo_restante"] -= pegar
             falta -= kg_ref
 
         # meta explícita e os lotes prontos não bastam pra cobrir: força a
@@ -545,13 +551,18 @@ def programacao_abate(db: Session = Depends(get_db)):
                 referencia = max(mes, hoje)
                 peso_ref = peso_em(l, referencia)
                 restantes_antes = l["restantes"]
+                saldo_restante_antes = l["saldo_restante"]
                 if restantes_antes * peso_ref / 1000 <= falta:
                     pegar = restantes_antes
                 else:
                     pegar = min(restantes_antes, math.ceil(falta * 1000 / peso_ref))
                 kg_ref = pegar * peso_ref / 1000
-                provisorios.append({"lote": l, "pegar": pegar, "kg_ref": kg_ref, "restantes_antes": restantes_antes})
+                provisorios.append({
+                    "lote": l, "pegar": pegar, "kg_ref": kg_ref,
+                    "restantes_antes": restantes_antes, "saldo_restante_antes": saldo_restante_antes,
+                })
                 l["restantes"] -= pegar
+                l["saldo_restante"] -= pegar
                 falta -= kg_ref
 
         # datas espalhadas pelo mês: o primeiro lote (peso maior) sempre no
@@ -572,7 +583,7 @@ def programacao_abate(db: Session = Depends(get_db)):
             kg = pegar * peso / 1000
             itens.append(ItemDespescaProgramadaOut(
                 viveiro_id=l["viveiro_id"], viveiro_codigo=l["viveiro"], lote_codigo=l["lote"], fase=l["fase"],
-                saldo_atual_un=l["saldo"], peixes_vivos_esperados=l["vivos_esperados"],
+                saldo_atual_un=p["saldo_restante_antes"], peixes_vivos_esperados=p["restantes_antes"],
                 peixes_a_despescar=pegar, peso_medio_esperado_g=peso, semana_abate=semana_em(l, colheita),
                 kg_esperado=kg, data_prevista=colheita, parcial=pegar < p["restantes_antes"],
                 abaixo_peso_ideal=peso < peso_ideal_abate_g - 0.05,
