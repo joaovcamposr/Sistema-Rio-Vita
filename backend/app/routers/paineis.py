@@ -217,9 +217,18 @@ def _chave_ordem_viveiro(codigo: str) -> tuple:
     return (1, principal, sub)
 
 
+def _saldo_com_mortalidade(saldo_un: int, quantidade_inicial: int, taxa_mortalidade: float) -> float:
+    """Desconta do saldo registrado a mortalidade que ainda não foi
+    lançada — só aparece quando o lote fecha — pela taxa média dos lotes
+    já encerrados na mesma fase. Sem isso, biomassa e conversão alimentar
+    ficam sempre otimistas (contam peixe que já pode ter morrido)."""
+    return max(0.0, saldo_un - taxa_mortalidade * quantidade_inicial)
+
+
 def _calcular_indicadores_lote(
     curva: list[dict], hoje: date, data_inicio: date, quantidade_inicial: int, peso_medio_inicial_g: float,
     data_biometria: date, peso_biometria_g: float, saldo_un: int, area_m2: float, racao_acumulada_kg: float | None,
+    taxa_mortalidade: float = 0.0,
 ) -> dict:
     """Reconstrói o que a planilha fazia à mão: projeta o peso de hoje a
     partir da última biometria + curva de crescimento, compara com o peso
@@ -255,7 +264,8 @@ def _calcular_indicadores_lote(
     else:
         cor = "amarelo"
 
-    biomassa_atual_kg = saldo_un * peso_estimado_hoje_g / 1000
+    saldo_ajustado = _saldo_com_mortalidade(saldo_un, quantidade_inicial, taxa_mortalidade)
+    biomassa_atual_kg = saldo_ajustado * peso_estimado_hoje_g / 1000
     biomassa_inicial_kg = quantidade_inicial * peso_medio_inicial_g / 1000
     ganho_biomassa_kg = biomassa_atual_kg - biomassa_inicial_kg
     densidade_kg_m2 = biomassa_atual_kg / area_m2 if area_m2 else None
@@ -278,6 +288,11 @@ def _calcular_indicadores_lote(
 @router.get("/viveiros", response_model=list[PainelViveiroOut])
 def painel_viveiros(db: Session = Depends(get_db)):
     curva = _carregar_curva(db)
+    mortalidade = painel_mortalidade(db)
+    taxa_mortalidade_por_fase = {
+        "pre_engorda": mortalidade.taxa_media_pre_engorda or 0.0,
+        "engorda": mortalidade.taxa_media_engorda or 0.0,
+    }
     rows = db.execute(text("""
         SELECT v.id, v.codigo, v.tipo, v.area_m2,
                l.id AS lote_id, l.codigo AS lote_codigo, l.fase AS lote_fase,
@@ -322,6 +337,7 @@ def painel_viveiros(db: Session = Depends(get_db)):
             indicadores = _calcular_indicadores_lote(
                 curva, hoje, r["lote_data_inicio"], r["quantidade_inicial"], float(r["peso_medio_inicial_g"]),
                 data_biometria, peso_biometria, r["saldo_un"], float(r["area_m2"]), _f(r["sacos_total"]),
+                taxa_mortalidade=taxa_mortalidade_por_fase.get(r["lote_fase"], 0.0),
             )
         ultima_biometria = None
         if r["biometria_data"] is not None:
@@ -2496,13 +2512,18 @@ def historico_lote(
     intervalo entre biometrias contra a esperada pela tabela de
     arraçoamento no mesmo intervalo de tempo."""
     lote = db.execute(text("""
-        SELECT l.id, l.codigo AS lote_codigo, l.data_inicio, l.quantidade_inicial,
+        SELECT l.id, l.codigo AS lote_codigo, l.fase, l.data_inicio, l.quantidade_inicial,
                l.peso_medio_inicial_g, v.codigo AS viveiro_codigo, v.area_m2
         FROM lote l JOIN viveiro v ON v.id = l.viveiro_id
         WHERE v.id = :viveiro_id AND l.data_fim IS NULL
     """), {"viveiro_id": viveiro_id}).mappings().first()
     if lote is None:
         raise HTTPException(404, "Nenhum lote ativo nesse viveiro.")
+
+    mortalidade = painel_mortalidade(db)
+    taxa_mortalidade = (
+        mortalidade.taxa_media_pre_engorda if lote["fase"] == "pre_engorda" else mortalidade.taxa_media_engorda
+    ) or 0.0
 
     curva = _carregar_curva(db)
     semana_maxima = curva[-1]["semana"]
@@ -2581,8 +2602,9 @@ def historico_lote(
         semana_esp = semana_esperada_em(p["data"])
         peso_esperado_g = _peso_para_semana(curva, semana_esp)
         saldo_un = saldo_ate(p["data"])
-        densidade_kg_m2 = (saldo_un * p["peso_real_g"] / 1000 / area_m2) if area_m2 else None
-        biomassa_kg = saldo_un * p["peso_real_g"] / 1000
+        saldo_ajustado = _saldo_com_mortalidade(saldo_un, quantidade_inicial, taxa_mortalidade)
+        densidade_kg_m2 = (saldo_ajustado * p["peso_real_g"] / 1000 / area_m2) if area_m2 else None
+        biomassa_kg = saldo_ajustado * p["peso_real_g"] / 1000
 
         conversao_realizada = None
         conversao_esperada = None
