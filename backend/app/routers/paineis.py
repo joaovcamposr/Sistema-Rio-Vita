@@ -498,7 +498,10 @@ def programacao_abate(db: Session = Depends(get_db)):
             break
         mes = _primeiro_dia_mes(hoje, i)
         fim_mes = _primeiro_dia_mes(hoje, i + 1) - timedelta(days=1)
-        dias_mes = (fim_mes - mes).days + 1
+        # não dá pra agendar no passado — no mês corrente, "dia 1" na
+        # prática é hoje; nos meses futuros é o dia 1 mesmo
+        inicio_mes_efetivo = max(mes, hoje)
+        dias_mes = (fim_mes - inicio_mes_efetivo).days + 1
         meta = metas.get(mes, 0.0)
         falta = meta if meta > 0 else math.inf
 
@@ -551,10 +554,10 @@ def programacao_abate(db: Session = Depends(get_db)):
                 falta -= kg_ref
 
         # datas espalhadas pelo mês: o primeiro lote (peso maior) sempre no
-        # dia 1; os demais avançam proporcionalmente ao que já foi
-        # abatido antes deles no mês (fração do total já acumulada) sobre
-        # os dias do mês, sem nunca ficar antes da própria pronto_em nem
-        # depois do fim do mês
+        # dia 1 (ou hoje, se o mês já começou) — despesca mesmo antes da
+        # própria pronto_em quando é o caso; os demais avançam
+        # proporcionalmente ao que já foi abatido antes deles sobre os
+        # dias restantes do mês, sem passar do fim do mês
         total_kg_ref = sum(p["kg_ref"] for p in provisorios)
         itens = []
         cum_kg = 0.0
@@ -562,8 +565,8 @@ def programacao_abate(db: Session = Depends(get_db)):
             l, pegar, kg_ref = p["lote"], p["pegar"], p["kg_ref"]
             inicio_frac = cum_kg / total_kg_ref if total_kg_ref > 0 else 0.0
             cum_kg += kg_ref
-            colheita = mes + timedelta(days=round(inicio_frac * (dias_mes - 1)))
-            colheita = min(max(colheita, l["pronto_em"]), fim_mes)
+            colheita = inicio_mes_efetivo + timedelta(days=round(inicio_frac * (dias_mes - 1)))
+            colheita = min(colheita, fim_mes)
             peso = peso_em(l, colheita)
             kg = pegar * peso / 1000
             itens.append(ItemDespescaProgramadaOut(
