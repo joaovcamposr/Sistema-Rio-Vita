@@ -58,6 +58,7 @@ from ..schemas import (
     PainelViveiroOut,
     PontoHistoricoLoteOut,
     PontoProjetadoOut,
+    PontoTeoricoOut,
     EstoqueRacaoOut,
     EstoqueRacaoTipoOut,
     ProducaoDetalheOut,
@@ -2660,11 +2661,22 @@ def historico_lote(
             peso_esperado_g=_peso_para_semana(curva, semana_proj - 1),
         ))
 
+    # curva teórica pura — só a idade desde a entrada nesse tanque, nunca
+    # ajustada por biometria — cobre a linha do tempo inteira (passado e
+    # futuro) como referência fixa, pra comparar com o real e o projetado
+    horizonte_teorico = hoje + timedelta(weeks=n_semanas)
+    semanas_teorico = max(1, (horizonte_teorico - data_inicio).days // 7)
+    teorico = []
+    for w in range(0, semanas_teorico + 1):
+        d = data_inicio + timedelta(weeks=w)
+        sem = semana_esperada_em(d)
+        teorico.append(PontoTeoricoOut(data=d, semana=sem, peso_teorico_g=_peso_para_semana(curva, sem)))
+
     return HistoricoLoteOut(
         viveiro_codigo=lote["viveiro_codigo"], lote_codigo=lote["lote_codigo"],
         area_m2=area_m2, data_inicio=data_inicio, origem=origem, data_povoamento=data_povoamento,
         pronto_para_abate=pronto_para_abate, previsao_abate=previsao_abate, pontos=pontos,
-        projecao=projecao,
+        projecao=projecao, teorico=teorico,
     )
 
 
@@ -2868,6 +2880,17 @@ def lote_detalhe(lote_id: int, db: Session = Depends(get_db)):
                 peso_esperado_g=_peso_para_semana(curva, semana_proj - 1),
             ))
 
+    # curva teórica pura — só a idade desde a entrada nesse tanque, nunca
+    # ajustada por biometria — cobre a linha do tempo inteira (passado e,
+    # se o lote está ativo, futuro também) como referência fixa
+    horizonte_teorico = (hoje + timedelta(weeks=n_semanas)) if ativo else fim_janela
+    semanas_teorico = max(1, (horizonte_teorico - data_inicio).days // 7)
+    teorico = []
+    for w in range(0, semanas_teorico + 1):
+        d = data_inicio + timedelta(weeks=w)
+        sem = semana_esperada_em(d)
+        teorico.append(PontoTeoricoOut(data=d, semana=sem, peso_teorico_g=_peso_para_semana(curva, sem)))
+
     peso_ideal_abate_g = _peso_para_semana(curva, SEMANA_LIMITE_ABATE)
     total_despescado_un = sum(r["quantidade_un"] for r in despesca_rows)
     total_despescado_kg = sum(float(r["peso_total_kg"]) for r in despesca_rows)
@@ -2891,7 +2914,7 @@ def lote_detalhe(lote_id: int, db: Session = Depends(get_db)):
         conversao_alimentar=indicadores.get("conversao_alimentar"),
         racao_acumulada_kg=racao_acumulada_kg,
         pronto_para_abate=pronto_para_abate, previsao_abate=previsao_abate, peso_ideal_abate_g=peso_ideal_abate_g,
-        pontos=pontos, projecao=projecao,
+        pontos=pontos, projecao=projecao, teorico=teorico,
         despescas=[DespescaLoteOut(**r) for r in despesca_rows],
         repicagens_saida=[RepicagemSaidaLoteOut(**r) for r in origem_rows_saida],
         producao=[ProducaoLoteOut(**r) for r in producao_rows],

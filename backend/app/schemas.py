@@ -1531,6 +1531,12 @@ class PontoProjetadoOut(BaseModel):
     peso_esperado_g: float
 
 
+class PontoTeoricoOut(BaseModel):
+    data: date
+    semana: int
+    peso_teorico_g: float
+
+
 class HistoricoLoteOut(BaseModel):
     viveiro_codigo: str
     lote_codigo: str
@@ -1542,6 +1548,7 @@ class HistoricoLoteOut(BaseModel):
     previsao_abate: date | None
     pontos: list[PontoHistoricoLoteOut]
     projecao: list[PontoProjetadoOut]
+    teorico: list[PontoTeoricoOut]
 
 
 class LoteResumoOut(BaseModel):
@@ -1618,6 +1625,7 @@ class LoteDetalheOut(BaseModel):
 
     pontos: list[PontoHistoricoLoteOut]
     projecao: list[PontoProjetadoOut]
+    teorico: list[PontoTeoricoOut]
     despescas: list[DespescaLoteOut]
     repicagens_saida: list[RepicagemSaidaLoteOut]
     producao: list[ProducaoLoteOut]

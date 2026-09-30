@@ -136,10 +136,16 @@ export default function PainelViveiros() {
 
   const pontosPeso: SeriePonto[] = useMemo(() => {
     if (!historico) return [];
-    return historico.pontos.map((p) => ({
-      bucket: p.data,
-      valores: { "Peso real (g)": p.peso_real_g, "Peso esperado (g)": p.peso_esperado_g },
-    }));
+    const porData = new Map<string, Record<string, number>>();
+    function add(data: string, valores: Record<string, number>) {
+      porData.set(data, { ...(porData.get(data) ?? {}), ...valores });
+    }
+    historico.teorico.forEach((p) => add(p.data, { "Peso teórico (g)": p.peso_teorico_g }));
+    historico.pontos.forEach((p) => add(p.data, { "Peso real (g)": p.peso_real_g }));
+    historico.projecao.forEach((p) => add(p.data, { "Peso projetado (g)": p.peso_esperado_g }));
+    return Array.from(porData.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([bucket, valores]) => ({ bucket, valores }));
   }, [historico]);
 
   const pontosConversao: SeriePonto[] = useMemo(() => {
@@ -369,10 +375,11 @@ export default function PainelViveiros() {
 
           {historico && (
             <>
-              <div className={styles.section}>Peso real x esperado (g)</div>
+              <div className={styles.section}>Peso real, teórico e projetado (g)</div>
               <Chart
-                dados={pontosPeso} series={["Peso real (g)", "Peso esperado (g)"]} tipo="linha"
+                dados={pontosPeso} series={["Peso real (g)", "Peso teórico (g)", "Peso projetado (g)"]} tipo="linha"
                 formatarBucket={dataBr} formatarValor={(v) => `${nf(v, 0)} g`}
+                caberNaTela
               />
 
               <div className={styles.section}>Conversão alimentar realizada x esperada</div>

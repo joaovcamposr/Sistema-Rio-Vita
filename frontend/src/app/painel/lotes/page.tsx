@@ -73,15 +73,16 @@ export default function PainelLotes() {
 
   const pontosCrescimento: SeriePonto[] = useMemo(() => {
     if (!detalhe) return [];
-    const reais = detalhe.pontos.map((p) => ({
-      bucket: p.data,
-      valores: { "Peso real (g)": p.peso_real_g, "Peso esperado (g)": p.peso_esperado_g },
-    }));
-    const futuros = detalhe.projecao.map((p) => ({
-      bucket: p.data,
-      valores: { "Peso esperado (g)": p.peso_esperado_g },
-    }));
-    return [...reais, ...futuros];
+    const porData = new Map<string, Record<string, number>>();
+    function add(data: string, valores: Record<string, number>) {
+      porData.set(data, { ...(porData.get(data) ?? {}), ...valores });
+    }
+    detalhe.teorico.forEach((p) => add(p.data, { "Peso teórico (g)": p.peso_teorico_g }));
+    detalhe.pontos.forEach((p) => add(p.data, { "Peso real (g)": p.peso_real_g }));
+    detalhe.projecao.forEach((p) => add(p.data, { "Peso projetado (g)": p.peso_esperado_g }));
+    return Array.from(porData.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([bucket, valores]) => ({ bucket, valores }));
   }, [detalhe]);
 
   const pontosConversao: SeriePonto[] = useMemo(() => {
@@ -289,9 +290,14 @@ export default function PainelLotes() {
                 </div>
               </div>
 
-              <div className={styles.section} style={{ marginTop: 16 }}>Curva de crescimento — real e projetada</div>
+              <div className={styles.section} style={{ marginTop: 16 }}>Curva de crescimento — real, teórico e projetado</div>
+              <p className={styles.hint}>
+                Real: peso medido em cada biometria. Teórico: só a curva da tabela pela idade, nunca ajustado.
+                Projetado: a mesma curva, mas ancorada na última biometria — é isso que a Programação de abate e a
+                Programação de repicagem usam pra prever data e peso.
+              </p>
               <Chart
-                dados={pontosCrescimento} series={["Peso real (g)", "Peso esperado (g)"]} tipo="linha"
+                dados={pontosCrescimento} series={["Peso real (g)", "Peso teórico (g)", "Peso projetado (g)"]} tipo="linha"
                 formatarBucket={dataBr} formatarValor={(v) => `${nf(v, 0)} g`}
                 caberNaTela
               />

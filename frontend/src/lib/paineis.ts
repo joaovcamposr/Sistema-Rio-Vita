@@ -896,6 +896,12 @@ export interface PontoProjetado {
   peso_esperado_g: number;
 }
 
+export interface PontoTeorico {
+  data: string;
+  semana: number;
+  peso_teorico_g: number;
+}
+
 export interface HistoricoLote {
   viveiro_codigo: string;
   lote_codigo: string;
@@ -907,6 +913,7 @@ export interface HistoricoLote {
   previsao_abate: string | null;
   pontos: PontoHistoricoLote[];
   projecao: PontoProjetado[];
+  teorico: PontoTeorico[];
 }
 
 export const historicoLote = (viveiroId: number, ate?: string) =>
@@ -991,6 +998,7 @@ export interface LoteDetalhe {
 
   pontos: PontoHistoricoLote[];
   projecao: PontoProjetado[];
+  teorico: PontoTeorico[];
   despescas: DespescaLote[];
   repicagens_saida: RepicagemSaidaLote[];
   producao: ProducaoLote[];

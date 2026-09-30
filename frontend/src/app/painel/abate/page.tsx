@@ -69,20 +69,20 @@ export default function PainelAbate() {
 
   const pontosCrescimento: SeriePonto[] = useMemo(() => {
     if (!historico) return [];
-    const reais = historico.pontos.map((p) => ({
-      bucket: p.data,
-      valores: { "Peso real (g)": p.peso_real_g, "Peso esperado (g)": p.peso_esperado_g },
-    }));
-    const futuros = historico.projecao.map((p) => ({
-      bucket: p.data,
-      valores: {
-        "Peso esperado (g)": p.peso_esperado_g,
-        ...(loteReal && p.data === loteReal.data_prevista
-          ? { "Despesca prevista (g)": p.peso_esperado_g }
-          : {}),
-      },
-    }));
-    return [...reais, ...futuros];
+    const porData = new Map<string, Record<string, number>>();
+    function add(data: string, valores: Record<string, number>) {
+      porData.set(data, { ...(porData.get(data) ?? {}), ...valores });
+    }
+    historico.teorico.forEach((p) => add(p.data, { "Peso teórico (g)": p.peso_teorico_g }));
+    historico.pontos.forEach((p) => add(p.data, { "Peso real (g)": p.peso_real_g }));
+    historico.projecao.forEach((p) => {
+      const valores: Record<string, number> = { "Peso projetado (g)": p.peso_esperado_g };
+      if (loteReal && p.data === loteReal.data_prevista) valores["Despesca prevista (g)"] = p.peso_esperado_g;
+      add(p.data, valores);
+    });
+    return Array.from(porData.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([bucket, valores]) => ({ bucket, valores }));
   }, [historico, loteReal]);
 
   function carregarPlano() {
@@ -407,15 +407,20 @@ export default function PainelAbate() {
                 </span>
               </div>
 
-              <div className={styles.section} style={{ marginTop: 16 }}>Curva de crescimento — real e projetada</div>
+              <div className={styles.section} style={{ marginTop: 16 }}>Curva de crescimento — real, teórico e projetado</div>
               <p className={styles.hint}>
-                Linha do peso real medido em cada biometria, esperado pela curva desde a entrada nesse tanque, e a
-                projeção a partir de hoje ancorada na última biometria, até o peso máximo da curva.
+                Real: peso medido em cada biometria. Teórico: só a curva da tabela pela idade, nunca ajustado.
+                Projetado: a mesma curva, mas ancorada na última biometria — é isso que a Programação de abate e a
+                Programação de repicagem usam pra prever data e peso.
                 {loteReal && ` A despesca prevista (${dataBr(loteReal.data_prevista)}) está marcada no gráfico e na tabela abaixo.`}
               </p>
               <Chart
                 dados={pontosCrescimento}
-                series={loteReal ? ["Peso real (g)", "Peso esperado (g)", "Despesca prevista (g)"] : ["Peso real (g)", "Peso esperado (g)"]}
+                series={
+                  loteReal
+                    ? ["Peso real (g)", "Peso teórico (g)", "Peso projetado (g)", "Despesca prevista (g)"]
+                    : ["Peso real (g)", "Peso teórico (g)", "Peso projetado (g)"]
+                }
                 tipo="linha"
                 formatarBucket={dataBr} formatarValor={(v) => `${nf(v, 0)} g`}
                 caberNaTela
