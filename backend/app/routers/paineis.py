@@ -530,19 +530,21 @@ def programacao_abate(db: Session = Depends(get_db)):
         falta = meta if meta > 0 else math.inf
 
         # ordem de despesca dentro do mês: peixe mais pesado primeiro —
-        # quantidade decidida (pegar/kg) com o peso no ponto em que cada
-        # lote fica disponível (início do mês, ou a própria pronto_em se
-        # for depois disso)
+        # ranqueado e decidido (pegar/kg) com o peso no início efetivo do
+        # mês pra todo mundo, no mesmo ponto no tempo (comparar peso de
+        # lotes em datas diferentes não seria uma ordenação justa). Como
+        # a data real da despesca (colheita, mais abaixo) nunca fica antes
+        # desse ponto, o peso na data real só pode ser igual ou maior —
+        # o planejado_kg exibido nunca fica menor do que o decidido aqui
         candidatos = sorted(
             (l for l in lotes if l["restantes"] > 0 and l["pronto_em"] <= fim_mes),
-            key=lambda l: -peso_em(l, max(mes, l["pronto_em"])),
+            key=lambda l: -peso_em(l, inicio_mes_efetivo),
         )
         provisorios = []
         for l in candidatos:
             if falta <= 0.0005:
                 break
-            referencia = max(mes, l["pronto_em"])
-            peso_ref = peso_em(l, referencia)
+            peso_ref = peso_em(l, inicio_mes_efetivo)
             restantes_antes = l["restantes"]
             saldo_restante_antes = l["saldo_restante"]
             if restantes_antes * peso_ref / 1000 <= falta:
