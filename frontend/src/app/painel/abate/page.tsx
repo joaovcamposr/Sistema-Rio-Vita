@@ -38,13 +38,13 @@ export default function PainelAbate() {
   const [mostrarMortalidade, setMostrarMortalidade] = useState(false);
   const [mostrarPorLote, setMostrarPorLote] = useState(false);
 
-  const [tanqueSelecionado, setTanqueSelecionado] = useState<{ viveiro_codigo: string; lote_codigo: string } | null>(null);
+  const [tanqueSelecionado, setTanqueSelecionado] = useState<{ viveiro_id: number; viveiro_codigo: string; lote_codigo: string } | null>(null);
   const [historico, setHistorico] = useState<HistoricoLote | null>(null);
   const [erroHistorico, setErroHistorico] = useState<string | null>(null);
   const [loteReal, setLoteReal] = useState<ItemDespescaProgramada | null>(null);
 
   function abrirLote(viveiroId: number, viveiroCodigo: string, loteCodigo: string) {
-    setTanqueSelecionado({ viveiro_codigo: viveiroCodigo, lote_codigo: loteCodigo });
+    setTanqueSelecionado({ viveiro_id: viveiroId, viveiro_codigo: viveiroCodigo, lote_codigo: loteCodigo });
     setHistorico(null);
     setErroHistorico(null);
 
@@ -58,7 +58,7 @@ export default function PainelAbate() {
 
     historicoLote(viveiroId, item?.data_prevista)
       .then(setHistorico)
-      .catch(() => setErroHistorico("Sem conexão e sem dado salvo deste aparelho ainda."));
+      .catch(() => setErroHistorico("Sem conexão — tente de novo."));
   }
   function fecharLote() {
     setTanqueSelecionado(null);
@@ -359,7 +359,18 @@ export default function PainelAbate() {
           subtitulo="Origem, povoamento e previsão de abate"
           onFechar={fecharLote}
         >
-          {erroHistorico && <div className={styles.erro}>{erroHistorico}</div>}
+          {erroHistorico && (
+            <div className={styles.erro}>
+              {erroHistorico}{" "}
+              <button
+                type="button"
+                onClick={() => abrirLote(tanqueSelecionado.viveiro_id, tanqueSelecionado.viveiro_codigo, tanqueSelecionado.lote_codigo)}
+                style={{ background: "none", border: "none", color: "inherit", fontWeight: 700, textDecoration: "underline", cursor: "pointer", padding: 0 }}
+              >
+                Tentar de novo
+              </button>
+            </div>
+          )}
           {!historico && !erroHistorico && <div className={styles.carregando}>Carregando…</div>}
 
           {historico && (

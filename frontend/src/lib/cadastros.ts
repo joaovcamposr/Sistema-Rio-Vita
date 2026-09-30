@@ -138,7 +138,7 @@ function apiBase(): string {
 async function cachedGet<T>(cacheKey: string, path: string): Promise<T> {
   try {
     const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 6000);
+    const t = setTimeout(() => ctrl.abort(), 15000);
     const r = await fetch(`${apiBase()}${path}`, { signal: ctrl.signal, cache: "no-store", headers: authHeader() });
     clearTimeout(t);
     if (r.status === 401) sessaoInvalida();

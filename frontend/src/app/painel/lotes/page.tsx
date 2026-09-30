@@ -52,7 +52,7 @@ export default function PainelLotes() {
     setLoteSelecionadoId(id);
     setDetalhe(null);
     setErroDetalhe(null);
-    loteDetalhe(id).then(setDetalhe).catch(() => setErroDetalhe("Sem conexão e sem dado salvo deste aparelho ainda."));
+    loteDetalhe(id).then(setDetalhe).catch(() => setErroDetalhe("Sem conexão — tente de novo."));
   }
   function fecharLote() {
     setLoteSelecionadoId(null);
@@ -187,7 +187,18 @@ export default function PainelLotes() {
           subtitulo={detalhe ? `${FASE_LABEL[detalhe.fase] ?? detalhe.fase} — ${detalhe.ativo ? "ativo" : "encerrado"}` : undefined}
           onFechar={fecharLote}
         >
-          {erroDetalhe && <div className={styles.erro}>{erroDetalhe}</div>}
+          {erroDetalhe && (
+            <div className={styles.erro}>
+              {erroDetalhe}{" "}
+              <button
+                type="button"
+                onClick={() => abrirLote(loteSelecionadoId)}
+                style={{ background: "none", border: "none", color: "inherit", fontWeight: 700, textDecoration: "underline", cursor: "pointer", padding: 0 }}
+              >
+                Tentar de novo
+              </button>
+            </div>
+          )}
           {!detalhe && !erroDetalhe && <div className={styles.carregando}>Carregando…</div>}
 
           {detalhe && (

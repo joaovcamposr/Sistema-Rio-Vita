@@ -341,7 +341,10 @@ function apiBase(): string {
 async function cachedGet<T>(cacheKey: string, path: string): Promise<T> {
   try {
     const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 8000);
+    // 20s, não 8 — alguns painéis (curva de crescimento, projeção) fazem
+    // bastante conta no servidor e o Railway já mostrou lentidão de
+    // partida fria; 8s cortava requisição que ia terminar bem
+    const t = setTimeout(() => ctrl.abort(), 20000);
     const r = await fetch(`${apiBase()}${path}`, { signal: ctrl.signal, cache: "no-store", headers: authHeader() });
     clearTimeout(t);
     if (r.status === 401) sessaoInvalida();
