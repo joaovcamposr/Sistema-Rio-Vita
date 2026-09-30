@@ -11,6 +11,9 @@ interface ChartProps {
   dados: SeriePonto[];
   series: string[];
   cores?: string[];
+  // raio do ponto (linha) por série — mesma indexação de `cores`; sem
+  // isso, todo ponto usa raio 4
+  raios?: number[];
   tipo?: "barra" | "linha";
   modoBarra?: "agrupada" | "empilhada";
   mostrarTotal?: boolean;
@@ -28,7 +31,7 @@ interface ChartProps {
 const CORES_PADRAO = ["#00A6E0", "#04303F", "#05627F", "#7FD1F0", "#0C1F27", "#4C6570"];
 
 export default function Chart({
-  dados, series, cores = CORES_PADRAO, tipo = "barra", modoBarra = "agrupada", mostrarTotal = false,
+  dados, series, cores = CORES_PADRAO, raios, tipo = "barra", modoBarra = "agrupada", mostrarTotal = false,
   formatarValor = (v) => v.toLocaleString("pt-BR", { maximumFractionDigits: 1 }),
   formatarBucket = (b) => b,
   altura = 260,
@@ -206,6 +209,7 @@ export default function Chart({
               })
               .filter((p): p is { x: number; y: number; v: number } => p !== null);
             const cor = cores[series.indexOf(s) % cores.length];
+            const raio = raios ? raios[series.indexOf(s) % raios.length] : 4;
             return (
               <g key={s}>
                 <polyline
@@ -214,7 +218,7 @@ export default function Chart({
                 />
                 {pontos.map((p, i) => (
                   <circle
-                    key={i} cx={p.x} cy={p.y} r={4} fill={cor}
+                    key={i} cx={p.x} cy={p.y} r={raio} fill={cor}
                     onMouseEnter={(e) => setDica({
                       x: e.nativeEvent.offsetX, y: e.nativeEvent.offsetY,
                       texto: `${s} · ${formatarBucket(dados[i].bucket)}: ${formatarValor(p.v)}`,

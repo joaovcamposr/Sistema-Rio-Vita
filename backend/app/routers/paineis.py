@@ -2664,13 +2664,16 @@ def historico_lote(
         ))
 
     # curva teórica pura — só a idade desde a entrada nesse tanque, nunca
-    # ajustada por biometria — cobre a linha do tempo inteira (passado e
-    # futuro) como referência fixa, pra comparar com o real e o projetado
-    horizonte_teorico = hoje + timedelta(weeks=n_semanas)
-    semanas_teorico = max(1, (horizonte_teorico - data_inicio).days // 7)
+    # ajustada por biometria. No trecho futuro usa a MESMA grade de datas
+    # da projeção (hoje + semana a semana), pra não duplicar pontos no
+    # eixo X do gráfico; no passado, de 15 em 15 dias, só pra não lotar
+    # o eixo de um lote com muito histórico
+    datas_teorico = {hoje + timedelta(weeks=w) for w in range(0, n_semanas + 1)}
+    semanas_passadas = max(0, (hoje - data_inicio).days // 7)
+    datas_teorico |= {hoje - timedelta(weeks=k) for k in range(0, semanas_passadas + 1, 2)}
+    datas_teorico.add(data_inicio)
     teorico = []
-    for w in range(0, semanas_teorico + 1):
-        d = data_inicio + timedelta(weeks=w)
+    for d in sorted(x for x in datas_teorico if x >= data_inicio):
         sem = semana_esperada_em(d)
         teorico.append(PontoTeoricoOut(data=d, semana=sem, peso_teorico_g=_peso_para_semana(curva, sem)))
 
@@ -2883,13 +2886,20 @@ def lote_detalhe(lote_id: int, db: Session = Depends(get_db)):
             ))
 
     # curva teórica pura — só a idade desde a entrada nesse tanque, nunca
-    # ajustada por biometria — cobre a linha do tempo inteira (passado e,
-    # se o lote está ativo, futuro também) como referência fixa
-    horizonte_teorico = (hoje + timedelta(weeks=n_semanas)) if ativo else fim_janela
-    semanas_teorico = max(1, (horizonte_teorico - data_inicio).days // 7)
+    # ajustada por biometria. Se o lote está ativo, o trecho futuro usa a
+    # MESMA grade de datas da projeção (hoje + semana a semana), pra não
+    # duplicar pontos no eixo X do gráfico; o passado (e o lote encerrado,
+    # que não tem futuro) fica de 15 em 15 dias, só pra não lotar o eixo
+    if ativo:
+        datas_teorico = {hoje + timedelta(weeks=w) for w in range(0, n_semanas + 1)}
+        semanas_passadas = max(0, (hoje - data_inicio).days // 7)
+        datas_teorico |= {hoje - timedelta(weeks=k) for k in range(0, semanas_passadas + 1, 2)}
+    else:
+        semanas_totais = max(1, (fim_janela - data_inicio).days // 7)
+        datas_teorico = {data_inicio + timedelta(weeks=w) for w in range(0, semanas_totais + 1, 2)}
+    datas_teorico.add(data_inicio)
     teorico = []
-    for w in range(0, semanas_teorico + 1):
-        d = data_inicio + timedelta(weeks=w)
+    for d in sorted(x for x in datas_teorico if x >= data_inicio):
         sem = semana_esperada_em(d)
         teorico.append(PontoTeoricoOut(data=d, semana=sem, peso_teorico_g=_peso_para_semana(curva, sem)))
 

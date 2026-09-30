@@ -421,6 +421,8 @@ export default function PainelAbate() {
                     ? ["Peso real (g)", "Peso teórico (g)", "Peso projetado (g)", "Despesca prevista (g)"]
                     : ["Peso real (g)", "Peso teórico (g)", "Peso projetado (g)"]
                 }
+                cores={loteReal ? ["#00A6E0", "#04303F", "#05627F", "var(--crit)"] : undefined}
+                raios={loteReal ? [4, 4, 4, 8] : undefined}
                 tipo="linha"
                 formatarBucket={dataBr} formatarValor={(v) => `${nf(v, 0)} g`}
                 caberNaTela
