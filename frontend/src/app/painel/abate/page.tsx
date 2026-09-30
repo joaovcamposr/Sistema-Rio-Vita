@@ -418,6 +418,7 @@ export default function PainelAbate() {
                 series={loteReal ? ["Peso real (g)", "Peso esperado (g)", "Despesca prevista (g)"] : ["Peso real (g)", "Peso esperado (g)"]}
                 tipo="linha"
                 formatarBucket={dataBr} formatarValor={(v) => `${nf(v, 0)} g`}
+                caberNaTela
               />
 
               <div className={styles.section} style={{ marginTop: 16 }}>Biometrias</div>

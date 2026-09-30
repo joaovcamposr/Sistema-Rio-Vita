@@ -2647,7 +2647,7 @@ def historico_lote(
     # máximo da curva (com uma folga de 2 semanas) pra mostrar o platô
     # final, mesmo quando a despesca real é bem antes disso
     semanas_ate_despesca = ((ate - hoje).days // 7 + 8) if ate else 12
-    semanas_ate_plato = max(0, semana_maxima - semana_atual) + 2
+    semanas_ate_plato = max(0, semana_maxima - semana_atual) + 3
     n_semanas = min(52, max(semanas_ate_despesca, semanas_ate_plato, 1))
     datas_projetar = {hoje + timedelta(weeks=w) for w in range(0, n_semanas + 1)}
     if ate is not None:
@@ -2859,7 +2859,7 @@ def lote_detalhe(lote_id: int, db: Session = Depends(get_db)):
             None if pronto_para_abate
             else hoje + timedelta(weeks=SEMANA_LIMITE_ABATE - semana_atual + ATRASO_CRESCIMENTO_SEMANAS)
         )
-        semanas_ate_plato = max(0, semana_maxima - semana_atual) + 2
+        semanas_ate_plato = max(0, semana_maxima - semana_atual) + 3
         n_semanas = min(52, max(semanas_ate_plato, 1))
         for w in range(0, n_semanas + 1):
             semana_proj = semana_atual + _avanco_semanas(w)

@@ -293,6 +293,7 @@ export default function PainelLotes() {
               <Chart
                 dados={pontosCrescimento} series={["Peso real (g)", "Peso esperado (g)"]} tipo="linha"
                 formatarBucket={dataBr} formatarValor={(v) => `${nf(v, 0)} g`}
+                caberNaTela
               />
 
               {detalhe.pontos.length > 1 && (
