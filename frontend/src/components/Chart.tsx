@@ -205,9 +205,9 @@ export default function Chart({
               .map((p, bi) => {
                 const v = p.valores[s];
                 if (typeof v !== "number") return null;
-                return { x: margemEsq + bi * passoX + passoX / 2, y: y(v), v };
+                return { x: margemEsq + bi * passoX + passoX / 2, y: y(v), v, bi };
               })
-              .filter((p): p is { x: number; y: number; v: number } => p !== null);
+              .filter((p): p is { x: number; y: number; v: number; bi: number } => p !== null);
             const cor = cores[series.indexOf(s) % cores.length];
             const raio = raios ? raios[series.indexOf(s) % raios.length] : 4;
             return (
@@ -216,12 +216,12 @@ export default function Chart({
                   points={pontos.map((p) => `${p.x},${p.y}`).join(" ")}
                   fill="none" stroke={cor} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"
                 />
-                {pontos.map((p, i) => (
+                {pontos.map((p) => (
                   <circle
-                    key={i} cx={p.x} cy={p.y} r={raio} fill={cor}
+                    key={p.bi} cx={p.x} cy={p.y} r={raio} fill={cor}
                     onMouseEnter={(e) => setDica({
                       x: e.nativeEvent.offsetX, y: e.nativeEvent.offsetY,
-                      texto: `${s} · ${formatarBucket(dados[i].bucket)}: ${formatarValor(p.v)}`,
+                      texto: `${s} · ${formatarBucket(dados[p.bi].bucket)}: ${formatarValor(p.v)}`,
                     })}
                     onMouseLeave={() => setDica(null)}
                   />
