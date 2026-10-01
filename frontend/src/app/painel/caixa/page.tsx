@@ -129,7 +129,11 @@ export default function PainelCaixa() {
 
   useEffect(() => {
     setConferencia(null);
-    caixaConferencia(de, ate).then(setConferencia).catch(() => setErro("Sem conexão e sem dado salvo deste aparelho ainda."));
+    setErro(null);
+    caixaConferencia(de, ate).then(setConferencia).catch((e) => {
+      console.error("caixaConferencia falhou:", e);
+      setErro(`Sem conexão e sem dado salvo deste aparelho ainda. (${e instanceof Error ? e.message : String(e)})`);
+    });
   }, [de, ate]);
 
   const vendasDoDia = useMemo(() => {
