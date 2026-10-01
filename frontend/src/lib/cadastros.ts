@@ -145,7 +145,14 @@ async function cachedGet<T>(cacheKey: string, path: string): Promise<T> {
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const data = (await r.json()) as T;
     if (typeof window !== "undefined") {
-      window.localStorage.setItem(cacheKey, JSON.stringify({ data, quando: Date.now() }));
+      // guardar em cache é só conveniência pro modo offline — se a
+      // resposta não couber mais na cota do localStorage, não pode
+      // derrubar um fetch que já deu certo
+      try {
+        window.localStorage.setItem(cacheKey, JSON.stringify({ data, quando: Date.now() }));
+      } catch {
+        /* sem espaço — segue com o dado que já veio da rede */
+      }
     }
     return data;
   } catch (erroDeRede) {
