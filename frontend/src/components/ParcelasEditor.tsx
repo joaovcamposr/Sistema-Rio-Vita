@@ -39,7 +39,10 @@ function moeda(v: number): string {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 function paraNumero(texto: string): number {
-  return parseFloat(texto.replace(",", ".")) || 0;
+  // nf() formata com separador de milhar ("1.560,00") — remove os pontos
+  // de milhar antes de trocar a vírgula decimal, senão "1.560,00" vira
+  // "1.560.00" e vira 1.56 no parseFloat (interrompe no segundo ponto)
+  return parseFloat(texto.replace(/\./g, "").replace(",", ".")) || 0;
 }
 
 /** Atalho pra montar o estado inicial mais comum: uma única parcela,
