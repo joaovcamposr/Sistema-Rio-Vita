@@ -2,20 +2,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { listarClientes, listarProdutos, type Cliente, type Produto } from "@/lib/api";
+import { listarClientes, listarProdutos, type Cliente, type Produto, type VendaParcelaEntrada } from "@/lib/api";
 import { listarPrecosCliente } from "@/lib/cadastros";
 import { enfileirar } from "@/lib/offline-queue";
+import ParcelasEditor, { parcelaUnicaAVista } from "@/components/ParcelasEditor";
 import styles from "../form.module.css";
-
-const FORMAS = ["Pix", "Boleto", "Dinheiro", "Cheque"];
 
 function hojeISO(): string {
   return new Date().toISOString().slice(0, 10);
-}
-function somarDias(iso: string, dias: number): string {
-  const d = new Date(iso + "T00:00:00");
-  d.setDate(d.getDate() + dias);
-  return d.toISOString().slice(0, 10);
 }
 function nf(v: number, casas = 2): string {
   return v.toLocaleString("pt-BR", { minimumFractionDigits: casas, maximumFractionDigits: casas });
@@ -33,9 +27,9 @@ export default function RegistrarVenda() {
   const [produtoId, setProdutoId] = useState<number | null>(null);
   const [quantidade, setQuantidade] = useState("");
   const [preco, setPreco] = useState("");
-  const [forma, setForma] = useState(FORMAS[0]);
-  const [aVista, setAVista] = useState(true);
-  const [dataPrevista, setDataPrevista] = useState(hojeISO());
+  const [parcelas, setParcelas] = useState<VendaParcelaEntrada[]>(() => parcelaUnicaAVista(hojeISO(), 0));
+  const [parcelasBatem, setParcelasBatem] = useState(true);
+  const [resetKey, setResetKey] = useState(0);
   const [enviando, setEnviando] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
@@ -70,14 +64,13 @@ export default function RegistrarVenda() {
     };
   }, [clienteId, produtoId]);
 
-  const cliente = useMemo(() => clientes.find((c) => c.id === clienteId) ?? null, [clientes, clienteId]);
   const produto = useMemo(() => produtos.find((p) => p.id === produtoId) ?? null, [produtos, produtoId]);
   const qtdNum = parseFloat(quantidade.replace(",", ".")) || 0;
   const precoNum = parseFloat(preco.replace(",", ".")) || 0;
   const kg = produto?.kg_digitado ? qtdNum : qtdNum * (produto?.fator_kg ?? 1);
   const total = kg * precoNum;
 
-  const podeSalvar = produto !== null && qtdNum > 0 && precoNum >= 0 && (aVista || !!dataPrevista) && !enviando;
+  const podeSalvar = produto !== null && qtdNum > 0 && precoNum >= 0 && parcelasBatem && !enviando;
 
   async function salvar() {
     if (!produto) return;
@@ -90,13 +83,12 @@ export default function RegistrarVenda() {
         quantidade_un: produto.kg_digitado ? null : qtdNum,
         quantidade_kg: kg,
         preco_kg: precoNum,
-        forma_pgto: forma,
-        a_vista: aVista,
-        data_prevista_recebimento: aVista ? null : dataPrevista,
+        parcelas,
       });
       setToast("Venda registrada");
       setQuantidade("");
       setPreco("");
+      setResetKey((k) => k + 1);
       setTimeout(() => setToast(null), 2200);
     } finally {
       setEnviando(false);
@@ -192,58 +184,15 @@ export default function RegistrarVenda() {
         </div>
 
         <div className={styles.field}>
-          <label>Forma de pagamento</label>
-          <div className={styles.chips}>
-            {FORMAS.map((f) => (
-              <button
-                key={f}
-                type="button"
-                className={styles.chip}
-                aria-pressed={forma === f}
-                onClick={() => setForma(f)}
-              >
-                {f}
-              </button>
-            ))}
-          </div>
+          <label>Pagamento</label>
+          <ParcelasEditor
+            key={resetKey}
+            dataBase={data}
+            valorTotal={total}
+            parcelasIniciais={parcelaUnicaAVista(data, total)}
+            onChange={(ps, bate) => { setParcelas(ps); setParcelasBatem(bate); }}
+          />
         </div>
-
-        <div className={styles.field}>
-          <label>À vista ou a prazo</label>
-          <div className={styles.chips}>
-            <button
-              type="button"
-              className={styles.chip}
-              aria-pressed={aVista}
-              onClick={() => setAVista(true)}
-            >
-              À vista
-            </button>
-            <button
-              type="button"
-              className={styles.chip}
-              aria-pressed={!aVista}
-              onClick={() => {
-                setAVista(false);
-                setDataPrevista(somarDias(data, cliente?.prazo_dias ?? 30));
-              }}
-            >
-              A prazo
-            </button>
-          </div>
-        </div>
-
-        {!aVista && (
-          <div className={styles.field}>
-            <label>Data prevista de recebimento</label>
-            <input
-              className={styles.inp}
-              type="date"
-              value={dataPrevista}
-              onChange={(e) => setDataPrevista(e.target.value)}
-            />
-          </div>
-        )}
       </div>
 
       <div className={styles.savebar}>

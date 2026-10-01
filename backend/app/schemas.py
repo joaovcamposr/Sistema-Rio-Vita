@@ -503,6 +503,32 @@ class ClienteOut(BaseModel):
     temperatura: str | None = None
 
 
+class VendaParcelaIn(BaseModel):
+    # id: None = parcela nova (cria); informado = parcela existente a
+    # atualizar. Usado só por VendaEditarIn — criar_venda sempre ignora,
+    # toda parcela ali é nova.
+    id: int | None = None
+    valor: float = Field(gt=0)
+    forma_pgto: str
+    data_prevista: date
+    data_pagamento: date | None = None
+
+
+class VendaParcelaOut(BaseModel):
+    id: int
+    numero: int
+    valor: float
+    forma_pgto: str
+    data_prevista: date
+    data_pagamento: date | None
+
+
+def _validar_soma_parcelas(parcelas: list[VendaParcelaIn], valor_total: float) -> None:
+    soma = sum(p.valor for p in parcelas)
+    if abs(soma - valor_total) > 0.01:
+        raise ValueError(f"soma das parcelas ({soma:.2f}) não bate com o valor total da venda ({valor_total:.2f})")
+
+
 class VendaIn(BaseModel):
     client_id: uuid.UUID
     data: date
@@ -512,16 +538,11 @@ class VendaIn(BaseModel):
     quantidade_un: float | None = Field(default=None, ge=0)
     quantidade_kg: float = Field(gt=0)
     preco_kg: float = Field(ge=0)
-    forma_pgto: str | None = None
-    a_vista: bool = True
-    data_prevista_recebimento: date | None = None
+    parcelas: list[VendaParcelaIn] = Field(min_length=1)
 
     @model_validator(mode="after")
-    def prazo_tem_data(self) -> "VendaIn":
-        if not self.a_vista and self.data_prevista_recebimento is None:
-            raise ValueError("venda a prazo exige data_prevista_recebimento")
-        if self.a_vista:
-            self.data_prevista_recebimento = None
+    def parcelas_batem_total(self) -> "VendaIn":
+        _validar_soma_parcelas(self.parcelas, self.quantidade_kg * self.preco_kg)
         return self
 
 
@@ -533,23 +554,10 @@ class VendaEditarIn(BaseModel):
     quantidade_un: float | None = Field(default=None, ge=0)
     quantidade_kg: float = Field(gt=0)
     preco_kg: float = Field(ge=0)
-    forma_pgto: str | None = None
-    a_vista: bool = True
-    data_prevista_recebimento: date | None = None
-    situacao: str = "Em aberto"
-    data_pagamento: date | None = None
-
-    @model_validator(mode="after")
-    def prazo_tem_data(self) -> "VendaEditarIn":
-        if not self.a_vista and self.data_prevista_recebimento is None:
-            raise ValueError("venda a prazo exige data_prevista_recebimento")
-        if self.a_vista:
-            self.data_prevista_recebimento = None
-        if self.situacao == "Pago" and self.data_pagamento is None:
-            self.data_pagamento = self.data
-        if self.situacao != "Pago":
-            self.data_pagamento = None
-        return self
+    # parcelas não são validadas contra o novo valor_total aqui — se
+    # mudar quantidade/preço, editar_venda reconcilia a diferença na
+    # última parcela ainda aberta (ou recusa, se não houver uma)
+    parcelas: list[VendaParcelaIn] = Field(min_length=1)
 
 
 class VendaOut(BaseModel):
@@ -563,11 +571,12 @@ class VendaOut(BaseModel):
     quantidade_kg: float
     preco_kg: float
     valor_total: float
-    forma_pgto: str | None
-    situacao: str | None
-    data_pagamento: date | None
-    data_prevista_recebimento: date | None
+    situacao: str
+    valor_recebido: float
+    valor_pendente: float
+    proxima_data_prevista: date | None
     criado_em: datetime
+    parcelas: list[VendaParcelaOut]
 
 
 class VendaListaOut(BaseModel):
@@ -582,18 +591,18 @@ class VendaListaOut(BaseModel):
     quantidade_kg: float
     preco_kg: float
     valor_total: float
-    forma_pgto: str | None
     vendedor: str | None
-    situacao: str | None
-    data_pagamento: date | None
-    data_prevista_recebimento: date | None
+    situacao: str
+    valor_recebido: float
+    valor_pendente: float
+    proxima_data_prevista: date | None
     observacoes: str | None
     excluido_em: datetime | None = None
     excluido_por: str | None = None
+    parcelas: list[VendaParcelaOut]
 
 
-class VendaPagamentoIn(BaseModel):
-    situacao: str
+class VendaParcelaPagamentoIn(BaseModel):
     data_pagamento: date | None = None
     forma_pgto: str | None = None
 
@@ -1211,10 +1220,14 @@ class AcertoVendaIn(BaseModel):
     quantidade_un: float | None = Field(default=None, ge=0)
     quantidade_kg: float = Field(gt=0)
     preco_kg: float = Field(ge=0)
-    forma_pgto: str | None = None
-    prazo_dias: int | None = None
+    parcelas: list[VendaParcelaIn] = Field(min_length=1)
     emite_nf: bool = False
     emite_boleto: bool = False
+
+    @model_validator(mode="after")
+    def parcelas_batem_total(self) -> "AcertoVendaIn":
+        _validar_soma_parcelas(self.parcelas, self.quantidade_kg * self.preco_kg)
+        return self
 
 
 class AcertoRetornoIn(BaseModel):
@@ -1381,13 +1394,15 @@ class DespesaConferenciaOut(BaseModel):
 
 
 class VendaConferenciaOut(BaseModel):
-    id: int
+    venda_id: int
+    parcela_id: int
+    parcela_numero: int
     data: date
     data_pagamento: date | None
     cliente_nome: str
     produto_nome: str
-    valor_total: float
-    forma_pgto: str | None
+    valor: float
+    forma_pgto: str
     fora_do_periodo: bool  # true = a venda em si é de antes do "De" do filtro
 
 

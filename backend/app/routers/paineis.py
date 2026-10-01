@@ -1273,16 +1273,19 @@ def caixa_conferencia(
 
     lancado = db.execute(
         text("""
-            SELECT COALESCE(SUM(valor_total), 0) FROM venda
-            WHERE lower(trim(forma_pgto)) = 'dinheiro' AND excluido_em IS NULL AND data BETWEEN :de AND :ate
+            SELECT COALESCE(SUM(vp.valor), 0)
+            FROM venda_parcela vp JOIN venda v ON v.id = vp.venda_id
+            WHERE lower(trim(vp.forma_pgto)) = 'dinheiro' AND vp.excluido_em IS NULL AND v.excluido_em IS NULL
+              AND v.data BETWEEN :de AND :ate
         """), {"de": de, "ate": ate},
     ).scalar_one()
 
     pendente = db.execute(
         text("""
-            SELECT COALESCE(SUM(valor_total), 0) FROM venda
-            WHERE lower(trim(forma_pgto)) = 'dinheiro' AND excluido_em IS NULL AND data_pagamento IS NULL
-              AND data BETWEEN :de AND :ate
+            SELECT COALESCE(SUM(vp.valor), 0)
+            FROM venda_parcela vp JOIN venda v ON v.id = vp.venda_id
+            WHERE lower(trim(vp.forma_pgto)) = 'dinheiro' AND vp.excluido_em IS NULL AND v.excluido_em IS NULL
+              AND vp.data_pagamento IS NULL AND v.data BETWEEN :de AND :ate
         """), {"de": de, "ate": ate},
     ).scalar_one()
 
@@ -1290,10 +1293,11 @@ def caixa_conferencia(
         r["dia"]: float(r["total"])
         for r in db.execute(
             text("""
-                SELECT data_pagamento AS dia, SUM(valor_total) AS total FROM venda
-                WHERE lower(trim(forma_pgto)) = 'dinheiro' AND excluido_em IS NULL
-                  AND data_pagamento BETWEEN :de AND :ate
-                GROUP BY data_pagamento
+                SELECT vp.data_pagamento AS dia, SUM(vp.valor) AS total
+                FROM venda_parcela vp JOIN venda v ON v.id = vp.venda_id
+                WHERE lower(trim(vp.forma_pgto)) = 'dinheiro' AND vp.excluido_em IS NULL AND v.excluido_em IS NULL
+                  AND vp.data_pagamento BETWEEN :de AND :ate
+                GROUP BY vp.data_pagamento
             """), {"de": de, "ate": ate},
         ).mappings().all()
     }
@@ -1343,42 +1347,44 @@ def caixa_conferencia(
     ).mappings().all()
 
     _VENDA_CONFERENCIA_COLUNAS = """
-        v.id, v.data, v.data_pagamento, COALESCE(c.nome, v.vendedor, 'Sem cliente') AS cliente_nome,
-        pr.nome AS produto_nome, v.valor_total, v.forma_pgto
+        v.id AS venda_id, vp.id AS parcela_id, vp.numero AS parcela_numero,
+        v.data, vp.data_pagamento, COALESCE(c.nome, v.vendedor, 'Sem cliente') AS cliente_nome,
+        pr.nome AS produto_nome, vp.valor, vp.forma_pgto
     """
     _VENDA_CONFERENCIA_FROM = """
-        FROM venda v
+        FROM venda_parcela vp
+        JOIN venda v ON v.id = vp.venda_id
         LEFT JOIN cliente c ON c.id = v.cliente_id
         JOIN produto pr ON pr.id = v.produto_id
     """
     vendas_recebidas = db.execute(
         text(f"""
             SELECT {_VENDA_CONFERENCIA_COLUNAS} {_VENDA_CONFERENCIA_FROM}
-            WHERE lower(trim(v.forma_pgto)) = 'dinheiro' AND v.excluido_em IS NULL
-              AND v.data_pagamento BETWEEN :de AND :ate
-            ORDER BY v.data_pagamento DESC, v.id DESC
+            WHERE lower(trim(vp.forma_pgto)) = 'dinheiro' AND vp.excluido_em IS NULL AND v.excluido_em IS NULL
+              AND vp.data_pagamento BETWEEN :de AND :ate
+            ORDER BY vp.data_pagamento DESC, vp.id DESC
         """), {"de": de, "ate": ate},
     ).mappings().all()
     vendas_pendentes = db.execute(
         text(f"""
             SELECT {_VENDA_CONFERENCIA_COLUNAS} {_VENDA_CONFERENCIA_FROM}
-            WHERE lower(trim(v.forma_pgto)) = 'dinheiro' AND v.excluido_em IS NULL
-              AND v.data_pagamento IS NULL AND v.data BETWEEN :de AND :ate
-            ORDER BY v.data DESC, v.id DESC
+            WHERE lower(trim(vp.forma_pgto)) = 'dinheiro' AND vp.excluido_em IS NULL AND v.excluido_em IS NULL
+              AND vp.data_pagamento IS NULL AND v.data BETWEEN :de AND :ate
+            ORDER BY v.data DESC, vp.id DESC
         """), {"de": de, "ate": ate},
     ).mappings().all()
     total_recebido_fora_do_periodo = sum(
-        float(r["valor_total"]) for r in vendas_recebidas if r["data"] < de
+        float(r["valor"]) for r in vendas_recebidas if r["data"] < de
     )
 
     placeholders = ", ".join(f"'{f}'" for f in _FORMAS_PADRAO)
     fora_padrao = db.execute(
         text(f"""
-            SELECT 'venda' AS tipo, v.id, v.data, v.valor_total AS valor, v.forma_pgto,
+            SELECT 'venda' AS tipo, vp.id, v.data, vp.valor AS valor, vp.forma_pgto,
                    COALESCE(c.nome, v.vendedor, 'Sem cliente') AS referencia
-            FROM venda v LEFT JOIN cliente c ON c.id = v.cliente_id
-            WHERE v.excluido_em IS NULL AND v.data BETWEEN :de AND :ate
-              AND (v.forma_pgto IS NULL OR lower(trim(v.forma_pgto)) NOT IN ({placeholders}))
+            FROM venda_parcela vp JOIN venda v ON v.id = vp.venda_id LEFT JOIN cliente c ON c.id = v.cliente_id
+            WHERE vp.excluido_em IS NULL AND v.excluido_em IS NULL AND v.data BETWEEN :de AND :ate
+              AND (vp.forma_pgto IS NULL OR lower(trim(vp.forma_pgto)) NOT IN ({placeholders}))
             UNION ALL
             SELECT 'despesa', d.id, d.data, d.valor, d.forma_pgto, d.categoria
             FROM despesa d
@@ -1403,16 +1409,18 @@ def caixa_conferencia(
             for r in despesas_detalhe
         ],
         vendas_recebidas=[
-            VendaConferenciaOut(id=r["id"], data=r["data"], data_pagamento=r["data_pagamento"],
+            VendaConferenciaOut(venda_id=r["venda_id"], parcela_id=r["parcela_id"], parcela_numero=r["parcela_numero"],
+                                 data=r["data"], data_pagamento=r["data_pagamento"],
                                  cliente_nome=r["cliente_nome"], produto_nome=r["produto_nome"],
-                                 valor_total=float(r["valor_total"]), forma_pgto=r["forma_pgto"],
+                                 valor=float(r["valor"]), forma_pgto=r["forma_pgto"],
                                  fora_do_periodo=r["data"] < de)
             for r in vendas_recebidas
         ],
         vendas_pendentes=[
-            VendaConferenciaOut(id=r["id"], data=r["data"], data_pagamento=r["data_pagamento"],
+            VendaConferenciaOut(venda_id=r["venda_id"], parcela_id=r["parcela_id"], parcela_numero=r["parcela_numero"],
+                                 data=r["data"], data_pagamento=r["data_pagamento"],
                                  cliente_nome=r["cliente_nome"], produto_nome=r["produto_nome"],
-                                 valor_total=float(r["valor_total"]), forma_pgto=r["forma_pgto"],
+                                 valor=float(r["valor"]), forma_pgto=r["forma_pgto"],
                                  fora_do_periodo=False)
             for r in vendas_pendentes
         ],
@@ -1634,9 +1642,10 @@ def painel_dashboard(
     # aqui pra não precisar entrar em Caixa só pra descobrir que existe
     recebido_fora_periodo = db.execute(
         text("""
-            SELECT COALESCE(SUM(valor_total), 0) FROM venda
-            WHERE lower(trim(forma_pgto)) = 'dinheiro' AND excluido_em IS NULL
-              AND data_pagamento BETWEEN :de AND :ate AND data < :de
+            SELECT COALESCE(SUM(vp.valor), 0)
+            FROM venda_parcela vp JOIN venda v ON v.id = vp.venda_id
+            WHERE lower(trim(vp.forma_pgto)) = 'dinheiro' AND vp.excluido_em IS NULL AND v.excluido_em IS NULL
+              AND vp.data_pagamento BETWEEN :de AND :ate AND v.data < :de
         """), {"de": de, "ate": ate},
     ).scalar_one()
 

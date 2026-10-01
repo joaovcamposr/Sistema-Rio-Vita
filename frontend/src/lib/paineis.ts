@@ -671,13 +671,15 @@ export interface DespesaConferencia {
 }
 
 export interface VendaConferencia {
-  id: number;
+  venda_id: number;
+  parcela_id: number;
+  parcela_numero: number;
   data: string;
   data_pagamento: string | null;
   cliente_nome: string;
   produto_nome: string;
-  valor_total: number;
-  forma_pgto: string | null;
+  valor: number;
+  forma_pgto: string;
   fora_do_periodo: boolean;
 }
 

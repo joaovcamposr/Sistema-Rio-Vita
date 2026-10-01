@@ -72,6 +72,26 @@ export interface Cliente {
   temperatura: string | null;
 }
 
+export interface VendaParcela {
+  id: number;
+  numero: number;
+  valor: number;
+  forma_pgto: string;
+  data_prevista: string;
+  data_pagamento: string | null;
+}
+
+// payload de entrada (criar/editar venda) — id ausente/null = parcela
+// nova; id informado = parcela existente a atualizar (só usado na
+// edição; criarVenda ignora id mesmo se vier)
+export interface VendaParcelaEntrada {
+  id?: number | null;
+  valor: number;
+  forma_pgto: string;
+  data_prevista: string;
+  data_pagamento?: string | null;
+}
+
 export interface VendaLista {
   id: number;
   data: string;
@@ -84,14 +104,15 @@ export interface VendaLista {
   quantidade_kg: number;
   preco_kg: number;
   valor_total: number;
-  forma_pgto: string | null;
   vendedor: string | null;
-  situacao: string | null;
-  data_pagamento: string | null;
-  data_prevista_recebimento: string | null;
+  situacao: string;
+  valor_recebido: number;
+  valor_pendente: number;
+  proxima_data_prevista: string | null;
   observacoes: string | null;
   excluido_em: string | null;
   excluido_por: string | null;
+  parcelas: VendaParcela[];
 }
 
 function apiBase(): string {
@@ -361,13 +382,13 @@ export async function listarVendas(filtro: FiltroVendas): Promise<VendaLista[]> 
   return (await r.json()) as VendaLista[];
 }
 
-export async function marcarPagamentoVenda(
-  vendaId: number, situacao: string, dataPagamento: string | null, formaPgto?: string | null
+export async function marcarPagamentoParcela(
+  vendaId: number, parcelaId: number, dataPagamento: string | null, formaPgto?: string | null
 ): Promise<void> {
-  const r = await fetch(`${apiBase()}/vendas/${vendaId}/pagamento`, {
+  const r = await fetch(`${apiBase()}/vendas/${vendaId}/parcelas/${parcelaId}/pagamento`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json", ...authHeader() },
-    body: JSON.stringify({ situacao, data_pagamento: dataPagamento, forma_pgto: formaPgto ?? null }),
+    body: JSON.stringify({ data_pagamento: dataPagamento, forma_pgto: formaPgto ?? null }),
   });
   if (r.status === 401) sessaoInvalida();
   if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
@@ -385,9 +406,8 @@ export async function atualizarObservacoesVenda(vendaId: number, observacoes: st
 
 export interface VendaEditar {
   data: string; cliente_id: number | null; vendedor: string | null; produto_id: number;
-  quantidade_un: number | null; quantidade_kg: number; preco_kg: number; forma_pgto: string | null;
-  a_vista: boolean; data_prevista_recebimento: string | null;
-  situacao: string; data_pagamento: string | null;
+  quantidade_un: number | null; quantidade_kg: number; preco_kg: number;
+  parcelas: VendaParcelaEntrada[];
 }
 
 export async function editarVenda(vendaId: number, body: VendaEditar): Promise<void> {

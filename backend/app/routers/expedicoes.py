@@ -234,19 +234,23 @@ def acertar_expedicao(
 
         try:
             for v in body.vendas:
-                dados = v.model_dump()
+                dados = v.model_dump(exclude={"parcelas"})
                 dados["vendedor"] = dados.get("vendedor") or entregador_nome
-                db.execute(text("""
+                venda_id = db.execute(text("""
                     INSERT INTO venda (data, cliente_id, vendedor, produto_id, quantidade_un, quantidade_kg,
-                                        preco_kg, forma_pgto, expedicao_id, prazo_dias, emite_nf, emite_boleto,
-                                        criado_por)
+                                        preco_kg, expedicao_id, emite_nf, emite_boleto, criado_por)
                     VALUES (:data, :cliente_id, :vendedor, :produto_id, :quantidade_un, :quantidade_kg,
-                            :preco_kg, :forma_pgto, :expedicao_id, :prazo_dias, :emite_nf, :emite_boleto,
-                            :criado_por)
+                            :preco_kg, :expedicao_id, :emite_nf, :emite_boleto, :criado_por)
+                    RETURNING id
                 """), {
                     "data": body.data_acerto, "expedicao_id": expedicao_id,
                     "criado_por": usuario.nome, **dados,
-                })
+                }).scalar_one()
+                for i, p in enumerate(v.parcelas, start=1):
+                    db.execute(text("""
+                        INSERT INTO venda_parcela (venda_id, numero, valor, forma_pgto, data_prevista, data_pagamento, criado_por)
+                        VALUES (:venda_id, :numero, :valor, :forma_pgto, :data_prevista, :data_pagamento, :criado_por)
+                    """), {"venda_id": venda_id, "numero": i, "criado_por": usuario.nome, **p.model_dump(exclude={"id"})})
             for r in body.retornos:
                 db.execute(text("""
                     INSERT INTO expedicao_retorno (expedicao_id, produto_id, quantidade_embalagens, quantidade_kg)
@@ -292,8 +296,10 @@ def acertar_expedicao(
 
     totais = db.execute(text("""
         SELECT
-          COALESCE((SELECT SUM(valor_total) FROM venda WHERE expedicao_id = :id AND forma_pgto = 'Dinheiro' AND excluido_em IS NULL), 0)
-            AS vendas_dinheiro,
+          COALESCE((
+            SELECT SUM(vp.valor) FROM venda_parcela vp JOIN venda v ON v.id = vp.venda_id
+            WHERE v.expedicao_id = :id AND vp.forma_pgto = 'Dinheiro' AND vp.excluido_em IS NULL AND v.excluido_em IS NULL
+          ), 0) AS vendas_dinheiro,
           COALESCE((SELECT SUM(valor) FROM despesa WHERE expedicao_id = :id AND forma_pgto = 'Dinheiro' AND excluido_em IS NULL), 0)
             AS despesas_dinheiro
     """), {"id": expedicao_id}).mappings().first()

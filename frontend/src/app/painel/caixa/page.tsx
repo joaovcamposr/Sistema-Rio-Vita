@@ -59,10 +59,10 @@ function TabelaVendas({ vendas, busca = false }: { vendas: VendaConferencia[]; b
             <thead><tr><th>Cliente</th><th>Produto</th><th>Valor</th><th>Vendida em</th><th>Paga em</th><th></th></tr></thead>
             <tbody>
               {filtradas.map((v) => (
-                <tr key={v.id}>
+                <tr key={v.parcela_id}>
                   <td>{v.cliente_nome}</td>
                   <td>{v.produto_nome}</td>
-                  <td>{moeda(v.valor_total)}</td>
+                  <td>{moeda(v.valor)}</td>
                   <td>
                     {dataBr(v.data)}
                     {v.fora_do_periodo && (
@@ -73,7 +73,7 @@ function TabelaVendas({ vendas, busca = false }: { vendas: VendaConferencia[]; b
                   </td>
                   <td>{v.data_pagamento ? dataBr(v.data_pagamento) : "—"}</td>
                   <td>
-                    <Link href={`/lancar/recebimentos?editar=${v.id}`} style={{ color: "var(--brand-deep)", fontWeight: 700, fontSize: "0.82rem" }}>
+                    <Link href={`/lancar/recebimentos?editar=${v.venda_id}`} style={{ color: "var(--brand-deep)", fontWeight: 700, fontSize: "0.82rem" }}>
                       Editar
                     </Link>
                   </td>

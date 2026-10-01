@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   atualizarObservacoesVenda,
@@ -10,16 +10,18 @@ import {
   listarProdutos,
   listarVendas,
   listarVendedoresDeVenda,
-  marcarPagamentoVenda,
+  marcarPagamentoParcela,
   restaurarVenda,
   type Cliente,
   type Produto,
   type VendaLista,
+  type VendaParcela,
+  type VendaParcelaEntrada,
 } from "@/lib/api";
 import ClienteCombobox from "@/components/ClienteCombobox";
+import ParcelasEditor from "@/components/ParcelasEditor";
 import styles from "../../cadastros/cadastros.module.css";
 
-const FORMAS_RECEBIMENTO = ["Pix", "Dinheiro", "Boleto", "Cheque"];
 const FORMAS_VENDA = ["Pix", "Boleto", "Dinheiro", "Cheque"];
 
 interface FormVenda {
@@ -29,11 +31,6 @@ interface FormVenda {
   produto_id: number;
   quantidade: string;
   preco_kg: string;
-  forma_pgto: string;
-  aVista: boolean;
-  dataPrevista: string;
-  situacao: string;
-  dataPagamento: string;
 }
 
 function hojeISO(): string {
@@ -60,28 +57,29 @@ function normaliza(s: string): string {
     .trim()
     .toLowerCase();
 }
-function estaPago(situacao: string | null): boolean {
-  return (situacao ?? "").trim().toLowerCase().startsWith("pag");
-}
-/** Data prevista de recebimento: usa a data própria da venda quando tem
- * (lançamentos novos); pra vendas antigas, sem essa data, cai pro prazo
- * padrão do cliente, como já era calculado antes. */
-function dataVencimento(v: VendaLista): string | null {
-  if (v.data_prevista_recebimento) return v.data_prevista_recebimento;
-  if (!v.cliente_prazo_dias) return null;
-  const d = new Date(v.data + "T00:00:00");
-  d.setDate(d.getDate() + v.cliente_prazo_dias);
-  return d.toISOString().slice(0, 10);
+function estaPago(situacao: string): boolean {
+  return situacao === "Pago";
 }
 function estaVencida(v: VendaLista): boolean {
   if (estaPago(v.situacao)) return false;
-  const venc = dataVencimento(v);
-  if (!venc) return false;
-  return venc < hojeISO();
+  if (!v.proxima_data_prevista) return false;
+  return v.proxima_data_prevista < hojeISO();
 }
 function dataHoraBr(iso: string): string {
   const d = new Date(iso);
   return d.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+/** Tira a mensagem amigável que o backend já devolve em `detail` (ex.: a
+ * reconciliação de parcelas em editar_venda) — sem isso cairíamos na
+ * mensagem genérica mesmo quando o backend já explicou o que fazer. */
+function extrairDetalhe(mensagemErro: string): string | null {
+  const corpo = mensagemErro.replace(/^HTTP \d+: /, "");
+  try {
+    const obj = JSON.parse(corpo) as { detail?: unknown };
+    return typeof obj.detail === "string" ? obj.detail : null;
+  } catch {
+    return null;
+  }
 }
 
 export default function Recebimentos() {
@@ -100,11 +98,13 @@ export default function Recebimentos() {
   const [vendas, setVendas] = useState<VendaLista[] | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [marcandoPagoId, setMarcandoPagoId] = useState<number | null>(null);
+  const [expandidoId, setExpandidoId] = useState<number | null>(null);
   const [editandoObs, setEditandoObs] = useState<number | null>(null);
   const [obsValor, setObsValor] = useState("");
   const [salvandoObs, setSalvandoObs] = useState(false);
   const [editandoVendaId, setEditandoVendaId] = useState<number | null>(null);
   const [formVenda, setFormVenda] = useState<FormVenda | null>(null);
+  const [parcelasEdicao, setParcelasEdicao] = useState<VendaParcelaEntrada[]>([]);
   const [salvandoVenda, setSalvandoVenda] = useState(false);
   const [excluindoId, setExcluindoId] = useState<number | null>(null);
   const [mostrarExcluidos, setMostrarExcluidos] = useState(false);
@@ -134,7 +134,7 @@ export default function Recebimentos() {
     return vendas
       .filter((v) => !busca || normaliza(v.cliente_nome).includes(busca))
       .filter((v) => !produtoFiltro || v.produto_id === produtoFiltro)
-      .filter((v) => !formaFiltro || v.forma_pgto === formaFiltro);
+      .filter((v) => !formaFiltro || v.parcelas.some((p) => p.forma_pgto === formaFiltro));
   }, [vendas, buscaCliente, produtoFiltro, formaFiltro]);
 
   useEffect(() => {
@@ -163,17 +163,28 @@ export default function Recebimentos() {
 
   const totalEmAberto = useMemo(() => {
     if (!vendasFiltradas) return 0;
-    return vendasFiltradas.filter((v) => !estaPago(v.situacao)).reduce((s, v) => s + v.valor_total, 0);
+    return vendasFiltradas.filter((v) => !estaPago(v.situacao)).reduce((s, v) => s + v.valor_pendente, 0);
   }, [vendasFiltradas]);
 
-  async function marcarComoPago(v: VendaLista) {
-    setMarcandoPagoId(v.id);
+  async function marcarParcelaPaga(venda: VendaLista, parcela: VendaParcela) {
+    setMarcandoPagoId(parcela.id);
     try {
-      const forma = v.forma_pgto && FORMAS_RECEBIMENTO.includes(v.forma_pgto) ? v.forma_pgto : FORMAS_RECEBIMENTO[0];
-      await marcarPagamentoVenda(v.id, "Pago", hojeISO(), forma);
+      await marcarPagamentoParcela(venda.id, parcela.id, hojeISO(), parcela.forma_pgto);
       carregar();
     } catch {
       setErro("Não foi possível salvar o pagamento.");
+    } finally {
+      setMarcandoPagoId(null);
+    }
+  }
+
+  async function desfazerPagamentoParcela(venda: VendaLista, parcela: VendaParcela) {
+    setMarcandoPagoId(parcela.id);
+    try {
+      await marcarPagamentoParcela(venda.id, parcela.id, null, parcela.forma_pgto);
+      carregar();
+    } catch {
+      setErro("Não foi possível desfazer o pagamento.");
     } finally {
       setMarcandoPagoId(null);
     }
@@ -206,12 +217,10 @@ export default function Recebimentos() {
       produto_id: v.produto_id,
       quantidade: String(v.quantidade_un ?? v.quantidade_kg).replace(".", ","),
       preco_kg: String(v.preco_kg).replace(".", ","),
-      forma_pgto: v.forma_pgto ?? FORMAS_VENDA[0],
-      aVista: !v.data_prevista_recebimento,
-      dataPrevista: v.data_prevista_recebimento ?? dataVencimento(v) ?? hojeISO(),
-      situacao: estaPago(v.situacao) ? "Pago" : "Em aberto",
-      dataPagamento: v.data_pagamento ?? hojeISO(),
     });
+    setParcelasEdicao(v.parcelas.map((p) => ({
+      id: p.id, valor: p.valor, forma_pgto: p.forma_pgto, data_prevista: p.data_prevista, data_pagamento: p.data_pagamento,
+    })));
   }
 
   async function salvarEdicaoVenda(vendaId: number) {
@@ -231,11 +240,7 @@ export default function Recebimentos() {
         quantidade_un: produto.kg_digitado ? null : qtdNum,
         quantidade_kg: kg,
         preco_kg: precoNum,
-        forma_pgto: formVenda.forma_pgto,
-        a_vista: formVenda.aVista,
-        data_prevista_recebimento: formVenda.aVista ? null : formVenda.dataPrevista,
-        situacao: formVenda.situacao,
-        data_pagamento: formVenda.situacao === "Pago" ? formVenda.dataPagamento : null,
+        parcelas: parcelasEdicao,
       });
       setEditandoVendaId(null);
       setFormVenda(null);
@@ -244,8 +249,8 @@ export default function Recebimentos() {
       const msg = e instanceof Error ? e.message : "";
       setErro(
         msg.includes("venda_prevista_apos_venda")
-          ? "A data de recebimento previsto não pode ser antes da data da venda — ajuste o campo \"Recebimento previsto\" também."
-          : "Não foi possível salvar a venda — confira os valores."
+          ? "A data prevista de uma parcela não pode ser antes da data da venda — ajuste a parcela."
+          : extrairDetalhe(msg) ?? "Não foi possível salvar a venda — confira os valores."
       );
     } finally {
       setSalvandoVenda(false);
@@ -403,7 +408,7 @@ export default function Recebimentos() {
               </colgroup>
               <thead>
                 <tr>
-                  {["Data", "Cliente", "Produto", "Qtd.", "Valor", "Forma", "Vendedor", "Situação", "Obs.", ""].map((rotulo) => (
+                  {["Data", "Cliente", "Produto", "Qtd.", "Valor", "Parcelas", "Vendedor", "Situação", "Obs.", ""].map((rotulo) => (
                     <th
                       key={rotulo}
                       className={rotulo === "" ? "no-print" : undefined}
@@ -418,9 +423,10 @@ export default function Recebimentos() {
                 {vendasFiltradas.map((v) => {
                   const pago = estaPago(v.situacao);
                   const vencida = estaVencida(v);
-                  const venc = dataVencimento(v);
+                  const expandido = expandidoId === v.id;
                   return (
-                    <tr key={v.id} style={{ cursor: "default" }}>
+                    <Fragment key={v.id}>
+                    <tr style={{ cursor: "default" }}>
                       <td style={{ padding: "6px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{dataBr(v.data)}</td>
                       <td style={{ padding: "6px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={v.cliente_nome}>
                         {v.cliente_nome}
@@ -437,7 +443,16 @@ export default function Recebimentos() {
                       >
                         {moeda(v.valor_total)}
                       </td>
-                      <td style={{ padding: "6px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{v.forma_pgto ?? "—"}</td>
+                      <td style={{ padding: "6px" }}>
+                        <button
+                          type="button"
+                          className={`${styles.btnLink} no-print`}
+                          style={{ fontSize: "0.76rem", whiteSpace: "nowrap" }}
+                          onClick={() => setExpandidoId(expandido ? null : v.id)}
+                        >
+                          {v.parcelas.length} {v.parcelas.length === 1 ? "parcela" : "parcelas"} {expandido ? "▾" : "▸"}
+                        </button>
+                      </td>
                       <td style={{ padding: "6px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={v.vendedor ?? ""}>
                         {v.vendedor ?? "—"}
                       </td>
@@ -448,11 +463,18 @@ export default function Recebimentos() {
                           color: pago ? "var(--ok)" : vencida ? "var(--crit)" : "var(--warn)",
                         }}>
                           {pago
-                            ? `Pago${v.data_pagamento ? ` ${dataBr(v.data_pagamento)}` : ""}`
+                            ? "Pago"
                             : vencida
-                              ? `Vencida${venc ? ` (${dataBr(venc)})` : ""}`
-                              : `Em aberto${venc ? ` (${dataBr(venc)})` : ""}`}
+                              ? `Vencida${v.proxima_data_prevista ? ` (${dataBr(v.proxima_data_prevista)})` : ""}`
+                              : v.situacao === "Parcial"
+                                ? `Parcial${v.proxima_data_prevista ? ` (${dataBr(v.proxima_data_prevista)})` : ""}`
+                                : `Em aberto${v.proxima_data_prevista ? ` (${dataBr(v.proxima_data_prevista)})` : ""}`}
                         </span>
+                        {v.situacao !== "Pago" && v.situacao !== "Em aberto" && (
+                          <span className={styles.hint} style={{ display: "block", fontSize: "0.68rem", marginTop: 2 }}>
+                            {moeda(v.valor_recebido)} de {moeda(v.valor_total)}
+                          </span>
+                        )}
                       </td>
                       <td style={{ padding: "6px" }}>
                         {editandoObs === v.id ? (
@@ -509,15 +531,6 @@ export default function Recebimentos() {
                           </>
                         ) : (
                           <>
-                            {!pago && (
-                              <button
-                                className={styles.btnLink} style={{ fontSize: "0.76rem", display: "block" }}
-                                disabled={marcandoPagoId === v.id}
-                                onClick={() => marcarComoPago(v)}
-                              >
-                                {marcandoPagoId === v.id ? "Marcando…" : "Marcar pago"}
-                              </button>
-                            )}
                             <button
                               className={styles.btnLink}
                               style={{ fontSize: "0.76rem" }}
@@ -538,6 +551,66 @@ export default function Recebimentos() {
                         )}
                       </td>
                     </tr>
+                    {expandido && (
+                      <tr className="no-print">
+                        <td colSpan={10} style={{ padding: "4px 6px 12px", background: "var(--ground)" }}>
+                          <table style={{ width: "100%", fontSize: "0.76rem", borderCollapse: "collapse" }}>
+                            <thead>
+                              <tr style={{ color: "var(--ink-faint)" }}>
+                                {["#", "Valor", "Forma", "Data prevista", "Situação", ""].map((r) => (
+                                  <th key={r} style={{ textAlign: "left", padding: "4px 8px", fontWeight: 700 }}>{r}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {v.parcelas.map((p) => {
+                                const parcelaPaga = p.data_pagamento !== null;
+                                const parcelaVencida = !parcelaPaga && p.data_prevista < hojeISO();
+                                return (
+                                  <tr key={p.id} style={{ borderTop: "1px solid var(--rule)" }}>
+                                    <td style={{ padding: "5px 8px" }}>{p.numero}</td>
+                                    <td style={{ padding: "5px 8px" }}>{moeda(p.valor)}</td>
+                                    <td style={{ padding: "5px 8px" }}>{p.forma_pgto}</td>
+                                    <td style={{ padding: "5px 8px" }}>{dataBr(p.data_prevista)}</td>
+                                    <td style={{ padding: "5px 8px" }}>
+                                      <span style={{
+                                        display: "inline-block", padding: "2px 7px", borderRadius: 999, fontSize: "0.68rem", fontWeight: 700,
+                                        background: parcelaPaga ? "var(--ok-soft)" : parcelaVencida ? "var(--crit-soft)" : "var(--warn-soft)",
+                                        color: parcelaPaga ? "var(--ok)" : parcelaVencida ? "var(--crit)" : "var(--warn)",
+                                      }}>
+                                        {parcelaPaga ? `Pago ${dataBr(p.data_pagamento as string)}` : parcelaVencida ? "Vencida" : "Em aberto"}
+                                      </span>
+                                    </td>
+                                    <td style={{ padding: "5px 8px" }}>
+                                      {!mostrarExcluidos && (
+                                        parcelaPaga ? (
+                                          <button
+                                            className={styles.btnLink} style={{ fontSize: "0.74rem" }}
+                                            disabled={marcandoPagoId === p.id}
+                                            onClick={() => desfazerPagamentoParcela(v, p)}
+                                          >
+                                            {marcandoPagoId === p.id ? "…" : "Desfazer"}
+                                          </button>
+                                        ) : (
+                                          <button
+                                            className={styles.btnLink} style={{ fontSize: "0.74rem" }}
+                                            disabled={marcandoPagoId === p.id}
+                                            onClick={() => marcarParcelaPaga(v, p)}
+                                          >
+                                            {marcandoPagoId === p.id ? "Marcando…" : "Marcar pago"}
+                                          </button>
+                                        )
+                                      )}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   );
                 })}
               </tbody>
@@ -584,20 +657,7 @@ export default function Recebimentos() {
                   <label>Data</label>
                   <input
                     className={styles.inp} type="date" value={formVenda.data}
-                    onChange={(e) => {
-                      const novaData = e.target.value;
-                      setFormVenda({
-                        ...formVenda,
-                        data: novaData,
-                        // recebimento previsto não pode ficar antes da data da venda — se
-                        // só a data mudou (ex.: corrigindo um erro de digitação) e isso
-                        // deixaria o previsto no passado, empurra o previsto junto
-                        dataPrevista:
-                          !formVenda.aVista && formVenda.dataPrevista < novaData
-                            ? novaData
-                            : formVenda.dataPrevista,
-                      });
-                    }}
+                    onChange={(e) => setFormVenda({ ...formVenda, data: e.target.value })}
                   />
                 </div>
                 <div className={styles.field} style={{ margin: 0, minWidth: 220 }}>
@@ -643,56 +703,21 @@ export default function Recebimentos() {
                     onChange={(e) => setFormVenda({ ...formVenda, vendedor: e.target.value })}
                   />
                 </div>
-                <div className={styles.field} style={{ margin: 0 }}>
-                  <label>Forma</label>
-                  <select
-                    className={styles.inp}
-                    value={formVenda.forma_pgto}
-                    onChange={(e) => setFormVenda({ ...formVenda, forma_pgto: e.target.value })}
-                  >
-                    {FORMAS_VENDA.map((f) => <option key={f} value={f}>{f}</option>)}
-                  </select>
-                </div>
-                <div className={styles.field} style={{ margin: 0 }}>
-                  <label>À vista / a prazo</label>
-                  <select
-                    className={styles.inp}
-                    value={formVenda.aVista ? "vista" : "prazo"}
-                    onChange={(e) => setFormVenda({ ...formVenda, aVista: e.target.value === "vista" })}
-                  >
-                    <option value="vista">À vista</option>
-                    <option value="prazo">A prazo</option>
-                  </select>
-                </div>
-                {!formVenda.aVista && (
-                  <div className={styles.field} style={{ margin: 0 }}>
-                    <label>Recebimento previsto</label>
-                    <input
-                      className={styles.inp} type="date" value={formVenda.dataPrevista}
-                      onChange={(e) => setFormVenda({ ...formVenda, dataPrevista: e.target.value })}
-                    />
-                  </div>
-                )}
-                <div className={styles.field} style={{ margin: 0 }}>
-                  <label>Situação</label>
-                  <select
-                    className={styles.inp}
-                    value={formVenda.situacao}
-                    onChange={(e) => setFormVenda({ ...formVenda, situacao: e.target.value })}
-                  >
-                    <option value="Em aberto">Em aberto</option>
-                    <option value="Pago">Pago</option>
-                  </select>
-                </div>
-                {formVenda.situacao === "Pago" && (
-                  <div className={styles.field} style={{ margin: 0 }}>
-                    <label>Data de pagamento</label>
-                    <input
-                      className={styles.inp} type="date" value={formVenda.dataPagamento}
-                      onChange={(e) => setFormVenda({ ...formVenda, dataPagamento: e.target.value })}
-                    />
-                  </div>
-                )}
+              </div>
+              <div className={styles.field} style={{ margin: "14px 0 0" }}>
+                <label>Pagamento</label>
+                <ParcelasEditor
+                  key={editandoVendaId}
+                  dataBase={formVenda.data}
+                  valorTotal={
+                    (produtoSelecionado?.kg_digitado
+                      ? parseFloat(formVenda.quantidade.replace(",", ".")) || 0
+                      : (parseFloat(formVenda.quantidade.replace(",", ".")) || 0) * (produtoSelecionado?.fator_kg ?? 1))
+                    * (parseFloat(formVenda.preco_kg.replace(",", ".")) || 0)
+                  }
+                  parcelasIniciais={parcelasEdicao}
+                  onChange={(ps) => setParcelasEdicao(ps)}
+                />
               </div>
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
                 <button

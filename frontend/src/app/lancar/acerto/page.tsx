@@ -2,16 +2,16 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { listarClientes, listarProdutos, type Cliente, type Produto } from "@/lib/api";
+import { listarClientes, listarProdutos, type Cliente, type Produto, type VendaParcelaEntrada } from "@/lib/api";
 import {
   criarCliente, listarExpedicoesAbertas, listarPrecosCliente, listarVendedores,
   type Expedicao, type Vendedor,
 } from "@/lib/cadastros";
 import { enfileirar } from "@/lib/offline-queue";
 import ClienteCombobox from "@/components/ClienteCombobox";
+import ParcelasEditor, { parcelaUnicaAVista } from "@/components/ParcelasEditor";
 import styles from "../form.module.css";
 
-const FORMAS = ["Dinheiro", "Pix", "Prazo"];
 const CATEGORIAS_DESPESA = ["Abastecimento", "Alimentação", "Manutenção", "Outro"];
 
 function hojeISO(): string {
@@ -27,16 +27,20 @@ interface VendaLinha {
   produtoId: number | null;
   quantidade: string;
   preco: string;
-  forma: string;
-  prazoDias: string;
+  parcelas: VendaParcelaEntrada[];
+  parcelasBatem: boolean;
   emiteNf: boolean;
   emiteBoleto: boolean;
 }
 interface RetornoLinha { produtoId: number | null; quantidade: string }
 interface DespesaLinha { categoria: string; valor: string; forma: string }
 
-function novaVenda(produtoId: number | null, vendedor: string): VendaLinha {
-  return { clienteId: null, vendedor, produtoId, quantidade: "", preco: "", forma: FORMAS[0], prazoDias: "", emiteNf: false, emiteBoleto: false };
+function novaVenda(produtoId: number | null, vendedor: string, data: string): VendaLinha {
+  return {
+    clienteId: null, vendedor, produtoId, quantidade: "", preco: "",
+    parcelas: parcelaUnicaAVista(data, 0), parcelasBatem: true,
+    emiteNf: false, emiteBoleto: false,
+  };
 }
 
 export default function AcertoExpedicao() {
@@ -49,7 +53,7 @@ export default function AcertoExpedicao() {
 
   const [expedicaoId, setExpedicaoId] = useState<number | null>(null);
   const [dataAcerto, setDataAcerto] = useState(hojeISO());
-  const [vendas, setVendas] = useState<VendaLinha[]>([novaVenda(null, "")]);
+  const [vendas, setVendas] = useState<VendaLinha[]>([novaVenda(null, "", hojeISO())]);
   const [retornos, setRetornos] = useState<RetornoLinha[]>([{ produtoId: null, quantidade: "" }]);
   const [despesas, setDespesas] = useState<DespesaLinha[]>([]);
   const [enviando, setEnviando] = useState(false);
@@ -67,7 +71,7 @@ export default function AcertoExpedicao() {
         setVendedores(vs);
         if (es.length > 0) {
           setExpedicaoId(es[0].id);
-          setVendas([novaVenda(null, es[0].vendedor_nome)]);
+          setVendas([novaVenda(null, es[0].vendedor_nome, dataAcerto)]);
         }
       })
       .catch(() => setErroCarregar("Sem conexão e sem dados salvos deste aparelho ainda. Conecte-se ao menos uma vez."));
@@ -78,7 +82,7 @@ export default function AcertoExpedicao() {
   function aoEscolherExpedicao(id: number) {
     setExpedicaoId(id);
     const exp = expedicoes.find((e) => e.id === id);
-    setVendas([novaVenda(null, exp?.vendedor_nome ?? "")]);
+    setVendas([novaVenda(null, exp?.vendedor_nome ?? "", dataAcerto)]);
   }
 
   async function aoEscolherCliente(idx: number, clienteId: number | null) {
@@ -91,7 +95,6 @@ export default function AcertoExpedicao() {
         // cliente tem vendedor responsável cadastrado: usa ele; senão mantém
         // o que já estava (o padrão inicial é o entregador da expedição)
         vendedor: cliente?.vendedor_nome ?? copia[idx].vendedor,
-        prazoDias: cliente?.prazo_dias != null ? String(cliente.prazo_dias) : "",
         emiteNf: cliente?.emite_nf ?? false,
         emiteBoleto: cliente?.emite_boleto ?? false,
       };
@@ -168,18 +171,17 @@ export default function AcertoExpedicao() {
   const temDiferenca = diferencas.some((d) => Math.abs(d.diferenca) > 0.01);
 
   const totalVendidoDinheiro = vendas.reduce((s, v) => {
-    if (v.forma !== "Dinheiro") return s;
-    const produto = produtos.find((p) => p.id === v.produtoId);
-    const qtd = parseFloat(v.quantidade.replace(",", ".")) || 0;
-    const kg = produto?.kg_digitado ? qtd : qtd * (produto?.fator_kg ?? 1);
-    const preco = parseFloat(v.preco.replace(",", ".")) || 0;
-    return s + kg * preco;
+    const dinheiroRecebido = v.parcelas
+      .filter((p) => p.forma_pgto === "Dinheiro" && p.data_pagamento)
+      .reduce((ss, p) => ss + p.valor, 0);
+    return s + dinheiroRecebido;
   }, 0);
   const totalDespesasDinheiro = despesas
     .filter((d) => d.forma === "Dinheiro")
     .reduce((s, d) => s + (parseFloat(d.valor.replace(",", ".")) || 0), 0);
 
-  const podeSalvar = expedicaoId !== null && !enviando;
+  const todasParcelasBatem = vendas.every((v) => v.parcelasBatem);
+  const podeSalvar = expedicaoId !== null && todasParcelasBatem && !enviando;
 
   async function salvar() {
     if (!expedicaoId) return;
@@ -212,8 +214,7 @@ export default function AcertoExpedicao() {
             quantidade_un: produto?.kg_digitado ? null : qtd,
             quantidade_kg: produto?.kg_digitado ? qtd : qtd * (produto?.fator_kg ?? 1),
             preco_kg: parseFloat(v.preco.replace(",", ".")) || 0,
-            forma_pgto: v.forma,
-            prazo_dias: v.prazoDias ? Number(v.prazoDias) : null,
+            parcelas: v.parcelas,
             emite_nf: v.emiteNf,
             emite_boleto: v.emiteBoleto,
           };
@@ -232,7 +233,7 @@ export default function AcertoExpedicao() {
         })),
       });
       setToast("Acerto registrado");
-      setVendas([novaVenda(null, expedicao?.vendedor_nome ?? "")]);
+      setVendas([novaVenda(null, expedicao?.vendedor_nome ?? "", dataAcerto)]);
       setRetornos([{ produtoId: null, quantidade: "" }]);
       setDespesas([]);
       setTimeout(() => setToast(null), 2200);
@@ -378,13 +379,21 @@ export default function AcertoExpedicao() {
                   onChange={(e) => atualizarVenda(idx, "preco", e.target.value)} />
               </div>
             </div>
-            <div className={styles.chips} style={{ marginBottom: 10 }}>
-              {FORMAS.map((f) => (
-                <button key={f} type="button" className={styles.chip} aria-pressed={v.forma === f}
-                  onClick={() => atualizarVenda(idx, "forma", f)}>
-                  {f}
-                </button>
-              ))}
+            <div className={styles.field} style={{ marginBottom: 10 }}>
+              <label>Pagamento</label>
+              <ParcelasEditor
+                key={`${idx}-${v.produtoId ?? "sem-produto"}`}
+                dataBase={dataAcerto}
+                valorTotal={kgDe(v.produtoId, v.quantidade) * (parseFloat(v.preco.replace(",", ".")) || 0)}
+                parcelasIniciais={v.parcelas}
+                onChange={(ps, bate) => {
+                  setVendas((linhas) => {
+                    const copia = [...linhas];
+                    copia[idx] = { ...copia[idx], parcelas: ps, parcelasBatem: bate };
+                    return copia;
+                  });
+                }}
+              />
             </div>
             <div className={styles.checkRow}>
               <input type="checkbox" checked={v.emiteNf} onChange={(e) => atualizarVenda(idx, "emiteNf", e.target.checked)} id={`nf-${idx}`} />
@@ -400,7 +409,7 @@ export default function AcertoExpedicao() {
             )}
           </div>
         ))}
-        <button type="button" className={styles.chip} onClick={() => setVendas((ls) => [...ls, novaVenda(null, expedicao?.vendedor_nome ?? "")])}>
+        <button type="button" className={styles.chip} onClick={() => setVendas((ls) => [...ls, novaVenda(null, expedicao?.vendedor_nome ?? "", dataAcerto)])}>
           + adicionar venda
         </button>
 
