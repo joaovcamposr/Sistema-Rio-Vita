@@ -17,6 +17,7 @@ falhou no meio e as colunas antigas foram apagadas mesmo assim.
 | Trava de DDL na API | A API é incapaz de executar DROP/ALTER/CREATE/TRUNCATE. Só o executor de migrações e a restauração podem. | `backend/app/db.py` |
 | Registro de erros | Todo erro interno é gravado (rota, usuário, traceback) e vira resposta 500 normal (antes aparecia como "Failed to fetch"). | migração 032, `/admin/erros` |
 | CI a cada commit | `pyflakes`, **todas** as migrações num banco vazio, fluxo de vendas/caixa, chamada a **todos** os GET, backup→restauração com comparação linha a linha, `tsc` e build do front. | `.github/workflows/ci.yml` |
+| Detector de divergência de esquema | `/admin/esquema` descreve o esquema real (295 estruturas: colunas, constraints, índices, views, triggers); `scripts/comparar_esquema.py` compara com um banco criado só pelas migrações. Achou `chegada_racao.excluido_em` ausente em produção (migração 025 nunca aplicada lá; corrigido pela 033). Rode antes e depois de qualquer mudança arriscada. | `backend/app/esquema.py` |
 | Monitor | A cada 15 min consulta `/health/detalhado` (banco, migração pendente, rajada de erros); falhou → e-mail do GitHub. | `.github/workflows/monitor.yml` |
 
 ## Como mudar o banco (único caminho)
@@ -58,3 +59,9 @@ falhou no meio e as colunas antigas foram apagadas mesmo assim.
   a trava de DDL é na aplicação. Criar um usuário só com SELECT/INSERT/UPDATE/DELETE
   e trocar o `DATABASE_URL` da API fecha também esse lado (exige gerar senha nova).
 * O repositório do GitHub é **público**: nunca coloque dados, dumps ou segredos nele.
+
+## Fatos do ambiente (verificados em out/2026)
+
+* Postgres de produção: versão 18, volume de **500 MB**, banco com ~**15 MB** de dados (o resto do volume é log/arquivos do sistema). Cada snapshot ocupa ~2,5 MB.
+* O baseline do executor presumiu que as migrações 001–030 estavam todas aplicadas; a 025 não estava. Por isso a regra: ao suspeitar de divergência, compare o esquema (`/admin/esquema`) em vez de presumir.
+* Dados antigos de pagamento das vendas (forma, situação, datas, prazo) ficam preservados em `venda_legado_pgto` (3.739 linhas).
