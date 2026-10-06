@@ -33,8 +33,13 @@ interface FormVenda {
   preco_kg: string;
 }
 
+// data local, não UTC: depois das 21h em Brasília toISOString() já é "amanhã",
+// e "Marcar pago" gravaria o recebimento no dia seguinte
 function hojeISO(): string {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${mm}-${dd}`;
 }
 // "De" começa sempre no início — não dá pra saber de antemão até quando
 // existe lançamento antigo, então o padrão traz tudo em vez de arriscar

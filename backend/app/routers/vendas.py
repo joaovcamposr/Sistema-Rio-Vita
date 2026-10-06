@@ -112,7 +112,13 @@ def listar_vendas(
         {_FROM_LISTA}
         WHERE v.data BETWEEN :de AND :ate
           AND {"v.excluido_em IS NOT NULL" if excluidos else "v.excluido_em IS NULL"}
-          AND (CAST(:situacao AS text) IS NULL OR p.situacao = :situacao)
+          AND (
+                CAST(:situacao AS text) IS NULL
+                -- "Em aberto" na tela = ainda tem dinheiro a receber (inclui
+                -- 'Parcial'); venda de valor zero não tem nada a receber
+                OR (CAST(:situacao AS text) = 'Em aberto' AND p.situacao <> 'Pago' AND p.valor_pendente > 0)
+                OR (CAST(:situacao AS text) <> 'Em aberto' AND p.situacao = CAST(:situacao AS text))
+              )
           AND (CAST(:cliente_id AS bigint) IS NULL OR v.cliente_id = :cliente_id)
           AND (CAST(:vendedor AS text) IS NULL OR v.vendedor = :vendedor)
         ORDER BY v.data DESC, v.id DESC
