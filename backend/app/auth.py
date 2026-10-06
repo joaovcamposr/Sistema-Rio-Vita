@@ -57,6 +57,8 @@ def get_current_user(
     ).mappings().first()
     if row is None or not row["ativo"]:
         raise HTTPException(401, "usuário inválido ou inativo")
+    # a trilha de auditoria (migração 031) lê isto nos triggers do banco
+    db.execute(text("SELECT set_config('app.usuario', :n, false)"), {"n": row["nome"]})
     return UsuarioOut(**row)
 
 

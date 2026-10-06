@@ -55,6 +55,15 @@ export default function CadastrosHub() {
               Fornecedores e tipos (ex.: 32AP, 36AP)
             </div>
           </Link>
+          <Link href="/cadastros/seguranca" style={{
+            background: "var(--surface)", border: "1px solid var(--rule)", borderRadius: 14,
+            padding: 18, color: "var(--ink)", fontWeight: 700,
+          }}>
+            🛡️ Segurança dos dados
+            <div style={{ fontWeight: 400, fontSize: ".8rem", color: "var(--ink-faint)", marginTop: 4 }}>
+              Backup, cópias automáticas, erros e histórico (gerente)
+            </div>
+          </Link>
         </div>
       </div>
     </div>
