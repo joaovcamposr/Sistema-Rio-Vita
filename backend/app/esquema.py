@@ -44,6 +44,7 @@ def descrever(conn: Connection) -> dict[str, str]:
         SELECT cl.relname, co.conname, pg_get_constraintdef(co.oid)
         FROM pg_constraint co JOIN pg_class cl ON cl.oid = co.conrelid
         JOIN pg_namespace n ON n.oid = cl.relnamespace WHERE n.nspname = 'public'
+          AND co.contype <> 'n'  -- Postgres 18 lista NOT NULL aqui; 16/17 não (já vai em tabela:)
     """)).all():
         if tabela not in _IGNORAR_TABELAS:
             d[f"constraint:{tabela}.{nome}"] = definicao
@@ -71,6 +72,7 @@ def descrever(conn: Connection) -> dict[str, str]:
     for nome, corpo in conn.execute(text("""
         SELECT p.proname, p.prosrc FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
         WHERE n.nspname = 'public'
+          AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.objid = p.oid AND d.deptype = 'e')  -- de extensões (pgcrypto)
     """)).all():
         d[f"funcao:{nome}"] = " ".join(corpo.split())
 
