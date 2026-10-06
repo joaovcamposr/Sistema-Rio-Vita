@@ -1482,8 +1482,11 @@ def painel_acertos(
 
         totais = db.execute(text("""
             SELECT
-              COALESCE((SELECT SUM(valor_total) FROM venda WHERE expedicao_id = :id AND forma_pgto = 'Dinheiro' AND excluido_em IS NULL), 0)
-                AS vendas_dinheiro,
+              COALESCE((
+                SELECT SUM(vp.valor) FROM venda_parcela vp JOIN venda ve ON ve.id = vp.venda_id
+                WHERE ve.expedicao_id = :id AND lower(trim(vp.forma_pgto)) = 'dinheiro'
+                  AND vp.excluido_em IS NULL AND ve.excluido_em IS NULL
+              ), 0) AS vendas_dinheiro,
               COALESCE((SELECT SUM(valor) FROM despesa WHERE expedicao_id = :id AND forma_pgto = 'Dinheiro' AND excluido_em IS NULL), 0)
                 AS despesas_dinheiro
         """), {"id": e["id"]}).mappings().first()
