@@ -50,3 +50,12 @@ def test_snapshot_diario_cria_e_poda(banco):
         n = c.execute(text("SELECT count(*) FROM information_schema.schemata WHERE schema_name LIKE 'dia\\_%'")).scalar()
     assert n == rotinas.DIAS_MANTIDOS
     assert rotinas.snapshot_do_dia(base + timedelta(days=8)) is None  # já existe
+
+
+def test_esquema_descrito_pelo_admin(api):
+    r = api.get("/admin/esquema")
+    assert r.status_code == 200
+    d = r.json()
+    assert "tabela:venda_parcela" in d and "view:vw_venda_pagamento" in d and "trigger:venda.aud_venda" in d
+    completo = api.get("/admin/esquema", params={"chaves": "tabela:chegada_racao"}).json()
+    assert "excluido_em" in completo["tabela:chegada_racao"]

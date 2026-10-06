@@ -7,7 +7,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from .. import backup
+from .. import backup, esquema as _esquema
 from ..auth import exigir_gerente
 from ..db import get_db
 
@@ -76,3 +76,13 @@ def consultar_auditoria(
         ORDER BY id DESC LIMIT :n
     """), {"t": tabela, "r": registro_id, "n": limite}).mappings().all()
     return [dict(r) for r in rows]
+
+
+@router.get("/esquema")
+def descrever_esquema(chaves: str | None = None, db: Session = Depends(get_db)):
+    """Resumo (chave -> md5) do esquema do banco; com ?chaves=a,b devolve o texto
+    completo dessas chaves. Compare com um banco novo usando scripts/comparar_esquema.py."""
+    d = _esquema.descrever(db.connection())
+    if chaves:
+        return {k: d.get(k) for k in chaves.split(",")}
+    return _esquema.resumo(d)
