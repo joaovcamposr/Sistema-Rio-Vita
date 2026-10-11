@@ -434,7 +434,8 @@ def programacao_abate(db: Session = Depends(get_db)):
     hoje. A mortalidade que ainda não foi lançada (só aparece quando o lote
     fecha) é descontada do saldo pela taxa média dos lotes já encerrados,
     fase a fase, sempre em cima da quantidade do povoamento do lote —
-    pré-engorda sofre as duas taxas (somadas) até o abate. Só considera
+    pré-engorda sofre as duas taxas em sequência (a da engorda aplicada
+    depois da da pré-engorda: taxa total = 1 − (1 − pré) × (1 − engorda)) até o abate. Só considera
     os lotes ativos hoje: não projeta novos povoamentos."""
     curva = _carregar_curva(db)
     viveiros = painel_viveiros(db)
@@ -465,7 +466,8 @@ def programacao_abate(db: Session = Depends(get_db)):
         lote = v.lote_atual
         semana_hoje = _semana_para_peso(curva, v.peso_estimado_hoje_g)
         if lote.fase == "pre_engorda":
-            vivos = lote.saldo_un - (m_pre.taxa_considerada + m_eng.taxa_considerada) * lote.quantidade_inicial
+            taxa_total = 1 - (1 - m_pre.taxa_considerada) * (1 - m_eng.taxa_considerada)
+            vivos = lote.saldo_un - taxa_total * lote.quantidade_inicial
         else:
             vivos = lote.saldo_un - m_eng.taxa_considerada * lote.quantidade_inicial
         vivos = max(0, int(vivos))
