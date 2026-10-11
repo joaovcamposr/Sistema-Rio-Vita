@@ -871,6 +871,10 @@ class MortalidadeResumoOut(BaseModel):
     taxa_media_pre_engorda: float | None
     taxa_media_engorda: float | None
     lotes: list[MortalidadeLoteOut]
+    # duração média (dias) dos lotes encerrados que entram na média — base da
+    # mortalidade gradual (concentrada logo depois do povoamento)
+    duracao_media_pre_engorda_dias: float | None = None
+    duracao_media_engorda_dias: float | None = None
 
 
 class VendaPorProdutoOut(BaseModel):

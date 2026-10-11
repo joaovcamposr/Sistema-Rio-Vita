@@ -139,3 +139,17 @@ def test_peso_estimado_interpola_e_mantem_a_semana():
             esperada = min(paineis._semana_para_peso(curva, peso) + paineis._avanco_semanas(sem), 10)
             assert paineis._semana_para_peso(curva, est) == esperada           # a semana inteira não muda
     assert abs(paineis._peso_estimado(curva, 33.0, 2) - 53.75) < 0.01          # antes dava 75 g (arredondava pra cima)
+
+
+def test_mortalidade_gradual_concentrada_no_inicio():
+    from app.routers.paineis import _fracao_mortalidade_acumulada as f
+    assert f(0, 120, 2.0) == 0.0 and f(120, 120, 2.0) == 1.0 and f(300, 120, 2.0) == 1.0
+    assert abs(f(30, 120, 2.0) - 0.4375) < 1e-9 and abs(f(60, 120, 2.0) - 0.75) < 1e-9
+    assert f(30, 120, 2.0) > 30 / 120                      # mais forte no início do que a linear
+    assert abs(f(30, 120, 1.0) - 0.25) < 1e-9             # expoente 1 = linear
+    assert f(10, 0, 2.0) == 1.0                           # sem duração conhecida: ciclo todo
+
+
+def test_mortalidade_expoe_duracao_media(api):
+    d = api.get("/paineis/mortalidade").json()
+    assert "duracao_media_engorda_dias" in d and "duracao_media_pre_engorda_dias" in d

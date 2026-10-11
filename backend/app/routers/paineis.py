@@ -280,6 +280,37 @@ def _chave_ordem_viveiro(codigo: str) -> tuple:
     return (1, principal, sub)
 
 
+# Duração típica do ciclo por fase (dias) quando ainda não há lote encerrado
+# válido pra medir — a média real dos lotes encerrados substitui isso.
+_DURACAO_CICLO_PADRAO_DIAS = {"pre_engorda": 90, "engorda": 120}
+
+
+def _fracao_mortalidade_acumulada(idade_dias: int, duracao_ciclo_dias: float, expoente: float) -> float:
+    """Que parte da mortalidade do ciclo já aconteceu com `idade_dias` de
+    cultivo. A mortalidade é concentrada logo depois do povoamento (predação,
+    estresse de manejo): 1 − (1 − idade/ciclo)^expoente. Com expoente 2, em
+    25% do ciclo já passou ~44% da mortalidade; em 50%, 75%. Expoente 1 =
+    mortalidade linear. Lote mais velho que o ciclo médio fica com 100%."""
+    if duracao_ciclo_dias <= 0:
+        return 1.0
+    x = max(0.0, min(1.0, idade_dias / duracao_ciclo_dias))
+    return 1.0 - (1.0 - x) ** max(expoente, 1.0)
+
+
+def _taxa_mortalidade_hoje(db: Session, mortalidade, fase: str, idade_dias: int) -> float:
+    """Taxa de mortalidade já acumulada hoje por um lote dessa fase com essa
+    idade: taxa do ciclo (média dos lotes encerrados) × fração do ciclo que
+    já correu na curva de mortalidade (concentrada no início)."""
+    pre = fase == "pre_engorda"
+    taxa = (mortalidade.taxa_media_pre_engorda if pre else mortalidade.taxa_media_engorda) or 0.0
+    duracao = (
+        (mortalidade.duracao_media_pre_engorda_dias if pre else mortalidade.duracao_media_engorda_dias)
+        or _DURACAO_CICLO_PADRAO_DIAS[fase]
+    )
+    expoente = _buscar_parametro(db, "mortalidade_expoente_precoce", 2.0)
+    return taxa * _fracao_mortalidade_acumulada(idade_dias, duracao, expoente)
+
+
 def _saldo_com_mortalidade(saldo_un: int, quantidade_inicial: int, taxa_mortalidade: float) -> float:
     """Desconta do saldo registrado a mortalidade que ainda não foi
     lançada — só aparece quando o lote fecha — pela taxa média dos lotes
@@ -354,10 +385,6 @@ def _calcular_indicadores_lote(
 def painel_viveiros(db: Session = Depends(get_db)):
     curva = _carregar_curva(db)
     mortalidade = painel_mortalidade(db)
-    taxa_mortalidade_por_fase = {
-        "pre_engorda": mortalidade.taxa_media_pre_engorda or 0.0,
-        "engorda": mortalidade.taxa_media_engorda or 0.0,
-    }
     rows = db.execute(text("""
         SELECT v.id, v.codigo, v.tipo, v.area_m2,
                l.id AS lote_id, l.codigo AS lote_codigo, l.fase AS lote_fase,
@@ -403,7 +430,7 @@ def painel_viveiros(db: Session = Depends(get_db)):
             indicadores = _calcular_indicadores_lote(
                 curva, hoje, r["lote_data_inicio"], r["quantidade_inicial"], float(r["peso_medio_inicial_g"]),
                 data_biometria, peso_biometria, r["saldo_un"], float(r["area_m2"]), _f(r["sacos_total"]),
-                taxa_mortalidade=taxa_mortalidade_por_fase.get(r["lote_fase"], 0.0),
+                taxa_mortalidade=_taxa_mortalidade_hoje(db, mortalidade, r["lote_fase"], idade_dias),
                 biomassa_saida_kg=saidas.get(r["lote_id"], 0.0),
             )
         ultima_biometria = None
@@ -1013,8 +1040,14 @@ def painel_mortalidade(db: Session = Depends(get_db)):
         perdida, inicial = somas[fase]
         return perdida / inicial if inicial else None
 
+    def duracao_media(fase: str) -> float | None:
+        dias = [l.dias for l in lotes if l.fase == fase and not l.fora_da_media]
+        return sum(dias) / len(dias) if dias else None
+
     return MortalidadeResumoOut(
         taxa_media_pre_engorda=media("pre_engorda"), taxa_media_engorda=media("engorda"), lotes=lotes,
+        duracao_media_pre_engorda_dias=duracao_media("pre_engorda"),
+        duracao_media_engorda_dias=duracao_media("engorda"),
     )
 
 
@@ -2620,9 +2653,6 @@ def historico_lote(
         raise HTTPException(404, "Nenhum lote ativo nesse viveiro.")
 
     mortalidade = painel_mortalidade(db)
-    taxa_mortalidade = (
-        mortalidade.taxa_media_pre_engorda if lote["fase"] == "pre_engorda" else mortalidade.taxa_media_engorda
-    ) or 0.0
 
     curva = _carregar_curva(db)
     semana_maxima = curva[-1]["semana"]
@@ -2723,7 +2753,8 @@ def historico_lote(
         semana_esp = semana_esperada_em(p["data"])
         peso_esperado_g = _peso_para_semana(curva, semana_esp)
         saldo_un = saldo_ate(p["data"])
-        saldo_ajustado = _saldo_com_mortalidade(saldo_un, quantidade_inicial, taxa_mortalidade)
+        taxa_no_ponto = _taxa_mortalidade_hoje(db, mortalidade, lote["fase"], (p["data"] - data_inicio).days)
+        saldo_ajustado = _saldo_com_mortalidade(saldo_un, quantidade_inicial, taxa_no_ponto)
         densidade_kg_m2 = (saldo_ajustado * p["peso_real_g"] / 1000 / area_m2) if area_m2 else None
         biomassa_kg = saldo_ajustado * p["peso_real_g"] / 1000
 
@@ -2882,9 +2913,9 @@ def lote_detalhe(lote_id: int, db: Session = Depends(get_db)):
     ).scalar()
 
     mortalidade = painel_mortalidade(db)
-    taxa_mortalidade = (
-        mortalidade.taxa_media_pre_engorda if lote["fase"] == "pre_engorda" else mortalidade.taxa_media_engorda
-    ) or 0.0
+    taxa_mortalidade = _taxa_mortalidade_hoje(
+        db, mortalidade, lote["fase"], ((lote["data_fim"] or date.today()) - lote["data_inicio"]).days,
+    )
     peixes_vivos_esperados = int(_saldo_com_mortalidade(saldo_un, quantidade_inicial, taxa_mortalidade))
 
     biometrias = db.execute(text("""
