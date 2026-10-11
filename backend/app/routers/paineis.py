@@ -696,15 +696,36 @@ def programacao_abate(db: Session = Depends(get_db)):
         # proporcionalmente ao que já foi abatido antes deles sobre os
         # dias restantes do mês, sem passar do fim do mês
         total_kg_ref = sum(p["kg_ref"] for p in provisorios)
-        itens = []
         cum_kg = 0.0
         for p in provisorios:
-            l, pegar, kg_ref = p["lote"], p["pegar"], p["kg_ref"]
             inicio_frac = cum_kg / total_kg_ref if total_kg_ref > 0 else 0.0
-            cum_kg += kg_ref
+            cum_kg += p["kg_ref"]
             colheita = inicio_mes_efetivo + timedelta(days=round(inicio_frac * (dias_mes - 1)))
-            colheita = min(colheita, fim_mes)
-            peso = peso_em(l, colheita)
+            p["colheita"] = min(colheita, fim_mes)
+            p["peso"] = peso_em(p["lote"], p["colheita"])
+
+        # a quantidade de peixes foi decidida com o peso do início do mês,
+        # mas o peixe cresce até a data real da despesca: sem ajuste, o kg
+        # exibido passa da meta (e o filé previsto fica maior no mês de meta
+        # menor). Tira o excesso do fim da fila (o que sobra de peixe volta
+        # pro lote e segue pros meses seguintes).
+        if meta > 0:
+            excesso_kg = sum(p["pegar"] * p["peso"] / 1000 for p in provisorios) - meta
+            for p in reversed(provisorios):
+                if excesso_kg <= 0.0005:
+                    break
+                tirar = min(p["pegar"], round(excesso_kg * 1000 / p["peso"]))
+                if tirar <= 0:
+                    continue
+                p["pegar"] -= tirar
+                p["lote"]["restantes"] += tirar
+                p["lote"]["saldo_restante"] += tirar
+                excesso_kg -= tirar * p["peso"] / 1000
+            provisorios = [p for p in provisorios if p["pegar"] > 0]
+
+        itens = []
+        for p in provisorios:
+            l, pegar, colheita, peso = p["lote"], p["pegar"], p["colheita"], p["peso"]
             kg = pegar * peso / 1000
             itens.append(ItemDespescaProgramadaOut(
                 viveiro_id=l["viveiro_id"], viveiro_codigo=l["viveiro"], lote_codigo=l["lote"], fase=l["fase"],
