@@ -138,6 +138,27 @@ def registrar_povoamento(
     return LoteOut(**row)
 
 
+def _ajustar_entrada_lote(db: Session, lote_id: int, delta_qtd: int, delta_biomassa_g: float) -> None:
+    """Soma/tira uma leva da entrada de um lote mantendo quantidade_inicial E
+    peso_medio_inicial_g coerentes: o peso médio é sempre a média ponderada
+    de tudo que entrou (povoamento + repicagens). Sem isso, uma repicagem
+    num lote que já existe somava só a quantidade e deixava o peso da
+    primeira leva, errando biomassa inicial, ganho e conversão alimentar.
+    `delta_biomassa_g` = quantidade × peso médio (g) da leva (negativo ao tirar)."""
+    db.execute(
+        text("""
+            UPDATE lote SET
+              quantidade_inicial = quantidade_inicial + :dq,
+              peso_medio_inicial_g = CASE
+                WHEN quantidade_inicial + :dq > 0
+                THEN GREATEST(0.01, round((quantidade_inicial * peso_medio_inicial_g + CAST(:db AS numeric)) / (quantidade_inicial + :dq), 2))
+                ELSE peso_medio_inicial_g END
+            WHERE id = :id
+        """),
+        {"dq": delta_qtd, "db": delta_biomassa_g, "id": lote_id},
+    )
+
+
 @router.post("/repicagens", response_model=RepicagemOut, status_code=201)
 def registrar_repicagem(
     body: RepicagemIn, db: Session = Depends(get_db), usuario: UsuarioOut = Depends(get_current_user),
@@ -208,9 +229,8 @@ def registrar_repicagem(
     for tentativa in range(_MAX_TENTATIVAS_CODIGO):
         try:
             if lote_destino_existente is not None:
-                db.execute(
-                    text("UPDATE lote SET quantidade_inicial = quantidade_inicial + :qtd WHERE id = :id"),
-                    {"qtd": quantidade_total, "id": lote_destino_existente["id"]},
+                _ajustar_entrada_lote(
+                    db, lote_destino_existente["id"], quantidade_total, quantidade_total * body.peso_medio_g,
                 )
                 novo = db.execute(
                     text(f"SELECT {_COLUNAS_LOTE} FROM lote WHERE id = :id"),
@@ -301,7 +321,7 @@ def editar_repicagem(
     sobrou saldo — ver _sincronizar_fechamento_lote); o destino não fecha
     nem reabre por causa de repicagem, só por despesca."""
     atual = db.execute(
-        text("SELECT lote_id, lote_origem_id, quantidade FROM lote_origem WHERE id = :id AND excluido_em IS NULL"),
+        text("SELECT lote_id, lote_origem_id, quantidade, peso_medio_g FROM lote_origem WHERE id = :id AND excluido_em IS NULL"),
         {"id": repicagem_id},
     ).mappings().first()
     if atual is None:
@@ -317,11 +337,9 @@ def editar_repicagem(
             """),
             {"id": repicagem_id, **body.model_dump()},
         )
-        if delta != 0:
-            db.execute(
-                text("UPDATE lote SET quantidade_inicial = quantidade_inicial + :delta WHERE id = :id"),
-                {"delta": delta, "id": atual["lote_id"]},
-            )
+        delta_biomassa = body.quantidade * body.peso_medio_g - atual["quantidade"] * float(atual["peso_medio_g"])
+        if delta != 0 or abs(delta_biomassa) > 1e-9:
+            _ajustar_entrada_lote(db, atual["lote_id"], delta, delta_biomassa)
         _sincronizar_fechamento_lote(db, atual["lote_origem_id"], body.data)
         db.commit()
     except DBAPIError as exc:
@@ -344,7 +362,7 @@ def excluir_repicagem(
     ignora lote_origem excluído; se isso tirar o lote de origem do zero,
     ele é reaberto (ver _sincronizar_fechamento_lote)."""
     atual = db.execute(
-        text("SELECT lote_id, lote_origem_id, quantidade, data FROM lote_origem WHERE id = :id AND excluido_em IS NULL"),
+        text("SELECT lote_id, lote_origem_id, quantidade, peso_medio_g, data FROM lote_origem WHERE id = :id AND excluido_em IS NULL"),
         {"id": repicagem_id},
     ).mappings().first()
     if atual is None:
@@ -354,9 +372,8 @@ def excluir_repicagem(
         text("UPDATE lote_origem SET excluido_em = now(), excluido_por = :quem WHERE id = :id"),
         {"id": repicagem_id, "quem": usuario.nome},
     )
-    db.execute(
-        text("UPDATE lote SET quantidade_inicial = quantidade_inicial - :qtd WHERE id = :id"),
-        {"qtd": atual["quantidade"], "id": atual["lote_id"]},
+    _ajustar_entrada_lote(
+        db, atual["lote_id"], -atual["quantidade"], -atual["quantidade"] * float(atual["peso_medio_g"]),
     )
     _sincronizar_fechamento_lote(db, atual["lote_origem_id"], atual["data"])
     db.commit()
@@ -374,7 +391,7 @@ def restaurar_repicagem(
     isso esvaziar o tanque de novo, fecha o lote como no lançamento
     normal (ver _sincronizar_fechamento_lote)."""
     atual = db.execute(
-        text("SELECT lote_id, lote_origem_id, quantidade, data FROM lote_origem WHERE id = :id AND excluido_em IS NOT NULL"),
+        text("SELECT lote_id, lote_origem_id, quantidade, peso_medio_g, data FROM lote_origem WHERE id = :id AND excluido_em IS NOT NULL"),
         {"id": repicagem_id},
     ).mappings().first()
     if atual is None:
@@ -384,9 +401,8 @@ def restaurar_repicagem(
         text("UPDATE lote_origem SET excluido_em = NULL, excluido_por = NULL WHERE id = :id"),
         {"id": repicagem_id},
     )
-    db.execute(
-        text("UPDATE lote SET quantidade_inicial = quantidade_inicial + :qtd WHERE id = :id"),
-        {"qtd": atual["quantidade"], "id": atual["lote_id"]},
+    _ajustar_entrada_lote(
+        db, atual["lote_id"], atual["quantidade"], atual["quantidade"] * float(atual["peso_medio_g"]),
     )
     _sincronizar_fechamento_lote(db, atual["lote_origem_id"], atual["data"])
     db.commit()

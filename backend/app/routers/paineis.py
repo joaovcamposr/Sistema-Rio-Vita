@@ -162,6 +162,63 @@ def _semana_para_peso(curva: list[dict], peso: float) -> int:
     return curva[-1]["semana"]
 
 
+def _semana_frac_para_peso(curva: list[dict], peso: float) -> float:
+    """Como _semana_para_peso, mas interpolando entre as semanas da curva em
+    vez de arredondar pra cima: 33 g fica entre a semana 7 (30 g) e a 8 (50 g),
+    não na 8. A semana inteira (teto) continua sendo a mesma de antes."""
+    sem_ant, peso_ant = 0, 0.0
+    for c in curva:
+        if c["peso_final_g"] >= peso:
+            vao = c["peso_final_g"] - peso_ant
+            t = max(0.0, min(1.0, (peso - peso_ant) / vao)) if vao > 0 else 1.0
+            return sem_ant + t * (c["semana"] - sem_ant)
+        sem_ant, peso_ant = c["semana"], c["peso_final_g"]
+    return float(curva[-1]["semana"])
+
+
+def _peso_na_semana_frac(curva: list[dict], semana: float) -> float:
+    semana = max(0.0, min(semana, float(curva[-1]["semana"])))
+    sem_ant, peso_ant = 0, 0.0
+    for c in curva:
+        if semana <= c["semana"]:
+            vao = c["semana"] - sem_ant
+            t = (semana - sem_ant) / vao if vao else 1.0
+            return peso_ant * (1 - t) + c["peso_final_g"] * t
+        sem_ant, peso_ant = c["semana"], c["peso_final_g"]
+    return curva[-1]["peso_final_g"]
+
+
+def _peso_estimado(curva: list[dict], peso_base_g: float, semanas_decorridas: int) -> float:
+    """Peso estimado hoje: parte do peso medido na última biometria (sem
+    arredondar pra cima na curva) e avança as semanas decorridas, já com o
+    atraso de crescimento. Sem tempo decorrido, devolve o peso medido."""
+    semana_maxima = curva[-1]["semana"]
+    frac = min(_semana_frac_para_peso(curva, peso_base_g) + _avanco_semanas(semanas_decorridas), semana_maxima)
+    peso = _peso_na_semana_frac(curva, frac)
+    return max(peso, peso_base_g) if peso_base_g >= curva[-1]["peso_final_g"] else peso
+
+
+def _biomassa_saida_por_lote(db: Session) -> dict[int, float]:
+    """Biomassa (kg) que já saiu de cada lote por despesca ou repicagem. Entra
+    no ganho de biomassa: sem ela, lote parcialmente despescado/repicado
+    parecia ter perdido peso e a conversão alimentar ficava absurda."""
+    rows = db.execute(text("""
+        SELECT lote_id, SUM(kg) AS kg FROM (
+          SELECT lote_id, SUM(peso_total_kg) AS kg FROM despesca WHERE excluido_em IS NULL GROUP BY lote_id
+          UNION ALL
+          SELECT lote_origem_id AS lote_id, SUM(quantidade * peso_medio_g) / 1000 AS kg
+          FROM lote_origem WHERE excluido_em IS NULL GROUP BY lote_origem_id
+        ) t GROUP BY lote_id
+    """)).mappings().all()
+    return {r["lote_id"]: float(r["kg"]) for r in rows}
+
+
+def _saldo_para_densidade(v) -> float:
+    """Saldo de peixes pra projetar densidade: o mesmo (já descontada a
+    mortalidade esperada) que gera a densidade e o alerta do painel do viveiro."""
+    return v.saldo_ajustado_un if v.saldo_ajustado_un is not None else v.lote_atual.saldo_un
+
+
 def _peso_para_semana(curva: list[dict], semana: int) -> float:
     semana = max(curva[0]["semana"], min(semana, curva[-1]["semana"]))
     for c in curva:
@@ -234,7 +291,7 @@ def _saldo_com_mortalidade(saldo_un: int, quantidade_inicial: int, taxa_mortalid
 def _calcular_indicadores_lote(
     curva: list[dict], hoje: date, data_inicio: date, quantidade_inicial: int, peso_medio_inicial_g: float,
     data_biometria: date, peso_biometria_g: float, saldo_un: int, area_m2: float, racao_acumulada_kg: float | None,
-    taxa_mortalidade: float = 0.0,
+    taxa_mortalidade: float = 0.0, biomassa_saida_kg: float = 0.0,
 ) -> dict:
     """Reconstrói o que a planilha fazia à mão: projeta o peso de hoje a
     partir da última biometria + curva de crescimento, compara com o peso
@@ -254,7 +311,7 @@ def _calcular_indicadores_lote(
     semana_biometria = _semana_para_peso(curva, peso_biometria_g)
     semanas_decorridas = max(0, (hoje - data_biometria).days // 7)
     semana_projetada = min(semana_biometria + _avanco_semanas(semanas_decorridas), semana_maxima)
-    peso_estimado_hoje_g = _peso_para_semana(curva, semana_projetada)
+    peso_estimado_hoje_g = _peso_estimado(curva, peso_biometria_g, semanas_decorridas)
 
     idade_semanas = max(1, min((hoje - data_inicio).days // 7, semana_maxima))
 
@@ -273,7 +330,8 @@ def _calcular_indicadores_lote(
     saldo_ajustado = _saldo_com_mortalidade(saldo_un, quantidade_inicial, taxa_mortalidade)
     biomassa_atual_kg = saldo_ajustado * peso_estimado_hoje_g / 1000
     biomassa_inicial_kg = quantidade_inicial * peso_medio_inicial_g / 1000
-    ganho_biomassa_kg = biomassa_atual_kg - biomassa_inicial_kg
+    # biomassa que já saiu (despesca/repicagem) também foi ganho do lote
+    ganho_biomassa_kg = biomassa_atual_kg + biomassa_saida_kg - biomassa_inicial_kg
     densidade_kg_m2 = biomassa_atual_kg / area_m2 if area_m2 else None
     conversao_alimentar = (
         racao_acumulada_kg / ganho_biomassa_kg if racao_acumulada_kg and ganho_biomassa_kg > 0 else None
@@ -288,6 +346,7 @@ def _calcular_indicadores_lote(
         "conversao_alimentar": conversao_alimentar,
         "biomassa_atual_kg": biomassa_atual_kg,
         "ganho_biomassa_kg": ganho_biomassa_kg,
+        "saldo_ajustado_un": saldo_ajustado,
     }
 
 
@@ -326,6 +385,7 @@ def painel_viveiros(db: Session = Depends(get_db)):
     rows = sorted(rows, key=lambda r: _chave_ordem_viveiro(r["codigo"]))
 
     hoje = date.today()
+    saidas = _biomassa_saida_por_lote(db)
     out = []
     for r in rows:
         lote_atual = None
@@ -344,6 +404,7 @@ def painel_viveiros(db: Session = Depends(get_db)):
                 curva, hoje, r["lote_data_inicio"], r["quantidade_inicial"], float(r["peso_medio_inicial_g"]),
                 data_biometria, peso_biometria, r["saldo_un"], float(r["area_m2"]), _f(r["sacos_total"]),
                 taxa_mortalidade=taxa_mortalidade_por_fase.get(r["lote_fase"], 0.0),
+                biomassa_saida_kg=saidas.get(r["lote_id"], 0.0),
             )
         ultima_biometria = None
         if r["biometria_data"] is not None:
@@ -368,6 +429,7 @@ def painel_viveiros(db: Session = Depends(get_db)):
             conversao_alimentar=indicadores.get("conversao_alimentar"),
             biomassa_atual_kg=indicadores.get("biomassa_atual_kg"),
             ganho_biomassa_kg=indicadores.get("ganho_biomassa_kg"),
+            saldo_ajustado_un=indicadores.get("saldo_ajustado_un"),
             racao_acumulada_kg=_f(r["sacos_total"]),
             ultima_biometria=ultima_biometria, ultima_agua=ultima_agua,
         ))
@@ -397,7 +459,9 @@ def painel_abate(db: Session = Depends(get_db)):
     out = []
     for r in rows:
         peso = float(r["peso_medio_g"])
-        semana_atual = _semana_para_peso(curva, peso)
+        # mesma projeção das outras telas: avança as semanas desde a biometria
+        semanas_decorridas = max(0, (hoje - r["data_biometria"]).days // 7)
+        semana_atual = min(_semana_para_peso(curva, peso) + _avanco_semanas(semanas_decorridas), curva[-1]["semana"])
         pronto = semana_atual >= SEMANA_LIMITE_ABATE
         previsao = None if pronto else hoje + timedelta(weeks=SEMANA_LIMITE_ABATE - semana_atual + ATRASO_CRESCIMENTO_SEMANAS)
         out.append(AbateOut(
@@ -1787,7 +1851,7 @@ def arracoamento_previsto(
 
             semanas_decorridas = max(0, (inicio_bloco - data_biometria).days // 7)
             semana_projetada = min(semana_biometria + _avanco_semanas(semanas_decorridas), semana_maxima_curva)
-            peso_estimado = _peso_para_semana(curva, semana_projetada)
+            peso_estimado = _peso_estimado(curva, peso_biometria, semanas_decorridas)
 
             semana_tabela = min(semana_projetada, semana_maxima_tabela)
             info = tabela_by_semana[semana_tabela]
@@ -2255,7 +2319,7 @@ def disponibilidade_tanques(db: Session = Depends(get_db)):
         if v.tipo == "pre_engorda":
             limite = _limite_de(limites, v.tipo)
             sem_peso = _semanas_ate_peso(curva, semana_atual, PESO_REPICAGEM_PRE_ENGORDA_G)
-            sem_densidade = _semanas_ate_densidade(curva, semana_atual, v.lote_atual.saldo_un, v.area_m2, limite)
+            sem_densidade = _semanas_ate_densidade(curva, semana_atual, _saldo_para_densidade(v), v.area_m2, limite)
             candidatos = [
                 (w, motivo) for w, motivo in (
                     (sem_peso, f"repicagem — peso passa de {PESO_REPICAGEM_PRE_ENGORDA_G:.0f}g"),
@@ -2338,7 +2402,7 @@ def projecao_capacidade(db: Session = Depends(get_db)):
         sem_atual = semana_atual_de(v)
         if sem_atual is None or v.lote_atual is None:
             return None
-        saldo_un = v.lote_atual.saldo_un
+        saldo_un = _saldo_para_densidade(v)
         for w in range(0, SEMANA_LIMITE_ABATE - sem_atual + ATRASO_CRESCIMENTO_SEMANAS + 1):
             sem_futura = sem_atual + _avanco_semanas(w)
             if sem_futura >= SEMANA_LIMITE_ABATE:
@@ -2576,10 +2640,18 @@ def historico_lote(
     # "prepared statements" que o psycopg cria sozinho pra texto de query
     # repetido)
     despesca_rows = db.execute(
-        text("SELECT data, quantidade_un FROM despesca WHERE lote_id = :l AND excluido_em IS NULL"), {"l": lote["id"]},
+        text("SELECT data, quantidade_un, peso_total_kg FROM despesca WHERE lote_id = :l AND excluido_em IS NULL"),
+        {"l": lote["id"]},
     ).mappings().all()
     origem_rows = db.execute(
-        text("SELECT data, quantidade FROM lote_origem WHERE lote_origem_id = :l AND excluido_em IS NULL"), {"l": lote["id"]},
+        text("""
+            SELECT data, quantidade, peso_medio_g FROM lote_origem
+            WHERE lote_origem_id = :l AND excluido_em IS NULL
+        """), {"l": lote["id"]},
+    ).mappings().all()
+    entrada_rows = db.execute(
+        text("SELECT data, quantidade, peso_medio_g FROM lote_origem WHERE lote_id = :l AND excluido_em IS NULL"),
+        {"l": lote["id"]},
     ).mappings().all()
     arracoamento_rows = db.execute(
         text("SELECT data, sacos FROM arracoamento WHERE lote_id = :l AND excluido_em IS NULL"), {"l": lote["id"]},
@@ -2590,6 +2662,7 @@ def historico_lote(
     data_inicio = lote["data_inicio"]
     peso_inicial_g = float(lote["peso_medio_inicial_g"])
     semana_inicial = _semana_para_peso(curva, peso_inicial_g)
+    base_povoamento = quantidade_inicial - sum(r["quantidade"] for r in entrada_rows)
 
     origem, data_povoamento = _origem_lote(db, lote["id"], data_inicio)
 
@@ -2618,9 +2691,22 @@ def historico_lote(
         # específica em vez de "até hoje" — só despesca e repicagem de
         # saída reduzem o saldo, então dá pra reconstruir o saldo em
         # qualquer data passada
+        entrou = sum(r["quantidade"] for r in entrada_rows if r["data"] <= data_referencia)
         despescado = sum(r["quantidade_un"] for r in despesca_rows if r["data"] <= data_referencia)
         repicado = sum(r["quantidade"] for r in origem_rows if r["data"] <= data_referencia)
-        return quantidade_inicial - despescado - repicado
+        return base_povoamento + entrou - despescado - repicado
+
+    def biomassa_saida_intervalo_kg(data_de: date, data_ate: date) -> float:
+        desp = sum(float(r["peso_total_kg"]) for r in despesca_rows if data_de < r["data"] <= data_ate)
+        rep = sum(
+            r["quantidade"] * float(r["peso_medio_g"]) / 1000 for r in origem_rows if data_de < r["data"] <= data_ate
+        )
+        return desp + rep
+
+    def biomassa_entrada_intervalo_kg(data_de: date, data_ate: date) -> float:
+        return sum(
+            r["quantidade"] * float(r["peso_medio_g"]) / 1000 for r in entrada_rows if data_de < r["data"] <= data_ate
+        )
 
     def racao_intervalo_kg(data_de: date, data_ate: date) -> float:
         sacos = sum(float(r["sacos"]) for r in arracoamento_rows if data_de < r["data"] <= data_ate)
@@ -2644,7 +2730,11 @@ def historico_lote(
         conversao_realizada = None
         conversao_esperada = None
         if anterior is not None:
-            ganho_real_kg = biomassa_kg - anterior["biomassa_kg"]
+            ganho_real_kg = (
+                biomassa_kg - anterior["biomassa_kg"]
+                + biomassa_saida_intervalo_kg(anterior["data"], p["data"])
+                - biomassa_entrada_intervalo_kg(anterior["data"], p["data"])
+            )
             if ganho_real_kg > 0:
                 conversao_realizada = racao_intervalo_kg(anterior["data"], p["data"]) / ganho_real_kg
 
@@ -2746,7 +2836,7 @@ def listar_lotes(db: Session = Depends(get_db)):
             semana_base = _semana_para_peso(curva, peso_base)
             semanas_decorridas = max(0, (hoje - data_base).days // 7)
             semana_atual = min(semana_base + _avanco_semanas(semanas_decorridas), semana_maxima)
-            peso_estimado_hoje_g = _peso_para_semana(curva, semana_atual)
+            peso_estimado_hoje_g = _peso_estimado(curva, peso_base, semanas_decorridas)
             pronto_para_abate = semana_atual >= SEMANA_LIMITE_ABATE
         fim_referencia = r["data_fim"] or hoje
         idade_dias = (fim_referencia - r["data_inicio"]).days
@@ -2816,6 +2906,10 @@ def lote_detalhe(lote_id: int, db: Session = Depends(get_db)):
         ORDER BY o.data
     """), {"id": lote_id}).mappings().all()
 
+    origem_rows_entrada = db.execute(text("""
+        SELECT data, quantidade, peso_medio_g FROM lote_origem WHERE lote_id = :id AND excluido_em IS NULL
+    """), {"id": lote_id}).mappings().all()
+
     arracoamento_rows = db.execute(text("""
         SELECT data, sacos FROM arracoamento WHERE lote_id = :id AND excluido_em IS NULL
     """), {"id": lote_id}).mappings().all()
@@ -2838,10 +2932,27 @@ def lote_detalhe(lote_id: int, db: Session = Depends(get_db)):
         semanas = max(0, (data_ponto - data_inicio).days // 7)
         return min(semana_inicial + _avanco_semanas(semanas), semana_maxima)
 
+    # povoamento direto = o que não veio de repicagem; as repicagens que
+    # chegaram entram na data em que chegaram (não desde o início do lote)
+    base_povoamento = quantidade_inicial - sum(r["quantidade"] for r in origem_rows_entrada)
+
     def saldo_ate(data_referencia: date) -> int:
+        entrou = sum(r["quantidade"] for r in origem_rows_entrada if r["data"] <= data_referencia)
         despescado = sum(r["quantidade_un"] for r in despesca_rows if r["data"] <= data_referencia)
         repicado = sum(r["quantidade"] for r in origem_rows_saida if r["data"] <= data_referencia)
-        return quantidade_inicial - despescado - repicado
+        return base_povoamento + entrou - despescado - repicado
+
+    def biomassa_saida_intervalo_kg(data_de: date, data_ate: date) -> float:
+        desp = sum(float(r["peso_total_kg"]) for r in despesca_rows if data_de < r["data"] <= data_ate)
+        rep = sum(
+            r["quantidade"] * float(r["peso_medio_g"]) / 1000 for r in origem_rows_saida if data_de < r["data"] <= data_ate
+        )
+        return desp + rep
+
+    def biomassa_entrada_intervalo_kg(data_de: date, data_ate: date) -> float:
+        return sum(
+            r["quantidade"] * float(r["peso_medio_g"]) / 1000 for r in origem_rows_entrada if data_de < r["data"] <= data_ate
+        )
 
     def racao_intervalo_kg(data_de: date, data_ate: date) -> float:
         sacos = sum(float(a["sacos"]) for a in arracoamento_rows if data_de < a["data"] <= data_ate)
@@ -2863,7 +2974,11 @@ def lote_detalhe(lote_id: int, db: Session = Depends(get_db)):
         conversao_realizada = None
         conversao_esperada = None
         if anterior is not None:
-            ganho_real_kg = biomassa_kg - anterior["biomassa_kg"]
+            ganho_real_kg = (
+                biomassa_kg - anterior["biomassa_kg"]
+                + biomassa_saida_intervalo_kg(anterior["data"], p["data"])
+                - biomassa_entrada_intervalo_kg(anterior["data"], p["data"])
+            )
             if ganho_real_kg > 0:
                 conversao_realizada = racao_intervalo_kg(anterior["data"], p["data"]) / ganho_real_kg
             if semana_esp > anterior["semana_esp"]:
@@ -2894,6 +3009,7 @@ def lote_detalhe(lote_id: int, db: Session = Depends(get_db)):
             curva, hoje, data_inicio, quantidade_inicial, peso_inicial_g,
             data_biometria, peso_biometria, saldo_un, area_m2, racao_acumulada_kg,
             taxa_mortalidade=taxa_mortalidade,
+            biomassa_saida_kg=_biomassa_saida_por_lote(db).get(lote_id, 0.0),
         )
         semana_biometria = _semana_para_peso(curva, peso_biometria)
         semanas_decorridas = max(0, (hoje - data_biometria).days // 7)

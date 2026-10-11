@@ -93,3 +93,49 @@ def test_mortalidade_ignora_lotes_marcados_e_aceita_negativa(api):
     entram = [l for l in d["lotes"] if l["fase"] == "engorda" and not l["fora_da_media"]]
     esperado = sum(l["quantidade_perdida"] for l in entram) / sum(l["quantidade_inicial"] for l in entram)
     assert abs(d["taxa_media_engorda"] - esperado) < 1e-9
+
+
+def test_repicagem_em_lote_existente_mantem_peso_inicial_ponderado(api):
+    import uuid
+    with get_engine_admin().begin() as c:
+        ids = {}
+        for cod, tipo in [("9911", "pre_engorda"), ("9912", "pre_engorda"), ("9913", "engorda")]:
+            ids[cod] = c.execute(text("""
+                INSERT INTO viveiro (codigo, tipo, area_m2) VALUES (:c, CAST(:t AS tipo_viveiro), 1000)
+                ON CONFLICT (codigo) DO UPDATE SET ativo = true RETURNING id
+            """), {"c": cod, "t": tipo}).scalar()
+        c.execute(text("""
+            UPDATE lote SET data_fim = '2099-01-01'
+            WHERE viveiro_id = ANY(:v) AND data_fim IS NULL
+        """), {"v": list(ids.values())})
+    def povoar(vid, qtd, peso):
+        r = api.post("/lotes", json={"client_id": str(uuid.uuid4()), "viveiro_id": vid, "data": "2026-03-01",
+                                     "quantidade_inicial": qtd, "peso_medio_inicial_g": peso})
+        assert r.status_code == 201, r.text
+    povoar(ids["9911"], 1000, 100)
+    povoar(ids["9912"], 1000, 100)
+
+    def repicar(origem, qtd, peso):
+        r = api.post("/repicagens", json={"client_id": str(uuid.uuid4()), "data": "2026-03-10",
+                                          "viveiro_destino_id": ids["9913"], "peso_medio_g": peso,
+                                          "origens": [{"viveiro_origem_id": ids[origem], "quantidade": qtd}]})
+        assert r.status_code == 201, r.text
+        return r.json()["lote"]
+    repicar("9911", 400, 100)                    # cria o lote de destino: 400 @ 100 g
+    lote = repicar("9912", 600, 200)             # junta: 1000 @ média ponderada (400×100 + 600×200) / 1000 = 160 g
+    assert lote["quantidade_inicial"] == 1000
+    assert abs(lote["peso_medio_inicial_g"] - 160.0) < 0.01
+
+
+def test_peso_estimado_interpola_e_mantem_a_semana():
+    from app.routers import paineis
+    curva = [{"semana": i + 1, "peso_final_g": p} for i, p in enumerate(
+        [1.5, 3, 5, 7, 12, 20, 30, 50, 75, 100])]
+    assert abs(paineis._peso_estimado(curva, 33.0, 0) - 33.0) < 1e-6          # sem tempo, é o peso medido
+    assert paineis._peso_estimado(curva, 30.0, 0) == 30.0 and paineis._peso_estimado(curva, 50.0, 0) == 50.0
+    for peso in (4.0, 33.0, 60.0):
+        for sem in (0, 2, 3):
+            est = paineis._peso_estimado(curva, peso, sem)
+            esperada = min(paineis._semana_para_peso(curva, peso) + paineis._avanco_semanas(sem), 10)
+            assert paineis._semana_para_peso(curva, est) == esperada           # a semana inteira não muda
+    assert abs(paineis._peso_estimado(curva, 33.0, 2) - 53.75) < 0.01          # antes dava 75 g (arredondava pra cima)

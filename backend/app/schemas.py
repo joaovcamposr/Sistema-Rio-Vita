@@ -702,6 +702,7 @@ class PainelViveiroOut(BaseModel):
     conversao_alimentar: float | None = None
     biomassa_atual_kg: float | None = None
     ganho_biomassa_kg: float | None = None
+    saldo_ajustado_un: float | None = None  # saldo já descontada a mortalidade esperada
     racao_acumulada_kg: float | None = None
     ultima_biometria: UltimaBiometria | None = None
     ultima_agua: UltimaAgua | None = None
