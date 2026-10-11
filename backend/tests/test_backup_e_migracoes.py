@@ -67,6 +67,10 @@ def test_mortalidade_ignora_lotes_marcados_e_aceita_negativa(api):
             INSERT INTO viveiro (codigo, tipo, area_m2) VALUES ('9901', 'engorda', 1000)
             ON CONFLICT (codigo) DO UPDATE SET ativo = true RETURNING id
         """)).scalar()
+        c.execute(text("""
+            DELETE FROM despesca WHERE lote_id IN (SELECT id FROM lote WHERE codigo LIKE 'ENG-T-%')
+        """))
+        c.execute(text("DELETE FROM lote WHERE codigo LIKE 'ENG-T-%'"))  # roda de novo sem sujeira
         for codigo, ini, ini_dia, fim_dia, fora in [
             ("ENG-T-LEGADO", 1000, 1, 100, True),     # legado: não entra
             ("ENG-T-REAL", 1000, 1, 100, False),      # 1000 perdidos de 1000 sobrando = 100%
