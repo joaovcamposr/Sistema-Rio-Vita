@@ -433,7 +433,8 @@ def programacao_abate(db: Session = Depends(get_db)):
     despesca vem da curva de crescimento, ancorada no peso estimado de
     hoje. A mortalidade que ainda não foi lançada (só aparece quando o lote
     fecha) é descontada do saldo pela taxa média dos lotes já encerrados,
-    fase a fase — pré-engorda sofre as duas taxas até o abate. Só considera
+    fase a fase, sempre em cima da quantidade do povoamento do lote —
+    pré-engorda sofre as duas taxas (somadas) até o abate. Só considera
     os lotes ativos hoje: não projeta novos povoamentos."""
     curva = _carregar_curva(db)
     viveiros = painel_viveiros(db)
@@ -464,7 +465,7 @@ def programacao_abate(db: Session = Depends(get_db)):
         lote = v.lote_atual
         semana_hoje = _semana_para_peso(curva, v.peso_estimado_hoje_g)
         if lote.fase == "pre_engorda":
-            vivos = (lote.saldo_un - m_pre.taxa_considerada * lote.quantidade_inicial) * (1 - m_eng.taxa_considerada)
+            vivos = lote.saldo_un - (m_pre.taxa_considerada + m_eng.taxa_considerada) * lote.quantidade_inicial
         else:
             vivos = lote.saldo_un - m_eng.taxa_considerada * lote.quantidade_inicial
         vivos = max(0, int(vivos))
