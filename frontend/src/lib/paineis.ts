@@ -143,6 +143,8 @@ export interface MortalidadeLote {
   peso_medio_inicial_g: number;
   quantidade_perdida: number;
   taxa: number;
+  fora_da_media: boolean;
+  motivo_fora_da_media: string | null;
 }
 
 export interface MortalidadeResumo {

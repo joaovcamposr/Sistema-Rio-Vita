@@ -862,6 +862,8 @@ class MortalidadeLoteOut(BaseModel):
     peso_medio_inicial_g: float
     quantidade_perdida: int
     taxa: float
+    fora_da_media: bool = False
+    motivo_fora_da_media: str | None = None
 
 
 class MortalidadeResumoOut(BaseModel):

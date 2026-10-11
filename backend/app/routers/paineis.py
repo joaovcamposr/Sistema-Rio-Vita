@@ -906,7 +906,8 @@ def painel_mortalidade(db: Session = Depends(get_db)):
     saída: mortalidade da fase (ver Etapa 1, pedido do usuário)."""
     rows = db.execute(text("""
         SELECT l.id, l.codigo, l.fase, v.codigo AS viveiro_codigo, l.data_inicio, l.data_fim,
-               l.quantidade_inicial, l.peso_medio_inicial_g, s.saldo_un
+               l.quantidade_inicial, l.peso_medio_inicial_g, s.saldo_un,
+               l.fora_da_mortalidade, l.motivo_fora_da_mortalidade
         FROM lote l
         JOIN viveiro v ON v.id = l.viveiro_id
         JOIN vw_saldo_lote s ON s.lote_id = l.id
@@ -920,14 +921,18 @@ def painel_mortalidade(db: Session = Depends(get_db)):
         perdida = r["saldo_un"]
         inicial = r["quantidade_inicial"]
         taxa = perdida / inicial if inicial else 0.0
-        somas[r["fase"]][0] += perdida
-        somas[r["fase"]][1] += inicial
+        # lote marcado (legado, lançado por engano) aparece na tela mas não
+        # entra na média; mortalidade negativa entra (povoamento contado a menos)
+        if not r["fora_da_mortalidade"]:
+            somas[r["fase"]][0] += perdida
+            somas[r["fase"]][1] += inicial
         lotes.append(MortalidadeLoteOut(
             lote_id=r["id"], lote_codigo=r["codigo"], fase=r["fase"], viveiro_codigo=r["viveiro_codigo"],
             data_inicio=r["data_inicio"], data_fim=r["data_fim"],
             dias=(r["data_fim"] - r["data_inicio"]).days,
             quantidade_inicial=inicial, peso_medio_inicial_g=float(r["peso_medio_inicial_g"]),
             quantidade_perdida=perdida, taxa=taxa,
+            fora_da_media=r["fora_da_mortalidade"], motivo_fora_da_media=r["motivo_fora_da_mortalidade"],
         ))
 
     def media(fase: str) -> float | None:
@@ -1571,7 +1576,7 @@ def painel_dashboard(
     mortalidade_diaria_rows = db.execute(text("""
         SELECT l.data_fim AS data, SUM(l.quantidade_inicial) AS inicial, SUM(s.saldo_un) AS perdida
         FROM lote l JOIN vw_saldo_lote s ON s.lote_id = l.id
-        WHERE l.data_fim BETWEEN :de AND :ate
+        WHERE l.data_fim BETWEEN :de AND :ate AND NOT l.fora_da_mortalidade
         GROUP BY l.data_fim ORDER BY l.data_fim
     """), {"de": de, "ate": ate}).mappings().all()
 
@@ -1631,7 +1636,7 @@ def painel_dashboard(
     mortalidade_rows = db.execute(text("""
         SELECT l.quantidade_inicial, s.saldo_un
         FROM lote l JOIN vw_saldo_lote s ON s.lote_id = l.id
-        WHERE l.data_fim BETWEEN :de AND :ate
+        WHERE l.data_fim BETWEEN :de AND :ate AND NOT l.fora_da_mortalidade
     """), {"de": de, "ate": ate}).mappings().all()
     soma_inicial = sum(r["quantidade_inicial"] for r in mortalidade_rows)
     soma_perdida = sum(r["saldo_un"] for r in mortalidade_rows)

@@ -53,6 +53,11 @@ export default function PainelMortalidade() {
               </div>
             </div>
 
+            {dados.lotes.some((l) => l.fora_da_media) && (
+              <p className={styles.hint}>
+                Lotes em cinza (legados e lançados por engano) aparecem aqui, mas não entram na média.
+              </p>
+            )}
             {dados.lotes.length === 0 && <p className={styles.hint}>Nenhum lote encerrado ainda.</p>}
             {dados.lotes.length > 0 && (
               <div className={styles.tableWrap}>
@@ -72,8 +77,12 @@ export default function PainelMortalidade() {
                   </thead>
                   <tbody>
                     {dados.lotes.map((l) => (
-                      <tr key={l.lote_id}>
-                        <td>{l.lote_codigo}</td>
+                      <tr
+                        key={l.lote_id}
+                        style={l.fora_da_media ? { opacity: 0.5 } : undefined}
+                        title={l.fora_da_media ? `Fora da média: ${l.motivo_fora_da_media ?? ""}` : undefined}
+                      >
+                        <td>{l.lote_codigo}{l.fora_da_media ? " (fora da média)" : ""}</td>
                         <td>{l.fase === "pre_engorda" ? "Pré-engorda" : "Engorda"}</td>
                         <td>{l.viveiro_codigo}</td>
                         <td>{dataBr(l.data_inicio)} → {dataBr(l.data_fim)}</td>

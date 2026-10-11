@@ -59,3 +59,33 @@ def test_esquema_descrito_pelo_admin(api):
     assert "tabela:venda_parcela" in d and "view:vw_venda_pagamento" in d and "trigger:venda.aud_venda" in d
     completo = api.get("/admin/esquema", params={"chaves": "tabela:chegada_racao"}).json()
     assert "excluido_em" in completo["tabela:chegada_racao"]
+
+
+def test_mortalidade_ignora_lotes_marcados_e_aceita_negativa(api):
+    with get_engine_admin().begin() as c:
+        vid = c.execute(text("""
+            INSERT INTO viveiro (codigo, tipo, area_m2) VALUES ('9901', 'engorda', 1000)
+            ON CONFLICT (codigo) DO UPDATE SET ativo = true RETURNING id
+        """)).scalar()
+        for codigo, ini, ini_dia, fim_dia, fora in [
+            ("ENG-T-LEGADO", 1000, 1, 100, True),     # legado: não entra
+            ("ENG-T-REAL", 1000, 1, 100, False),      # 1000 perdidos de 1000 sobrando = 100%
+            ("ENG-T-NEG", 1000, 2, 100, False),       # vai ficar negativo (saiu mais que o inicial)
+        ]:
+            c.execute(text("""
+                INSERT INTO lote (codigo, fase, viveiro_id, viveiro_tipo, data_inicio, quantidade_inicial,
+                                  peso_medio_inicial_g, data_fim, fora_da_mortalidade)
+                VALUES (:c, 'engorda', :v, 'engorda', '2026-01-01', :i, 10, '2026-04-10', :f)
+            """), {"c": codigo, "v": vid, "i": ini, "f": fora})
+        neg = c.execute(text("SELECT id FROM lote WHERE codigo = 'ENG-T-NEG'")).scalar()
+        c.execute(text("""
+            INSERT INTO despesca (lote_id, data, destino, quantidade_un, peso_medio_g)
+            VALUES (:l, '2026-04-01', 'inteira_suja', 1200, 500)
+        """), {"l": neg})
+    d = api.get("/paineis/mortalidade").json()
+    por_codigo = {l["lote_codigo"]: l for l in d["lotes"]}
+    assert por_codigo["ENG-T-LEGADO"]["fora_da_media"] is True
+    assert por_codigo["ENG-T-NEG"]["taxa"] < 0 and por_codigo["ENG-T-NEG"]["fora_da_media"] is False
+    entram = [l for l in d["lotes"] if l["fase"] == "engorda" and not l["fora_da_media"]]
+    esperado = sum(l["quantidade_perdida"] for l in entram) / sum(l["quantidade_inicial"] for l in entram)
+    assert abs(d["taxa_media_engorda"] - esperado) < 1e-9
