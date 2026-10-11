@@ -433,9 +433,12 @@ def programacao_abate(db: Session = Depends(get_db)):
     despesca vem da curva de crescimento, ancorada no peso estimado de
     hoje. A mortalidade que ainda não foi lançada (só aparece quando o lote
     fecha) é descontada do saldo pela taxa média dos lotes já encerrados,
-    fase a fase, sempre em cima da quantidade do povoamento do lote —
-    pré-engorda sofre as duas taxas em sequência (a da engorda aplicada
-    depois da da pré-engorda: taxa total = 1 − (1 − pré) × (1 − engorda)) até o abate. Só considera
+    fase a fase, sempre em cima do primeiro povoamento do lote: sobreviventes
+    esperados = inicial × (1 − taxa); o que ainda está no tanque é isso menos
+    o que já saiu por repicagem/despesca (ex.: 40 mil povoados, taxa 20% →
+    32 mil; 20 mil já repicados → 12 mil esperados no tanque). Lote de
+    pré-engorda ainda leva, depois, a taxa da engorda sobre esses peixes que
+    vão pra engorda. Só considera
     os lotes ativos hoje: não projeta novos povoamentos."""
     curva = _carregar_curva(db)
     viveiros = painel_viveiros(db)
@@ -466,8 +469,12 @@ def programacao_abate(db: Session = Depends(get_db)):
         lote = v.lote_atual
         semana_hoje = _semana_para_peso(curva, v.peso_estimado_hoje_g)
         if lote.fase == "pre_engorda":
-            taxa_total = 1 - (1 - m_pre.taxa_considerada) * (1 - m_eng.taxa_considerada)
-            vivos = lote.saldo_un - taxa_total * lote.quantidade_inicial
+            # 1) mortalidade da pré-engorda sobre o primeiro povoamento: do total
+            #    que sobreviveria (inicial × (1 − taxa)) tira o que já saiu por
+            #    repicagem (= saldo − taxa × inicial); 2) esses peixes vão pra
+            #    engorda, onde incide a taxa da engorda
+            vivos_ate_repicar = max(0.0, lote.saldo_un - m_pre.taxa_considerada * lote.quantidade_inicial)
+            vivos = vivos_ate_repicar * (1 - m_eng.taxa_considerada)
         else:
             vivos = lote.saldo_un - m_eng.taxa_considerada * lote.quantidade_inicial
         vivos = max(0, int(vivos))
