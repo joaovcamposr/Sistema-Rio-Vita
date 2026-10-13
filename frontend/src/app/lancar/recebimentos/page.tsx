@@ -11,6 +11,7 @@ import {
   listarVendas,
   listarVendedoresDeVenda,
   marcarPagamentoParcela,
+  pagarParcelaParcialmente,
   restaurarVenda,
   type Cliente,
   type Produto,
@@ -115,6 +116,13 @@ export default function Recebimentos() {
   const [vendas, setVendas] = useState<VendaLista[] | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [marcandoPagoId, setMarcandoPagoId] = useState<number | null>(null);
+  // pagamento parcial: formulário aberto embaixo de uma parcela
+  const [parcial, setParcial] = useState<{ vendaId: number; parcelaId: number } | null>(null);
+  const [parcialValor, setParcialValor] = useState("");
+  const [parcialForma, setParcialForma] = useState("Pix");
+  const [parcialData, setParcialData] = useState(hojeISO());
+  const [parcialErro, setParcialErro] = useState<string | null>(null);
+  const [salvandoParcial, setSalvandoParcial] = useState(false);
   const [ordem, setOrdem] = useState<Ordem>("vencimento_asc");
   const [editandoObs, setEditandoObs] = useState<number | null>(null);
   const [obsValor, setObsValor] = useState("");
@@ -216,6 +224,40 @@ export default function Recebimentos() {
       setErro("Não foi possível salvar o pagamento.");
     } finally {
       setMarcandoPagoId(null);
+    }
+  }
+
+  function paraNumero(texto: string): number {
+    return parseFloat(texto.replace(/\./g, "").replace(",", "."));
+  }
+
+  function abrirParcial(venda: VendaLista, parcela: VendaParcela) {
+    setParcial({ vendaId: venda.id, parcelaId: parcela.id });
+    setParcialValor(parcela.valor.toFixed(2).replace(".", ","));
+    setParcialForma(parcela.forma_pgto);
+    setParcialData(hojeISO());
+    setParcialErro(null);
+  }
+
+  async function confirmarParcial(parcela: VendaParcela) {
+    if (!parcial) return;
+    const valor = paraNumero(parcialValor);
+    if (!(valor > 0)) { setParcialErro("Informe o valor recebido."); return; }
+    if (valor > parcela.valor + 0.001) {
+      setParcialErro(`O valor passa do que falta nessa parcela (${moeda(parcela.valor)}).`);
+      return;
+    }
+    setSalvandoParcial(true);
+    setParcialErro(null);
+    try {
+      await pagarParcelaParcialmente(parcial.vendaId, parcial.parcelaId, valor, parcialForma, parcialData);
+      setParcial(null);
+      carregar();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "";
+      setParcialErro(extrairDetalhe(msg) ?? "Não foi possível registrar o pagamento.");
+    } finally {
+      setSalvandoParcial(false);
     }
   }
 
@@ -540,15 +582,76 @@ export default function Recebimentos() {
                                     {marcandoPagoId === p.id ? "…" : "Desfazer"}
                                   </button>
                                 ) : (
-                                  <button
-                                    className={`${styles.btnPrimary} no-print`}
-                                    style={{ padding: "3px 10px", fontSize: "0.72rem", marginLeft: "auto" }}
-                                    disabled={marcandoPagoId === p.id}
-                                    onClick={() => marcarParcelaPaga(v, p)}
-                                  >
-                                    {marcandoPagoId === p.id ? "Marcando…" : "Marcar pago"}
-                                  </button>
+                                  <span className="no-print" style={{ marginLeft: "auto", display: "inline-flex", gap: 10, alignItems: "center" }}>
+                                    <button
+                                      className={styles.btnLink} style={{ fontSize: "0.72rem" }}
+                                      onClick={() => (parcial?.parcelaId === p.id ? setParcial(null) : abrirParcial(v, p))}
+                                    >
+                                      Pagar parte
+                                    </button>
+                                    <button
+                                      className={styles.btnPrimary}
+                                      style={{ padding: "3px 10px", fontSize: "0.72rem" }}
+                                      disabled={marcandoPagoId === p.id}
+                                      onClick={() => marcarParcelaPaga(v, p)}
+                                    >
+                                      {marcandoPagoId === p.id ? "Marcando…" : "Marcar pago"}
+                                    </button>
+                                  </span>
                                 )
+                              )}
+                              {parcial?.parcelaId === p.id && !paga && (
+                                <div
+                                  className="no-print"
+                                  style={{
+                                    flexBasis: "100%", display: "flex", flexWrap: "wrap", gap: 8, alignItems: "flex-end",
+                                    padding: "8px 10px", marginTop: 2, borderRadius: 8, background: "var(--ground)",
+                                    border: "1px solid var(--rule)",
+                                  }}
+                                >
+                                  <div className={styles.field} style={{ margin: 0 }}>
+                                    <label>Valor recebido (R$)</label>
+                                    <input
+                                      className={styles.inp} style={{ width: 110, padding: "5px 7px", fontSize: "0.8rem" }}
+                                      inputMode="decimal" value={parcialValor} autoFocus
+                                      onChange={(e) => setParcialValor(e.target.value)}
+                                    />
+                                  </div>
+                                  <div className={styles.field} style={{ margin: 0 }}>
+                                    <label>Forma</label>
+                                    <select
+                                      className={styles.inp} style={{ padding: "5px 7px", fontSize: "0.8rem" }}
+                                      value={parcialForma} onChange={(e) => setParcialForma(e.target.value)}
+                                    >
+                                      {[...new Set([...FORMAS_VENDA, p.forma_pgto])].map((f) => <option key={f} value={f}>{f}</option>)}
+                                    </select>
+                                  </div>
+                                  <div className={styles.field} style={{ margin: 0 }}>
+                                    <label>Data</label>
+                                    <input
+                                      className={styles.inp} type="date" style={{ padding: "5px 7px", fontSize: "0.8rem" }}
+                                      value={parcialData} onChange={(e) => setParcialData(e.target.value)}
+                                    />
+                                  </div>
+                                  <button
+                                    className={styles.btnPrimary} style={{ padding: "5px 12px", fontSize: "0.76rem" }}
+                                    disabled={salvandoParcial} onClick={() => confirmarParcial(p)}
+                                  >
+                                    {salvandoParcial ? "Salvando…" : "Confirmar"}
+                                  </button>
+                                  <button className={styles.btnLink} style={{ fontSize: "0.76rem" }} onClick={() => setParcial(null)}>
+                                    Cancelar
+                                  </button>
+                                  <span className={styles.hint} style={{ fontSize: "0.7rem", flexBasis: "100%", margin: 0 }}>
+                                    {(() => {
+                                      const recebido = paraNumero(parcialValor);
+                                      return recebido > 0 && recebido < p.valor - 0.001
+                                        ? `Fica ${moeda(p.valor - recebido)} em aberto, com o mesmo vencimento (${dataBr(p.data_prevista)}).`
+                                        : "Valor total da parcela: quita ela inteira.";
+                                    })()}
+                                  </span>
+                                  {parcialErro && <span style={{ color: "var(--crit)", fontSize: "0.74rem", flexBasis: "100%" }}>{parcialErro}</span>}
+                                </div>
                               )}
                             </div>
                           );

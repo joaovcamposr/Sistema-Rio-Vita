@@ -607,6 +607,15 @@ class VendaParcelaPagamentoIn(BaseModel):
     forma_pgto: str | None = None
 
 
+class VendaParcelaPagamentoParcialIn(BaseModel):
+    """Pagamento de parte de uma parcela (em qualquer forma). `valor` igual ao
+    da parcela quita ela inteira; menor, divide: a parte paga vira uma parcela
+    quitada e o restante continua em aberto com o mesmo vencimento."""
+    valor: float = Field(gt=0)
+    forma_pgto: str = Field(min_length=1)
+    data_pagamento: date | None = None
+
+
 class VendaObservacoesIn(BaseModel):
     observacoes: str | None = None
 

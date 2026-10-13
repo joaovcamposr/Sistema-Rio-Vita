@@ -126,3 +126,43 @@ def test_api_nao_executa_ddl(banco):
             c.execute(text("DROP TABLE venda_parcela"))
     with get_engine_admin().connect() as c:  # continua existindo
         assert c.execute(text("SELECT to_regclass('public.venda_parcela')")).scalar()
+
+
+def test_pagamento_parcial_divide_a_parcela(api, produto_id):
+    _, cliente_id = _ids(api)
+    prevista = HOJE + timedelta(days=7)
+    r = api.post("/vendas", json={
+        "client_id": str(uuid.uuid4()), "data": str(HOJE), "cliente_id": cliente_id, "vendedor": "Batista",
+        "produto_id": produto_id, "quantidade_un": 20, "quantidade_kg": 10, "preco_kg": 100,
+        "parcelas": [{"valor": 1000, "forma_pgto": "Boleto", "data_prevista": str(prevista)}],
+    })
+    assert r.status_code == 201, r.text
+    venda = r.json()
+    venda_id, parcela_id = venda["id"], venda["parcelas"][0]["id"]
+    url = f"/vendas/{venda_id}/parcelas/{parcela_id}/pagamento-parcial"
+
+    # valor maior que a parcela e valor zero são recusados
+    assert api.post(url, json={"valor": 1500, "forma_pgto": "Pix"}).status_code == 422
+    assert api.post(url, json={"valor": 0, "forma_pgto": "Pix"}).status_code == 422
+
+    # 400 em Pix: divide em paga(400, Pix) + restante(600, Boleto, mesmo vencimento)
+    r = api.post(url, json={"valor": 400, "forma_pgto": "Pix", "data_pagamento": str(HOJE)})
+    assert r.status_code == 200, r.text
+    v = r.json()
+    assert v["situacao"] == "Parcial" and v["valor_recebido"] == 400 and v["valor_pendente"] == 600
+    paga, resto = v["parcelas"]
+    assert (paga["valor"], paga["forma_pgto"], paga["data_pagamento"]) == (400, "Pix", str(HOJE))
+    assert (resto["valor"], resto["forma_pgto"], resto["data_pagamento"], resto["data_prevista"]) == (600, "Boleto", None, str(prevista))
+    assert sum(p["valor"] for p in v["parcelas"]) == v["valor_total"]
+    assert [p["numero"] for p in v["parcelas"]] == [1, 2]
+
+    # a parcela já paga não aceita outro pagamento (e repetir o mesmo clique não duplica)
+    assert api.post(url, json={"valor": 100, "forma_pgto": "Pix"}).status_code == 422
+
+    # quitando o restante inteiro, em Dinheiro, a venda fica paga
+    r = api.post(f"/vendas/{venda_id}/parcelas/{resto['id']}/pagamento-parcial",
+                 json={"valor": 600, "forma_pgto": "Dinheiro", "data_pagamento": str(HOJE)})
+    assert r.status_code == 200, r.text
+    v = r.json()
+    assert v["situacao"] == "Pago" and v["valor_pendente"] == 0 and len(v["parcelas"]) == 2
+    assert v["parcelas"][1]["forma_pgto"] == "Dinheiro"

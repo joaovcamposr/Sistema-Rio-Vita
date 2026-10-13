@@ -1,4 +1,5 @@
 from datetime import date, timedelta
+from decimal import ROUND_HALF_UP, Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import text
@@ -9,7 +10,7 @@ from ..auth import get_current_user
 from ..db import get_db
 from ..schemas import (
     UsuarioOut, VendaEditarIn, VendaIn, VendaListaOut, VendaObservacoesIn, VendaOut,
-    VendaParcelaOut, VendaParcelaPagamentoIn,
+    VendaParcelaOut, VendaParcelaPagamentoIn, VendaParcelaPagamentoParcialIn,
 )
 
 router = APIRouter(prefix="/vendas", tags=["vendas"])
@@ -193,6 +194,78 @@ def atualizar_pagamento_parcela(
         raise HTTPException(422, f"data de pagamento inválida: {exc.orig}") from exc
     if row is None:
         raise HTTPException(404, "parcela não encontrada (ou excluída)")
+    venda_out = _buscar_venda_out(db, venda_id)
+    if venda_out is None:
+        raise HTTPException(404, "venda não encontrada")
+    return venda_out
+
+
+@router.post("/{venda_id}/parcelas/{parcela_id}/pagamento-parcial", response_model=VendaOut)
+def pagar_parcela_parcialmente(
+    venda_id: int, parcela_id: int, body: VendaParcelaPagamentoParcialIn, db: Session = Depends(get_db),
+    usuario: UsuarioOut = Depends(get_current_user),
+):
+    """Registra o pagamento de parte de uma parcela, em qualquer forma (Pix,
+    dinheiro, boleto...). A parcela é dividida em duas dentro da mesma
+    transação: a parte paga fica quitada (com a forma e a data do pagamento) e
+    o restante segue em aberto, com a forma e o vencimento originais. A soma
+    das parcelas continua igual ao total da venda — Recebimentos, Caixa e
+    Conferência já leem tudo por parcela. Valor igual ao da parcela quita ela
+    inteira (serve pra trocar a forma na hora de receber)."""
+    centavos = Decimal("0.01")
+    pago = Decimal(str(body.valor)).quantize(centavos, rounding=ROUND_HALF_UP)
+    if pago <= 0:
+        raise HTTPException(422, "valor pago deve ser maior que zero")
+    data_pagamento = body.data_pagamento or date.today()
+    try:
+        parcela = db.execute(
+            text("""
+                SELECT id, valor, forma_pgto, data_prevista, data_pagamento
+                FROM venda_parcela
+                WHERE id = :pid AND venda_id = :vid AND excluido_em IS NULL
+                FOR UPDATE
+            """),
+            {"pid": parcela_id, "vid": venda_id},
+        ).mappings().first()
+        if parcela is None:
+            raise HTTPException(404, "parcela não encontrada (ou excluída)")
+        if parcela["data_pagamento"] is not None:
+            raise HTTPException(422, "essa parcela já está paga — desfaça o pagamento antes de registrar outro")
+        total = Decimal(parcela["valor"])
+        if pago > total:
+            raise HTTPException(422, f"valor pago (R$ {pago}) é maior que o valor da parcela (R$ {total})")
+
+        if pago == total:
+            db.execute(
+                text("UPDATE venda_parcela SET data_pagamento = :d, forma_pgto = :f WHERE id = :pid"),
+                {"d": data_pagamento, "f": body.forma_pgto, "pid": parcela_id},
+            )
+        else:
+            restante = total - pago
+            db.execute(
+                text("""
+                    UPDATE venda_parcela SET valor = :pago, forma_pgto = :f, data_pagamento = :d,
+                                              observacao = COALESCE(observacao || ' · ', '') || 'pagamento parcial'
+                    WHERE id = :pid
+                """),
+                {"pago": pago, "f": body.forma_pgto, "d": data_pagamento, "pid": parcela_id},
+            )
+            db.execute(
+                text("""
+                    INSERT INTO venda_parcela (venda_id, numero, valor, forma_pgto, data_prevista, observacao, criado_por)
+                    VALUES (:vid, 2000, :restante, :f, :prev, 'restante de pagamento parcial', :quem)
+                """),
+                {"vid": venda_id, "restante": restante, "f": parcela["forma_pgto"],
+                 "prev": parcela["data_prevista"], "quem": usuario.nome},
+            )
+            _renumerar_parcelas(db, venda_id)
+        db.commit()
+    except HTTPException:
+        db.rollback()
+        raise
+    except DBAPIError as exc:
+        db.rollback()
+        raise HTTPException(422, f"pagamento inválido: {exc.orig}") from exc
     venda_out = _buscar_venda_out(db, venda_id)
     if venda_out is None:
         raise HTTPException(404, "venda não encontrada")

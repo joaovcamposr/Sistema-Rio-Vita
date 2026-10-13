@@ -401,6 +401,21 @@ export async function marcarPagamentoParcela(
   if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
 }
 
+/** Pagamento de parte (ou do total) de uma parcela, em qualquer forma. Valor menor
+ * que o da parcela divide ela: a parte paga fica quitada e o restante segue
+ * em aberto no mesmo vencimento. */
+export async function pagarParcelaParcialmente(
+  vendaId: number, parcelaId: number, valor: number, formaPgto: string, dataPagamento: string
+): Promise<void> {
+  const r = await fetch(`${apiBase()}/vendas/${vendaId}/parcelas/${parcelaId}/pagamento-parcial`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeader() },
+    body: JSON.stringify({ valor, forma_pgto: formaPgto, data_pagamento: dataPagamento }),
+  });
+  if (r.status === 401) sessaoInvalida();
+  if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+}
+
 export async function atualizarObservacoesVenda(vendaId: number, observacoes: string | null): Promise<void> {
   const r = await fetch(`${apiBase()}/vendas/${vendaId}/observacoes`, {
     method: "PATCH",
