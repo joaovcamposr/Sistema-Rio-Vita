@@ -97,6 +97,8 @@ function extrairDetalhe(mensagemErro: string): string | null {
   }
 }
 
+type Ordem = "vencimento_asc" | "vencimento_desc" | "data_desc" | "data_asc";
+
 export default function Recebimentos() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -113,7 +115,7 @@ export default function Recebimentos() {
   const [vendas, setVendas] = useState<VendaLista[] | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [marcandoPagoId, setMarcandoPagoId] = useState<number | null>(null);
-  const [ordem, setOrdem] = useState<"vencimento" | "data">("vencimento");
+  const [ordem, setOrdem] = useState<Ordem>("vencimento_asc");
   const [editandoObs, setEditandoObs] = useState<number | null>(null);
   const [obsValor, setObsValor] = useState("");
   const [salvandoObs, setSalvandoObs] = useState(false);
@@ -151,11 +153,14 @@ export default function Recebimentos() {
       .filter((v) => !produtoFiltro || v.produto_id === produtoFiltro)
       .filter((v) => !formaFiltro || v.parcelas.some((p) => p.forma_pgto === formaFiltro))
       .sort((a, b) => {
-        if (ordem !== "vencimento") return 0;
-        // mais urgente primeiro: parcela em aberto mais antiga; quitadas por último
-        const ka = a.proxima_data_prevista ?? "9999-12-31";
-        const kb = b.proxima_data_prevista ?? "9999-12-31";
-        return ka < kb ? -1 : ka > kb ? 1 : b.data < a.data ? -1 : b.data > a.data ? 1 : 0;
+        // sem vencimento em aberto (já quitada) vai sempre pro fim na ordem por vencimento
+        const venc = (v: VendaLista, vazio: string) => v.proxima_data_prevista ?? vazio;
+        let c = 0;
+        if (ordem === "vencimento_asc") c = venc(a, "9999-12-31").localeCompare(venc(b, "9999-12-31"));
+        else if (ordem === "vencimento_desc") c = venc(b, "0000-01-01").localeCompare(venc(a, "0000-01-01"));
+        else if (ordem === "data_asc") c = a.data.localeCompare(b.data);
+        else c = b.data.localeCompare(a.data);
+        return c !== 0 ? c : ordem === "data_asc" ? a.id - b.id : b.id - a.id;
       });
   }, [vendas, buscaCliente, produtoFiltro, formaFiltro, ordem]);
 
@@ -402,9 +407,11 @@ export default function Recebimentos() {
           </div>
           <div className={styles.field} style={{ margin: 0 }}>
             <label>Ordenar por</label>
-            <select className={styles.inp} value={ordem} onChange={(e) => setOrdem(e.target.value as "vencimento" | "data")}>
-              <option value="vencimento">Vencimento (mais antigo primeiro)</option>
-              <option value="data">Data da venda</option>
+            <select className={styles.inp} value={ordem} onChange={(e) => setOrdem(e.target.value as Ordem)}>
+              <option value="vencimento_asc">Vencimento — mais antigo primeiro</option>
+              <option value="vencimento_desc">Vencimento — mais novo primeiro</option>
+              <option value="data_desc">Data da venda — mais nova primeiro</option>
+              <option value="data_asc">Data da venda — mais antiga primeiro</option>
             </select>
           </div>
           <button
