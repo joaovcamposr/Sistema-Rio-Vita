@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   atualizarObservacoesVenda,
@@ -65,10 +65,20 @@ function normaliza(s: string): string {
 function estaPago(situacao: string): boolean {
   return situacao === "Pago";
 }
-function estaVencida(v: VendaLista): boolean {
-  if (estaPago(v.situacao)) return false;
-  if (!v.proxima_data_prevista) return false;
-  return v.proxima_data_prevista < hojeISO();
+/** Dias entre hoje e uma data ISO (negativo = já passou). Meio-dia pra não
+ * errar por horário de verão/fuso. */
+function diasAteHoje(iso: string): number {
+  const alvo = new Date(`${iso}T12:00:00`).getTime();
+  const hoje = new Date(`${hojeISO()}T12:00:00`).getTime();
+  return Math.round((alvo - hoje) / 86400000);
+}
+function rotuloVencimento(iso: string): string {
+  const d = diasAteHoje(iso);
+  if (d === 0) return "vence hoje";
+  if (d === 1) return "vence amanhã";
+  if (d > 1) return `vence em ${d} dias`;
+  if (d === -1) return "venceu ontem";
+  return `venceu há ${-d} dias`;
 }
 function dataHoraBr(iso: string): string {
   const d = new Date(iso);
@@ -103,7 +113,7 @@ export default function Recebimentos() {
   const [vendas, setVendas] = useState<VendaLista[] | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [marcandoPagoId, setMarcandoPagoId] = useState<number | null>(null);
-  const [expandidoId, setExpandidoId] = useState<number | null>(null);
+  const [ordem, setOrdem] = useState<"vencimento" | "data">("vencimento");
   const [editandoObs, setEditandoObs] = useState<number | null>(null);
   const [obsValor, setObsValor] = useState("");
   const [salvandoObs, setSalvandoObs] = useState(false);
@@ -139,8 +149,15 @@ export default function Recebimentos() {
     return vendas
       .filter((v) => !busca || normaliza(v.cliente_nome).includes(busca))
       .filter((v) => !produtoFiltro || v.produto_id === produtoFiltro)
-      .filter((v) => !formaFiltro || v.parcelas.some((p) => p.forma_pgto === formaFiltro));
-  }, [vendas, buscaCliente, produtoFiltro, formaFiltro]);
+      .filter((v) => !formaFiltro || v.parcelas.some((p) => p.forma_pgto === formaFiltro))
+      .sort((a, b) => {
+        if (ordem !== "vencimento") return 0;
+        // mais urgente primeiro: parcela em aberto mais antiga; quitadas por último
+        const ka = a.proxima_data_prevista ?? "9999-12-31";
+        const kb = b.proxima_data_prevista ?? "9999-12-31";
+        return ka < kb ? -1 : ka > kb ? 1 : b.data < a.data ? -1 : b.data > a.data ? 1 : 0;
+      });
+  }, [vendas, buscaCliente, produtoFiltro, formaFiltro, ordem]);
 
   useEffect(() => {
     listarClientes().then(setClientes).catch(() => undefined);
@@ -169,6 +186,20 @@ export default function Recebimentos() {
   const totalEmAberto = useMemo(() => {
     if (!vendasFiltradas) return 0;
     return vendasFiltradas.filter((v) => !estaPago(v.situacao)).reduce((s, v) => s + v.valor_pendente, 0);
+  }, [vendasFiltradas]);
+
+  // quanto do que falta receber já venceu e quanto ainda vai vencer — somado
+  // pelas parcelas em aberto, não pela venda inteira
+  const { totalVencido, qtdVencidas, totalAVencer } = useMemo(() => {
+    let vencido = 0, aVencer = 0, qtd = 0;
+    const hoje = hojeISO();
+    for (const v of vendasFiltradas ?? []) {
+      for (const p of v.parcelas) {
+        if (p.data_pagamento !== null) continue;
+        if (p.data_prevista < hoje) { vencido += p.valor; qtd += 1; } else aVencer += p.valor;
+      }
+    }
+    return { totalVencido: vencido, qtdVencidas: qtd, totalAVencer: aVencer };
   }, [vendasFiltradas]);
 
   async function marcarParcelaPaga(venda: VendaLista, parcela: VendaParcela) {
@@ -369,6 +400,13 @@ export default function Recebimentos() {
               {FORMAS_VENDA.map((f) => <option key={f} value={f}>{f}</option>)}
             </select>
           </div>
+          <div className={styles.field} style={{ margin: 0 }}>
+            <label>Ordenar por</label>
+            <select className={styles.inp} value={ordem} onChange={(e) => setOrdem(e.target.value as "vencimento" | "data")}>
+              <option value="vencimento">Vencimento (mais antigo primeiro)</option>
+              <option value="data">Data da venda</option>
+            </select>
+          </div>
           <button
             type="button"
             onClick={() => setMostrarExcluidos((v) => !v)}
@@ -384,9 +422,22 @@ export default function Recebimentos() {
         </div>
 
         {!mostrarExcluidos && vendasFiltradas && situacaoFiltro !== "Pago" && (
-          <p className={styles.hint} style={{ fontSize: "0.95rem", fontWeight: 700, color: "var(--ink)" }}>
-            Total em aberto no período: {moeda(totalEmAberto)}
-          </p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 10, margin: "4px 0 14px" }}>
+            <div style={{ padding: "8px 14px", borderRadius: 10, background: "var(--surface)", border: "1px solid var(--rule)" }}>
+              <div className={styles.hint} style={{ fontSize: "0.7rem", margin: 0 }}>Total em aberto</div>
+              <div style={{ fontWeight: 800, fontSize: "1.05rem" }}>{moeda(totalEmAberto)}</div>
+            </div>
+            <div style={{ padding: "8px 14px", borderRadius: 10, background: "var(--crit-soft)" }}>
+              <div style={{ fontSize: "0.7rem", color: "var(--crit)", fontWeight: 700 }}>
+                Vencido ({qtdVencidas} {qtdVencidas === 1 ? "parcela" : "parcelas"})
+              </div>
+              <div style={{ fontWeight: 800, fontSize: "1.05rem", color: "var(--crit)" }}>{moeda(totalVencido)}</div>
+            </div>
+            <div style={{ padding: "8px 14px", borderRadius: 10, background: "var(--warn-soft)" }}>
+              <div style={{ fontSize: "0.7rem", color: "var(--warn)", fontWeight: 700 }}>A vencer</div>
+              <div style={{ fontWeight: 800, fontSize: "1.05rem", color: "var(--warn)" }}>{moeda(totalAVencer)}</div>
+            </div>
+          </div>
         )}
 
         {!vendasFiltradas && !erro && <p className={styles.hint}>Carregando…</p>}
@@ -400,20 +451,19 @@ export default function Recebimentos() {
           <div className={`${styles.tableWrap} print-fit`}>
             <table className={`${styles.tabela} print-table`} style={{ fontSize: "0.78rem", tableLayout: "fixed", width: "100%" }}>
               <colgroup>
-                <col style={{ width: "10%" }} />
-                <col style={{ width: "10%" }} />
-                <col style={{ width: "11%" }} />
-                <col style={{ width: "6%" }} />
-                <col style={{ width: "10%" }} />
-                <col style={{ width: "6%" }} />
                 <col style={{ width: "7%" }} />
                 <col style={{ width: "12%" }} />
-                <col style={{ width: "10%" }} />
-                <col style={{ width: "18%" }} />
+                <col style={{ width: "11%" }} />
+                <col style={{ width: "6%" }} />
+                <col style={{ width: "9%" }} />
+                <col style={{ width: "33%" }} />
+                <col style={{ width: "6%" }} />
+                <col style={{ width: "8%" }} />
+                <col style={{ width: "8%" }} />
               </colgroup>
               <thead>
                 <tr>
-                  {["Data", "Cliente", "Produto", "Qtd.", "Valor", "Parcelas", "Vendedor", "Situação", "Obs.", ""].map((rotulo) => (
+                  {["Data", "Cliente", "Produto", "Qtd.", "Valor", "Vencimento / pagamento", "Vendedor", "Obs.", ""].map((rotulo) => (
                     <th
                       key={rotulo}
                       className={rotulo === "" ? "no-print" : undefined}
@@ -426,12 +476,8 @@ export default function Recebimentos() {
               </thead>
               <tbody>
                 {vendasFiltradas.map((v) => {
-                  const pago = estaPago(v.situacao);
-                  const vencida = estaVencida(v);
-                  const expandido = expandidoId === v.id;
                   return (
-                    <Fragment key={v.id}>
-                    <tr style={{ cursor: "default" }}>
+                    <tr key={v.id} style={{ cursor: "default", verticalAlign: "top" }}>
                       <td style={{ padding: "6px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{dataBr(v.data)}</td>
                       <td style={{ padding: "6px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={v.cliente_nome}>
                         {v.cliente_nome}
@@ -448,38 +494,61 @@ export default function Recebimentos() {
                       >
                         {moeda(v.valor_total)}
                       </td>
-                      <td style={{ padding: "6px" }}>
-                        <button
-                          type="button"
-                          className={`${styles.btnLink} no-print`}
-                          style={{ fontSize: "0.76rem", whiteSpace: "nowrap" }}
-                          onClick={() => setExpandidoId(expandido ? null : v.id)}
-                        >
-                          {v.parcelas.length} {v.parcelas.length === 1 ? "parcela" : "parcelas"} {expandido ? "▾" : "▸"}
-                        </button>
+                      <td style={{ padding: "4px 6px" }}>
+                        {v.parcelas.map((p, idx) => {
+                          const paga = p.data_pagamento !== null;
+                          const dias = diasAteHoje(p.data_prevista);
+                          const vencida = !paga && dias < 0;
+                          return (
+                            <div
+                              key={p.id}
+                              style={{
+                                display: "flex", alignItems: "center", flexWrap: "wrap", gap: "4px 8px",
+                                padding: "4px 0", borderTop: idx > 0 ? "1px dashed var(--rule)" : undefined,
+                              }}
+                            >
+                              {v.parcelas.length > 1 && (
+                                <span style={{ color: "var(--ink-faint)", fontSize: "0.7rem" }}>{p.numero}/{v.parcelas.length}</span>
+                              )}
+                              <strong style={{ whiteSpace: "nowrap" }}>{moeda(p.valor)}</strong>
+                              <span style={{ color: "var(--ink-muted)" }}>{p.forma_pgto}</span>
+                              <span style={{ whiteSpace: "nowrap" }}>
+                                {paga ? `pago em ${dataBr(p.data_pagamento as string)}` : `vence ${dataBr(p.data_prevista)}`}
+                              </span>
+                              <span style={{
+                                display: "inline-block", padding: "2px 7px", borderRadius: 999, fontSize: "0.68rem", fontWeight: 700,
+                                whiteSpace: "nowrap",
+                                background: paga ? "var(--ok-soft)" : vencida ? "var(--crit-soft)" : "var(--warn-soft)",
+                                color: paga ? "var(--ok)" : vencida ? "var(--crit)" : "var(--warn)",
+                              }}>
+                                {paga ? "Pago" : rotuloVencimento(p.data_prevista)}
+                              </span>
+                              {!mostrarExcluidos && (
+                                paga ? (
+                                  <button
+                                    className={`${styles.btnLink} no-print`} style={{ fontSize: "0.72rem" }}
+                                    disabled={marcandoPagoId === p.id}
+                                    onClick={() => desfazerPagamentoParcela(v, p)}
+                                  >
+                                    {marcandoPagoId === p.id ? "…" : "Desfazer"}
+                                  </button>
+                                ) : (
+                                  <button
+                                    className={`${styles.btnPrimary} no-print`}
+                                    style={{ padding: "3px 10px", fontSize: "0.72rem", marginLeft: "auto" }}
+                                    disabled={marcandoPagoId === p.id}
+                                    onClick={() => marcarParcelaPaga(v, p)}
+                                  >
+                                    {marcandoPagoId === p.id ? "Marcando…" : "Marcar pago"}
+                                  </button>
+                                )
+                              )}
+                            </div>
+                          );
+                        })}
                       </td>
                       <td style={{ padding: "6px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={v.vendedor ?? ""}>
                         {v.vendedor ?? "—"}
-                      </td>
-                      <td style={{ padding: "6px" }}>
-                        <span style={{
-                          display: "inline-block", padding: "2px 7px", borderRadius: 999, fontSize: "0.68rem", fontWeight: 700,
-                          background: pago ? "var(--ok-soft)" : vencida ? "var(--crit-soft)" : "var(--warn-soft)",
-                          color: pago ? "var(--ok)" : vencida ? "var(--crit)" : "var(--warn)",
-                        }}>
-                          {pago
-                            ? "Pago"
-                            : vencida
-                              ? `Vencida${v.proxima_data_prevista ? ` (${dataBr(v.proxima_data_prevista)})` : ""}`
-                              : v.situacao === "Parcial"
-                                ? `Parcial${v.proxima_data_prevista ? ` (${dataBr(v.proxima_data_prevista)})` : ""}`
-                                : `Em aberto${v.proxima_data_prevista ? ` (${dataBr(v.proxima_data_prevista)})` : ""}`}
-                        </span>
-                        {v.situacao !== "Pago" && v.situacao !== "Em aberto" && (
-                          <span className={styles.hint} style={{ display: "block", fontSize: "0.68rem", marginTop: 2 }}>
-                            {moeda(v.valor_recebido)} de {moeda(v.valor_total)}
-                          </span>
-                        )}
                       </td>
                       <td style={{ padding: "6px" }}>
                         {editandoObs === v.id ? (
@@ -556,66 +625,6 @@ export default function Recebimentos() {
                         )}
                       </td>
                     </tr>
-                    {expandido && (
-                      <tr className="no-print">
-                        <td colSpan={10} style={{ padding: "4px 6px 12px", background: "var(--ground)" }}>
-                          <table style={{ width: "100%", fontSize: "0.76rem", borderCollapse: "collapse" }}>
-                            <thead>
-                              <tr style={{ color: "var(--ink-faint)" }}>
-                                {["#", "Valor", "Forma", "Data prevista", "Situação", ""].map((r) => (
-                                  <th key={r} style={{ textAlign: "left", padding: "4px 8px", fontWeight: 700 }}>{r}</th>
-                                ))}
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {v.parcelas.map((p) => {
-                                const parcelaPaga = p.data_pagamento !== null;
-                                const parcelaVencida = !parcelaPaga && p.data_prevista < hojeISO();
-                                return (
-                                  <tr key={p.id} style={{ borderTop: "1px solid var(--rule)" }}>
-                                    <td style={{ padding: "5px 8px" }}>{p.numero}</td>
-                                    <td style={{ padding: "5px 8px" }}>{moeda(p.valor)}</td>
-                                    <td style={{ padding: "5px 8px" }}>{p.forma_pgto}</td>
-                                    <td style={{ padding: "5px 8px" }}>{dataBr(p.data_prevista)}</td>
-                                    <td style={{ padding: "5px 8px" }}>
-                                      <span style={{
-                                        display: "inline-block", padding: "2px 7px", borderRadius: 999, fontSize: "0.68rem", fontWeight: 700,
-                                        background: parcelaPaga ? "var(--ok-soft)" : parcelaVencida ? "var(--crit-soft)" : "var(--warn-soft)",
-                                        color: parcelaPaga ? "var(--ok)" : parcelaVencida ? "var(--crit)" : "var(--warn)",
-                                      }}>
-                                        {parcelaPaga ? `Pago ${dataBr(p.data_pagamento as string)}` : parcelaVencida ? "Vencida" : "Em aberto"}
-                                      </span>
-                                    </td>
-                                    <td style={{ padding: "5px 8px" }}>
-                                      {!mostrarExcluidos && (
-                                        parcelaPaga ? (
-                                          <button
-                                            className={styles.btnLink} style={{ fontSize: "0.74rem" }}
-                                            disabled={marcandoPagoId === p.id}
-                                            onClick={() => desfazerPagamentoParcela(v, p)}
-                                          >
-                                            {marcandoPagoId === p.id ? "…" : "Desfazer"}
-                                          </button>
-                                        ) : (
-                                          <button
-                                            className={styles.btnLink} style={{ fontSize: "0.74rem" }}
-                                            disabled={marcandoPagoId === p.id}
-                                            onClick={() => marcarParcelaPaga(v, p)}
-                                          >
-                                            {marcandoPagoId === p.id ? "Marcando…" : "Marcar pago"}
-                                          </button>
-                                        )
-                                      )}
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                        </td>
-                      </tr>
-                    )}
-                    </Fragment>
                   );
                 })}
               </tbody>
