@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 from ..auth import get_current_user
 from ..db import get_db
 from ..schemas import (
+    AjusteRacaoIn,
+    AjusteRacaoOut,
     ChegadaRacaoEditarIn,
     ChegadaRacaoIn,
     ChegadaRacaoItemOut,
@@ -333,3 +335,91 @@ def restaurar_chegada_racao(
     if row is None:
         raise HTTPException(404, "chegada não encontrada (ou não está excluída)")
     return _carregar_chegada(db, chegada_id)
+
+
+# ---- ajuste de estoque de ração (contagem física) ----
+
+_SELECT_AJUSTE = """
+    SELECT a.id, a.tipo_racao_id, t.codigo AS tipo_racao_codigo, f.nome AS fornecedor_nome, a.data, a.sacos,
+           a.saldo_antes, a.saldo_contado, a.motivo, a.criado_em, a.criado_por, a.excluido_em, a.excluido_por
+    FROM ajuste_racao a JOIN tipo_racao t ON t.id = a.tipo_racao_id JOIN fornecedor_racao f ON f.id = t.fornecedor_id
+"""
+
+
+def _saldo_racao(db: Session, tipo_racao_id: int) -> float:
+    """Mesma conta do painel Estoque de ração: chegadas − consumo + ajustes."""
+    chegou = db.execute(text("""
+        SELECT COALESCE(SUM(i.quantidade_sacos), 0) FROM chegada_racao_item i
+        JOIN chegada_racao c ON c.id = i.chegada_id WHERE c.excluido_em IS NULL AND i.tipo_racao_id = :t
+    """), {"t": tipo_racao_id}).scalar()
+    consumido = db.execute(text(
+        "SELECT COALESCE(SUM(sacos), 0) FROM arracoamento WHERE tipo_racao_id = :t AND excluido_em IS NULL"
+    ), {"t": tipo_racao_id}).scalar()
+    ajustes = db.execute(text(
+        "SELECT COALESCE(SUM(sacos), 0) FROM ajuste_racao WHERE tipo_racao_id = :t AND excluido_em IS NULL"
+    ), {"t": tipo_racao_id}).scalar()
+    return float(chegou) - float(consumido) + float(ajustes)
+
+
+@router.get("/ajustes-racao", response_model=list[AjusteRacaoOut])
+def listar_ajustes_racao(excluidos: bool = False, db: Session = Depends(get_db)):
+    rows = db.execute(text(
+        _SELECT_AJUSTE + f" WHERE a.excluido_em IS {'NOT NULL' if excluidos else 'NULL'} ORDER BY a.data DESC, a.id DESC LIMIT 300"
+    )).mappings().all()
+    return [AjusteRacaoOut(**r) for r in rows]
+
+
+@router.post("/ajustes-racao", response_model=AjusteRacaoOut, status_code=201)
+def criar_ajuste_racao(
+    body: AjusteRacaoIn, db: Session = Depends(get_db), usuario: UsuarioOut = Depends(get_current_user),
+):
+    existente = db.execute(text(_SELECT_AJUSTE + " WHERE a.client_id = :c"), {"c": str(body.client_id)}).mappings().first()
+    if existente is not None:           # reenvio do mesmo lançamento (offline/duplo clique): não duplica
+        return AjusteRacaoOut(**existente)
+    tipo = db.execute(text("SELECT id FROM tipo_racao WHERE id = :i"), {"i": body.tipo_racao_id}).first()
+    if tipo is None:
+        raise HTTPException(422, "tipo_racao_id inválido")
+    saldo_antes = _saldo_racao(db, body.tipo_racao_id)
+    if body.saldo_contado is not None:
+        sacos = round(body.saldo_contado - saldo_antes, 2)
+        saldo_contado = body.saldo_contado
+        if sacos == 0:
+            raise HTTPException(422, "a contagem é igual ao saldo do sistema — não há o que ajustar")
+    else:
+        sacos = round(body.sacos or 0, 2)
+        saldo_contado = None
+        if sacos == 0:
+            raise HTTPException(422, "informe uma quantidade diferente de zero")
+    try:
+        novo_id = db.execute(text("""
+            INSERT INTO ajuste_racao (client_id, tipo_racao_id, data, sacos, saldo_antes, saldo_contado, motivo, criado_por)
+            VALUES (:c, :t, :d, :s, :antes, :contado, :m, :quem) RETURNING id
+        """), {"c": str(body.client_id), "t": body.tipo_racao_id, "d": body.data, "s": sacos,
+               "antes": round(saldo_antes, 2), "contado": saldo_contado, "m": body.motivo.strip(), "quem": usuario.nome}).scalar_one()
+        db.commit()
+    except DBAPIError as exc:
+        db.rollback()
+        raise HTTPException(422, f"ajuste inválido: {exc.orig}") from exc
+    return AjusteRacaoOut(**db.execute(text(_SELECT_AJUSTE + " WHERE a.id = :i"), {"i": novo_id}).mappings().first())
+
+
+@router.delete("/ajustes-racao/{ajuste_id}", response_model=AjusteRacaoOut)
+def excluir_ajuste_racao(ajuste_id: int, db: Session = Depends(get_db), usuario: UsuarioOut = Depends(get_current_user)):
+    r = db.execute(text("""
+        UPDATE ajuste_racao SET excluido_em = now(), excluido_por = :q WHERE id = :i AND excluido_em IS NULL RETURNING id
+    """), {"i": ajuste_id, "q": usuario.nome}).first()
+    db.commit()
+    if r is None:
+        raise HTTPException(404, "ajuste não encontrado (ou já excluído)")
+    return AjusteRacaoOut(**db.execute(text(_SELECT_AJUSTE + " WHERE a.id = :i"), {"i": ajuste_id}).mappings().first())
+
+
+@router.post("/ajustes-racao/{ajuste_id}/restaurar", response_model=AjusteRacaoOut)
+def restaurar_ajuste_racao(ajuste_id: int, db: Session = Depends(get_db), _usuario: UsuarioOut = Depends(get_current_user)):
+    r = db.execute(text("""
+        UPDATE ajuste_racao SET excluido_em = NULL, excluido_por = NULL WHERE id = :i AND excluido_em IS NOT NULL RETURNING id
+    """), {"i": ajuste_id}).first()
+    db.commit()
+    if r is None:
+        raise HTTPException(404, "ajuste não encontrado (ou não está excluído)")
+    return AjusteRacaoOut(**db.execute(text(_SELECT_AJUSTE + " WHERE a.id = :i"), {"i": ajuste_id}).mappings().first())

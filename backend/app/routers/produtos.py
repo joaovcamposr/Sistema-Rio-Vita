@@ -11,14 +11,14 @@ router = APIRouter(prefix="/produtos", tags=["produtos"])
 @router.get("", response_model=list[ProdutoOut])
 def listar_produtos(db: Session = Depends(get_db)):
     rows = db.execute(text(
-        "SELECT id, nome, unidade_embalagem, fator_kg, kg_digitado "
+        "SELECT id, nome, unidade_embalagem, fator_kg, kg_digitado, codigo_barras "
         "FROM produto WHERE ativo ORDER BY nome"
     )).mappings().all()
     return [
         ProdutoOut(
             id=r["id"], nome=r["nome"], unidade_embalagem=r["unidade_embalagem"],
             fator_kg=float(r["fator_kg"]) if r["fator_kg"] is not None else None,
-            kg_digitado=r["kg_digitado"],
+            kg_digitado=r["kg_digitado"], codigo_barras=r["codigo_barras"],
         )
         for r in rows
     ]

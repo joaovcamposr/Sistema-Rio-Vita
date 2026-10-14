@@ -14,8 +14,14 @@ import {
 import { enfileirar } from "@/lib/offline-queue";
 import styles from "../form.module.css";
 
+// data local, não UTC: depois das 21h em Brasília toISOString() já é "amanhã"
 function hojeISO(): string {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+type Turno = "manha" | "tarde";
+function turnoAgora(): Turno {
+  return new Date().getHours() < 12 ? "manha" : "tarde";
 }
 function nf(v: number, casas = 1): string {
   return v.toLocaleString("pt-BR", { minimumFractionDigits: casas, maximumFractionDigits: casas });
@@ -33,6 +39,7 @@ export default function RegistrarProducao() {
   const [erroCarregar, setErroCarregar] = useState<string | null>(null);
 
   const [data, setData] = useState(hojeISO());
+  const [turno, setTurno] = useState<Turno>(turnoAgora());
   const [produtoId, setProdutoId] = useState<number | null>(null);
   const [viveiroId, setViveiroId] = useState<number | null>(null);
   const [despescaId, setDespescaId] = useState<number | null>(null);
@@ -59,6 +66,8 @@ export default function RegistrarProducao() {
   const lote = viveiro?.lote_atual ?? null;
   const produto = useMemo(() => produtos.find((p) => p.id === produtoId) ?? null, [produtos, produtoId]);
   const ehFile = produto?.nome.startsWith("Filé") ?? false;
+  // tambaqui é outra espécie: não tem tanque/despesca de tilápia de origem
+  const semOrigem = produto?.nome.startsWith("Tambaqui") ?? false;
 
   // recarrega as despescas desse lote sempre que o viveiro muda
   useEffect(() => {
@@ -123,8 +132,9 @@ export default function RegistrarProducao() {
         produto_id: produto.id,
         quantidade_embalagens: produto.kg_digitado ? (qtdBandejasNum > 0 ? qtdBandejasNum : null) : qtdBandejasNum,
         quantidade_kg: produto.kg_digitado ? kgDigitadoNum : 0,
-        lote_id: lote?.id ?? null,
-        data_despesca: despescaSelecionada?.data ?? null,
+        lote_id: semOrigem ? null : lote?.id ?? null,
+        data_despesca: semOrigem ? null : despescaSelecionada?.data ?? null,
+        turno,
       });
       setToast("Produção registrada");
       setBandejas("");
@@ -164,6 +174,23 @@ export default function RegistrarProducao() {
         <div className={styles.field}>
           <label>Data</label>
           <input className={styles.inp} type="date" value={data} onChange={(e) => setData(e.target.value)} />
+        </div>
+
+        <div className={styles.field}>
+          <label>Turno</label>
+          <div className={styles.chips}>
+            {([["manha", "Manhã"], ["tarde", "Tarde"]] as const).map(([valor, rotulo]) => (
+              <button
+                key={valor}
+                type="button"
+                className={styles.chip}
+                aria-pressed={turno === valor}
+                onClick={() => setTurno(valor)}
+              >
+                {rotulo}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className={styles.field}>
@@ -228,6 +255,7 @@ export default function RegistrarProducao() {
           </>
         )}
 
+        {!semOrigem && (<>
         <div className={styles.field}>
           <label>Viveiro de origem</label>
           <select
@@ -269,6 +297,7 @@ export default function RegistrarProducao() {
             </p>
           )}
         </div>
+        </>)}
 
         {ehFile && rendimento !== null && (
           <div className={styles.derived}>

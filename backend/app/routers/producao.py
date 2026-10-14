@@ -17,7 +17,7 @@ from ..vision import ler_ficha
 
 router = APIRouter(prefix="/producao", tags=["producao"])
 
-_COLUNAS = "id, client_id, data, produto_id, quantidade_embalagens, quantidade_kg, lote_id, data_despesca, criado_em"
+_COLUNAS = "id, client_id, data, produto_id, quantidade_embalagens, quantidade_kg, lote_id, data_despesca, criado_em, turno"
 
 _SCHEMA_LEITURA = {
     "type": "object",
@@ -76,6 +76,7 @@ def criar_producao(body: ProducaoIn, db: Session = Depends(get_db), usuario: Usu
         "quantidade_kg": body.quantidade_kg if body.quantidade_kg is not None else 0,
         "lote_id": body.lote_id,
         "data_despesca": body.data_despesca,
+        "turno": body.turno,
         "criado_por": usuario.nome,
     }
 
@@ -83,9 +84,9 @@ def criar_producao(body: ProducaoIn, db: Session = Depends(get_db), usuario: Usu
         row = db.execute(
             text(f"""
                 INSERT INTO producao (client_id, data, produto_id, quantidade_embalagens,
-                                       quantidade_kg, lote_id, data_despesca, criado_por)
+                                       quantidade_kg, lote_id, data_despesca, turno, criado_por)
                 VALUES (:client_id, :data, :produto_id, :quantidade_embalagens,
-                        :quantidade_kg, :lote_id, :data_despesca, :criado_por)
+                        :quantidade_kg, :lote_id, :data_despesca, :turno, :criado_por)
                 ON CONFLICT (client_id) DO NOTHING
                 RETURNING {_COLUNAS}
             """),
@@ -129,14 +130,14 @@ def editar_producao(
         "id": producao_id, "data": body.data, "produto_id": body.produto_id,
         "quantidade_embalagens": body.quantidade_embalagens,
         "quantidade_kg": body.quantidade_kg if body.quantidade_kg is not None else 0,
-        "lote_id": body.lote_id, "data_despesca": body.data_despesca,
+        "lote_id": body.lote_id, "data_despesca": body.data_despesca, "turno": body.turno,
     }
     try:
         row = db.execute(
             text(f"""
                 UPDATE producao SET data = :data, produto_id = :produto_id,
                                      quantidade_embalagens = :quantidade_embalagens, quantidade_kg = :quantidade_kg,
-                                     lote_id = :lote_id, data_despesca = :data_despesca
+                                     lote_id = :lote_id, data_despesca = :data_despesca, turno = COALESCE(:turno, turno)
                 WHERE id = :id AND excluido_em IS NULL
                 RETURNING {_COLUNAS}
             """),

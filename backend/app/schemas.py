@@ -85,6 +85,7 @@ class ProdutoOut(BaseModel):
     unidade_embalagem: str | None
     fator_kg: float | None
     kg_digitado: bool
+    codigo_barras: str | None = None
 
 
 class DespescaIn(BaseModel):
@@ -149,6 +150,7 @@ class ProducaoIn(BaseModel):
     quantidade_kg: float | None = Field(default=None, ge=0)
     lote_id: int | None = None
     data_despesca: date | None = None
+    turno: Literal["manha", "tarde"] | None = None
 
     @model_validator(mode="after")
     def um_dos_dois_informado(self) -> "ProducaoIn":
@@ -167,6 +169,7 @@ class ProducaoOut(BaseModel):
     lote_id: int | None
     data_despesca: date | None
     criado_em: datetime
+    turno: str | None = None
 
 
 class ProducaoEditarIn(BaseModel):
@@ -176,6 +179,7 @@ class ProducaoEditarIn(BaseModel):
     quantidade_kg: float | None = Field(default=None, ge=0)
     lote_id: int | None = None
     data_despesca: date | None = None
+    turno: Literal["manha", "tarde"] | None = None
 
     @model_validator(mode="after")
     def um_dos_dois_informado(self) -> "ProducaoEditarIn":
@@ -431,12 +435,46 @@ class ChegadaRacaoEditarIn(BaseModel):
     itens: list[ChegadaRacaoItemIn] = Field(min_length=1)
 
 
+class AjusteRacaoIn(BaseModel):
+    """Ajuste do estoque de ração: informe `saldo_contado` (contagem física — o
+    sistema calcula a diferença) OU `sacos` (+ soma, − tira)."""
+    client_id: uuid.UUID
+    tipo_racao_id: int
+    data: date
+    motivo: str = Field(min_length=1)
+    sacos: float | None = None
+    saldo_contado: float | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def um_dos_dois(self) -> "AjusteRacaoIn":
+        if (self.sacos is None) == (self.saldo_contado is None):
+            raise ValueError("informe saldo_contado OU sacos (só um dos dois)")
+        return self
+
+
+class AjusteRacaoOut(BaseModel):
+    id: int
+    tipo_racao_id: int
+    tipo_racao_codigo: str
+    fornecedor_nome: str
+    data: date
+    sacos: float
+    saldo_antes: float | None
+    saldo_contado: float | None
+    motivo: str
+    criado_em: datetime
+    criado_por: str | None
+    excluido_em: datetime | None = None
+    excluido_por: str | None = None
+
+
 class EstoqueRacaoTipoOut(BaseModel):
     tipo_racao_id: int
     tipo_racao_codigo: str
     fornecedor_nome: str
     chegou_sacos: float
     consumido_sacos: float
+    ajustes_sacos: float = 0.0
     saldo_sacos: float
     consumo_sacos_dia: float | None
     dias_restantes: float | None
@@ -829,6 +867,7 @@ class ProducaoDetalheOut(BaseModel):
     rendimento: float | None
     excluido_em: datetime | None = None
     excluido_por: str | None = None
+    turno: str | None = None
 
 
 class ProducaoResumoOut(BaseModel):

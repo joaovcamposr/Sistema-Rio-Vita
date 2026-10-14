@@ -234,6 +234,7 @@ export interface EstoqueRacaoTipo {
   fornecedor_nome: string;
   chegou_sacos: number;
   consumido_sacos: number;
+  ajustes_sacos: number;
   saldo_sacos: number;
   consumo_sacos_dia: number | null;
   dias_restantes: number | null;
@@ -1031,3 +1032,23 @@ export const painelLembretes = (situacao: string, vendedorId?: number | null) =>
   if (vendedorId) qs.set("vendedor_id", String(vendedorId));
   return cachedGet<LembreteCliente[]>(`cache:lembretes:${situacao}:${vendedorId ?? ""}`, `/lembretes?${qs}`);
 };
+
+
+export interface RelatorioProducaoBloco {
+  suja_kg: number;
+  por_produto: Record<string, number>;
+  total_file_kg: number;
+  total_produtos_tilapia_kg: number;
+  rendimento: number | null;
+  residuo_kg: number | null;
+}
+export interface RelatorioProducaoDiario {
+  data: string;
+  produtos: { produto_id: number; nome: string; codigo_barras: string | null; categoria: string }[];
+  manha: RelatorioProducaoBloco;
+  tarde: RelatorioProducaoBloco;
+  dia: RelatorioProducaoBloco;
+  avisos: string[];
+}
+export const relatorioProducaoDiario = (data: string) =>
+  cachedGet<RelatorioProducaoDiario>(`cache:relatorio-producao:${data}`, `/paineis/producao/relatorio-diario?data=${data}`);

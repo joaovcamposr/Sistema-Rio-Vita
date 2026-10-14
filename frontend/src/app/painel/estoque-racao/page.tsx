@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { painelEstoqueRacao, type EstoqueRacao } from "@/lib/paineis";
 import {
-  editarChegadaRacao, excluirChegadaRacao, listarChegadasRacao, listarFornecedoresRacao, restaurarChegadaRacao,
-  type ChegadaRacao, type FornecedorRacao,
+  criarAjusteRacao, editarChegadaRacao, excluirAjusteRacao, excluirChegadaRacao, listarAjustesRacao,
+  listarChegadasRacao, listarFornecedoresRacao, restaurarAjusteRacao, restaurarChegadaRacao,
+  type AjusteRacao, type ChegadaRacao, type FornecedorRacao,
 } from "@/lib/cadastros";
 import styles from "../painel.module.css";
 
@@ -20,13 +21,17 @@ function dataHoraBr(iso: string): string {
   const d = new Date(iso);
   return d.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
+// data local, não UTC (depois das 21h toISOString() já é "amanhã")
+function dataLocalISO(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 function hojeISO(): string {
-  return new Date().toISOString().slice(0, 10);
+  return dataLocalISO(new Date());
 }
 function diasAtras(dias: number): string {
   const d = new Date();
   d.setDate(d.getDate() - dias);
-  return d.toISOString().slice(0, 10);
+  return dataLocalISO(d);
 }
 
 interface FormEdicaoChegada {
@@ -51,6 +56,60 @@ export default function PainelEstoqueRacao() {
   const [salvandoEdicao, setSalvandoEdicao] = useState(false);
   const [processandoId, setProcessandoId] = useState<number | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+
+  // ajuste de estoque (contagem física)
+  const [ajustandoTipoId, setAjustandoTipoId] = useState<number | null>(null);
+  const [contagem, setContagem] = useState("");
+  const [motivoAjuste, setMotivoAjuste] = useState("");
+  const [salvandoAjuste, setSalvandoAjuste] = useState(false);
+  const [ajustes, setAjustes] = useState<AjusteRacao[] | null>(null);
+  const [mostrarAjustesExcluidos, setMostrarAjustesExcluidos] = useState(false);
+
+  function carregarAjustes() {
+    listarAjustesRacao(mostrarAjustesExcluidos).then(setAjustes).catch(() => setAjustes([]));
+  }
+  function recarregarEstoque() {
+    painelEstoqueRacao().then(setDados).catch(() => undefined);
+  }
+  useEffect(() => {
+    carregarAjustes();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mostrarAjustesExcluidos]);
+
+  async function confirmarAjuste(tipoId: number) {
+    const contado = parseFloat(contagem.replace(/\./g, "").replace(",", "."));
+    if (!(contado >= 0)) { setToast("Informe a contagem em sacos"); setTimeout(() => setToast(null), 2500); return; }
+    if (!motivoAjuste.trim()) { setToast("Informe o motivo do ajuste"); setTimeout(() => setToast(null), 2500); return; }
+    setSalvandoAjuste(true);
+    try {
+      await criarAjusteRacao({ tipo_racao_id: tipoId, data: hojeISO(), motivo: motivoAjuste.trim(), saldo_contado: contado });
+      setToast("Estoque ajustado");
+      setAjustandoTipoId(null);
+      setContagem("");
+      setMotivoAjuste("");
+      recarregarEstoque();
+      carregarAjustes();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "";
+      setToast(msg.includes("igual ao saldo") ? "A contagem é igual ao saldo do sistema" : "Não foi possível ajustar");
+    } finally {
+      setSalvandoAjuste(false);
+      setTimeout(() => setToast(null), 3000);
+    }
+  }
+
+  async function alternarAjuste(a: AjusteRacao) {
+    try {
+      if (a.excluido_em) await restaurarAjusteRacao(a.id);
+      else if (window.confirm(`Excluir o ajuste de ${a.sacos > 0 ? "+" : ""}${nf(a.sacos, 1)} sacos em ${a.tipo_racao_codigo}? O saldo volta ao que era.`)) await excluirAjusteRacao(a.id);
+      else return;
+      recarregarEstoque();
+      carregarAjustes();
+    } catch {
+      setToast("Não foi possível alterar o ajuste");
+      setTimeout(() => setToast(null), 3000);
+    }
+  }
 
   function carregarChegadas() {
     setChegadas(null);
@@ -189,26 +248,117 @@ export default function PainelEstoqueRacao() {
               <table className={styles.tabela}>
                 <thead>
                   <tr>
-                    <th>Fornecedor</th><th>Tipo</th><th>Chegou</th><th>Consumido</th><th>Saldo</th>
-                    <th>Consumo/dia</th><th>Acaba em</th><th>Sugestão p/ próxima carga</th>
+                    <th>Fornecedor</th><th>Tipo</th><th>Chegou</th><th>Consumido</th><th>Ajustes</th><th>Saldo</th>
+                    <th>Consumo/dia</th><th>Acaba em</th><th>Sugestão p/ próxima carga</th><th></th>
                   </tr>
                 </thead>
                 <tbody>
                   {dados.por_tipo.map((t) => (
-                    <tr key={t.tipo_racao_id}>
+                    <Fragment key={t.tipo_racao_id}>
+                    <tr>
                       <td>{t.fornecedor_nome}</td>
                       <td>{t.tipo_racao_codigo}</td>
                       <td>{nf(t.chegou_sacos, 0)}</td>
                       <td>{nf(t.consumido_sacos, 0)}</td>
+                      <td style={{ color: t.ajustes_sacos === 0 ? undefined : "var(--warn)" }}>
+                        {t.ajustes_sacos === 0 ? "—" : `${t.ajustes_sacos > 0 ? "+" : ""}${nf(t.ajustes_sacos, 0)}`}
+                      </td>
                       <td style={{ fontWeight: 700 }}>{nf(t.saldo_sacos, 0)}</td>
                       <td>{t.consumo_sacos_dia !== null ? nf(t.consumo_sacos_dia, 1) : "—"}</td>
                       <td>{t.dias_restantes !== null ? `${Math.round(t.dias_restantes)} dias` : "—"}</td>
                       <td>{t.sacos_sugeridos_proxima_carga !== null ? `${nf(t.sacos_sugeridos_proxima_carga, 0)} sacos` : "—"}</td>
+                      <td>
+                        <button
+                          type="button"
+                          style={{ background: "none", border: "none", color: "var(--brand-deep)", fontWeight: 700, cursor: "pointer", fontSize: "0.8rem" }}
+                          onClick={() => {
+                            setAjustandoTipoId(ajustandoTipoId === t.tipo_racao_id ? null : t.tipo_racao_id);
+                            setContagem(String(Math.round(t.saldo_sacos)));
+                            setMotivoAjuste("");
+                          }}
+                        >
+                          Ajustar estoque
+                        </button>
+                      </td>
                     </tr>
+                    {ajustandoTipoId === t.tipo_racao_id && (
+                      <tr>
+                        <td colSpan={10} style={{ background: "var(--ground)" }}>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end", padding: "6px 0" }}>
+                            <div className={styles.campo}>
+                              <label>Contagem real (sacos) — sistema diz {nf(t.saldo_sacos, 0)}</label>
+                              <input inputMode="decimal" value={contagem} onChange={(e) => setContagem(e.target.value)} autoFocus />
+                            </div>
+                            <div className={styles.campo} style={{ minWidth: 260 }}>
+                              <label>Motivo (ex.: contagem do dia, sacos rasgados)</label>
+                              <input value={motivoAjuste} onChange={(e) => setMotivoAjuste(e.target.value)} />
+                            </div>
+                            <button
+                              type="button" disabled={salvandoAjuste} onClick={() => confirmarAjuste(t.tipo_racao_id)}
+                              style={{ padding: "9px 16px", borderRadius: 9, border: "none", background: "var(--brand)", color: "var(--brand-ink)", fontWeight: 700, cursor: "pointer" }}
+                            >
+                              {salvandoAjuste ? "Salvando…" : "Confirmar ajuste"}
+                            </button>
+                            <button type="button" onClick={() => setAjustandoTipoId(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--ink-muted)" }}>
+                              Cancelar
+                            </button>
+                          </div>
+                          <p className={styles.hint} style={{ margin: "0 0 6px" }}>
+                            O sistema grava a diferença como ajuste (com data, motivo e usuário) — não apaga chegadas nem consumo.
+                          </p>
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   ))}
                 </tbody>
               </table>
             </div>
+
+            <div className={styles.section}>Ajustes de estoque</div>
+            <div style={{ marginBottom: 10 }}>
+              <button
+                type="button"
+                onClick={() => setMostrarAjustesExcluidos((v) => !v)}
+                style={{
+                  padding: "7px 14px", borderRadius: 9, border: "1px solid var(--rule-strong)",
+                  background: mostrarAjustesExcluidos ? "var(--brand)" : "var(--surface)",
+                  color: mostrarAjustesExcluidos ? "var(--brand-ink)" : "var(--ink)", fontWeight: 700, fontSize: "0.8rem", cursor: "pointer",
+                }}
+              >
+                {mostrarAjustesExcluidos ? "Vendo excluídos" : "Ver excluídos"}
+              </button>
+            </div>
+            {ajustes && ajustes.length === 0 && <p className={styles.hint}>Nenhum ajuste {mostrarAjustesExcluidos ? "excluído" : "lançado"}.</p>}
+            {ajustes && ajustes.length > 0 && (
+              <div className={styles.tableWrap}>
+                <table className={styles.tabela}>
+                  <thead>
+                    <tr><th>Data</th><th>Tipo</th><th>Ajuste</th><th>Saldo antes → contado</th><th>Motivo</th><th>Quem</th><th></th></tr>
+                  </thead>
+                  <tbody>
+                    {ajustes.map((a) => (
+                      <tr key={a.id}>
+                        <td>{dataBr(a.data)}</td>
+                        <td>{a.fornecedor_nome} {a.tipo_racao_codigo}</td>
+                        <td style={{ fontWeight: 700 }}>{a.sacos > 0 ? "+" : ""}{nf(a.sacos, 1)} sacos</td>
+                        <td>{a.saldo_antes !== null ? nf(a.saldo_antes, 1) : "—"}{a.saldo_contado !== null ? ` → ${nf(a.saldo_contado, 1)}` : ""}</td>
+                        <td>{a.motivo}</td>
+                        <td>{a.criado_por ?? "—"}</td>
+                        <td>
+                          <button
+                            type="button" onClick={() => alternarAjuste(a)}
+                            style={{ background: "none", border: "none", cursor: "pointer", fontWeight: 700, color: a.excluido_em ? "var(--brand-deep)" : "var(--crit)" }}
+                          >
+                            {a.excluido_em ? "Restaurar" : "Excluir"}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
 
             <div className={styles.section}>Histórico de chegadas</div>
             <div className={styles.filtros} style={{ marginBottom: 14 }}>

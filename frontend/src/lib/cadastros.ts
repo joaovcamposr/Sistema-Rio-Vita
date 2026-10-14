@@ -201,6 +201,39 @@ export const atualizarTipoRacao = (fornecedorId: number, tipoId: number, codigo:
 export const excluirTipoRacao = (fornecedorId: number, tipoId: number) =>
   excluir(`/fornecedores-racao/${fornecedorId}/tipos/${tipoId}`);
 
+export interface AjusteRacao {
+  id: number;
+  tipo_racao_id: number;
+  tipo_racao_codigo: string;
+  fornecedor_nome: string;
+  data: string;
+  sacos: number;
+  saldo_antes: number | null;
+  saldo_contado: number | null;
+  motivo: string;
+  criado_em: string;
+  criado_por: string | null;
+  excluido_em: string | null;
+  excluido_por: string | null;
+}
+/** Ajuste do estoque de ração por contagem física (`saldoContado`) — o sistema calcula a diferença —
+ * ou por quantidade direta (`sacos`, + soma / − tira). */
+export const criarAjusteRacao = (body: {
+  tipo_racao_id: number; data: string; motivo: string; saldo_contado?: number; sacos?: number;
+}) => enviar<AjusteRacao>("/ajustes-racao", "POST", { client_id: crypto.randomUUID(), ...body });
+export const listarAjustesRacao = (excluidos = false) =>
+  cachedGet<AjusteRacao[]>(`cache:ajustes-racao:${excluidos ? "excl" : ""}`, `/ajustes-racao${excluidos ? "?excluidos=true" : ""}`);
+export async function excluirAjusteRacao(id: number): Promise<void> {
+  const r = await fetch(`${apiBase()}/ajustes-racao/${id}`, { method: "DELETE", headers: authHeader() });
+  if (r.status === 401) sessaoInvalida();
+  if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+}
+export async function restaurarAjusteRacao(id: number): Promise<void> {
+  const r = await fetch(`${apiBase()}/ajustes-racao/${id}/restaurar`, { method: "POST", headers: authHeader() });
+  if (r.status === 401) sessaoInvalida();
+  if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+}
+
 export const listarChegadasRacao = (de?: string, ate?: string, excluidos?: boolean) => {
   const qs = new URLSearchParams();
   if (de) qs.set("de", de);

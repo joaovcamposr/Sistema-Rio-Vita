@@ -39,6 +39,7 @@ export interface Produto {
   unidade_embalagem: string | null;
   fator_kg: number | null;
   kg_digitado: boolean;
+  codigo_barras?: string | null;
 }
 
 export interface Despesca {

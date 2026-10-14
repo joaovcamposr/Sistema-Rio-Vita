@@ -244,3 +244,40 @@ def test_cliente_duplicado_e_bloqueado_e_juncao_reversivel(api, produto_id):
     assert api.post("/admin/clientes/juntar/desfazer", params={"principal_id": principal}).json()["desfeitas"] == 1
     assert dup in [c["id"] for c in api.get("/clientes").json()]
     assert api.get("/vendas", params={"id": venda["id"]}).json()[0]["cliente_id"] == dup
+
+
+def test_produtos_novos_e_codigos_de_barras(api):
+    prods = {p["nome"]: p for p in api.get("/produtos").json()}
+    # códigos de barras guardados exatamente como informados (texto, com zeros à esquerda)
+    assert prods["Filé de tilápia 400g"]["codigo_barras"] == "0074468550735" if "Filé de tilápia 400g" in prods else True
+    for nome in ("Contrafilé de tilápia", "Barriguinha de tilápia", "Pescocinho de tilápia", "Tambaqui"):
+        assert nome in prods and prods[nome]["kg_digitado"] is True
+
+
+def test_relatorio_diario_por_turno_e_residuo(api):
+    from app.routers.paineis import _categoria_produto as cat
+    assert cat("Filé de tilápia 500g") == "file" and cat("Contrafilé de tilápia") == "subproduto"
+    assert cat("Postas de tilápia 800g") == "outro_tilapia" and cat("Tambaqui") == "fora" and cat("Tilápia suja") == "fora"
+
+    prods = {p["nome"]: p for p in api.get("/produtos").json()}
+    dia = date(2031, 3, 3)                      # dia sem outros lançamentos
+    with get_engine_admin().begin() as c:        # roda de novo no mesmo banco sem acumular
+        c.execute(text("DELETE FROM producao WHERE data = :d"), {"d": dia})
+    def lancar(produto, kg, turno=None, emb=None):
+        corpo = {"client_id": str(uuid.uuid4()), "data": str(dia), "produto_id": prods[produto]["id"]}
+        if emb is not None:
+            corpo["quantidade_embalagens"] = emb
+        else:
+            corpo["quantidade_kg"] = kg
+        if turno:
+            corpo["turno"] = turno
+        r = api.post("/producao", json=corpo)
+        assert r.status_code == 201, r.text
+        return r.json()
+    # sem despesca de origem o rendimento não existe: avisa em vez de inventar
+    lancar("Filé 500g", None, "manha", emb=40)       # 20 kg
+    lancar("Contrafilé de tilápia", 5, "tarde")
+    r = api.get("/paineis/producao/relatorio-diario", params={"data": str(dia)}).json()
+    assert r["manha"]["total_file_kg"] == 20 and r["tarde"]["por_produto"][str(prods["Contrafilé de tilápia"]["id"])] == 5
+    assert r["dia"]["suja_kg"] == 0 and any("Sem rendimento" in a for a in r["avisos"])
+    assert r["manha"]["residuo_kg"] is None                     # sem suja, sem resíduo

@@ -11,6 +11,7 @@ const PAINEIS = [
   { href: "/painel/biometria", ico: "⚖️", nome: "Biometria", desc: "Conferência dos lançamentos, com opção de corrigir" },
   { href: "/painel/abate", ico: "📅", nome: "Programação de abate", desc: "Previsão por lote, a partir da última biometria" },
   { href: "/painel/producao", ico: "📦", nome: "Produção e rendimento", desc: "Peso sujo e rendimento ponderados por período" },
+  { href: "/painel/relatorio-producao", ico: "🧾", nome: "Relatório diário de produção", desc: "Suja, filé, rendimento e resíduos por turno" },
   { href: "/painel/despesca", ico: "🎣", nome: "Despesca", desc: "Conferência dos lançamentos, com opção de corrigir" },
   { href: "/painel/repicagem", ico: "🔀", nome: "Histórico de repicagem", desc: "Conferência dos lançamentos, com opção de corrigir" },
   { href: "/painel/programacao-repicagem", ico: "🗺️", nome: "Programação de repicagem", desc: "Metragem e disponibilidade dos tanques, com sugestões" },

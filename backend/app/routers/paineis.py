@@ -810,8 +810,9 @@ def painel_producao_detalhe(
     rows = db.execute(text(f"""
         SELECT d.id, d.data, d.produto_id, pr.nome AS produto_nome, d.quantidade_embalagens, d.quantidade_kg,
                d.lote_id, l.codigo AS lote_codigo, v.codigo AS viveiro_codigo,
-               d.data_despesca, d.peso_medio_suja_g, d.rendimento, d.excluido_em, d.excluido_por
+               d.data_despesca, d.peso_medio_suja_g, d.rendimento, d.excluido_em, d.excluido_por, pd.turno
         FROM vw_producao_detalhe d
+        JOIN producao pd ON pd.id = d.id
         JOIN produto pr ON pr.id = d.produto_id
         LEFT JOIN lote l ON l.id = d.lote_id
         LEFT JOIN viveiro v ON v.id = l.viveiro_id
@@ -820,6 +821,99 @@ def painel_producao_detalhe(
         ORDER BY d.data DESC, d.id DESC
     """), {"de": de, "ate": ate}).mappings().all()
     return [ProducaoDetalheOut(**r) for r in rows]
+
+
+def _categoria_produto(nome: str) -> str:
+    """Papel do produto no relatório diário. 'file' e 'subproduto' saem da
+    tilápia suja; 'outro_tilapia' (postas, tilápia limpa) também; 'fora' não entra
+    no resíduo (tambaqui é outra espécie; tilápia suja é matéria-prima, não produto)."""
+    n = nome.lower()
+    if n.startswith("filé"):
+        return "file"
+    if n.startswith(("contrafilé", "barriguinha", "pescocinho")):
+        return "subproduto"
+    if n.startswith(("postas", "tilápia limpa")):
+        return "outro_tilapia"
+    return "fora"
+
+
+@router.get("/producao/relatorio-diario")
+def relatorio_producao_diario(data: date = Query(...), db: Session = Depends(get_db)):
+    """Produção do dia por turno (manhã / tarde / total): filé por apresentação
+    (com código de barras), subprodutos, tilápia suja utilizada, rendimento e
+    resíduo estimado.
+
+    Tilápia suja do dia = Σ (kg de filé de cada lançamento ÷ rendimento do lote/despesca
+    dele); cada turno usa metade (dia ÷ 2). Resíduo = suja − todos os produtos
+    tirados dela (filé + subprodutos + postas/limpa; tambaqui e tilápia suja de
+    fora). Lançamento sem turno é dividido meio a meio entre manhã e tarde."""
+    rows = db.execute(text("""
+        SELECT d.id, d.produto_id, pr.nome AS produto_nome, pr.codigo_barras, d.quantidade_kg, d.rendimento,
+               pd.turno, d.lote_id, l.codigo AS lote_codigo
+        FROM vw_producao_detalhe d
+        JOIN producao pd ON pd.id = d.id
+        JOIN produto pr ON pr.id = d.produto_id
+        LEFT JOIN lote l ON l.id = d.lote_id
+        WHERE d.data = :data AND d.excluido_em IS NULL
+        ORDER BY pr.nome, d.id
+    """), {"data": data}).mappings().all()
+
+    produtos: dict[int, dict] = {}
+    kg = {"manha": {}, "tarde": {}}            # produto_id -> kg por turno
+    suja_dia = 0.0
+    sem_turno = 0
+    sem_rendimento: list[str] = []
+    rendimentos_baixos: list[str] = []
+    for r in rows:
+        pid = r["produto_id"]
+        produtos.setdefault(pid, {
+            "produto_id": pid, "nome": r["produto_nome"], "codigo_barras": r["codigo_barras"],
+            "categoria": _categoria_produto(r["produto_nome"]),
+        })
+        q = float(r["quantidade_kg"])
+        if r["turno"] in ("manha", "tarde"):
+            kg[r["turno"]][pid] = kg[r["turno"]].get(pid, 0.0) + q
+        else:
+            sem_turno += 1
+            for t in ("manha", "tarde"):
+                kg[t][pid] = kg[t].get(pid, 0.0) + q / 2
+        if produtos[pid]["categoria"] == "file" and q > 0:
+            rend = float(r["rendimento"]) if r["rendimento"] else 0.0
+            if rend > 0:
+                suja_dia += q / rend
+                if rend < 0.25 or rend > 0.45:
+                    rendimentos_baixos.append(f"{r['produto_nome']} ({r['lote_codigo'] or 'sem lote'}): {rend * 100:.1f}%")
+            else:
+                sem_rendimento.append(f"{r['produto_nome']} ({q:g} kg)")
+
+    def bloco(por_produto: dict[int, float], suja: float) -> dict:
+        def soma(cats):
+            return sum(v for pid, v in por_produto.items() if produtos[pid]["categoria"] in cats)
+        file_kg = soma({"file"})
+        tilapia_kg = soma({"file", "subproduto", "outro_tilapia"})
+        return {
+            "suja_kg": suja, "por_produto": {str(pid): v for pid, v in por_produto.items()},
+            "total_file_kg": file_kg, "total_produtos_tilapia_kg": tilapia_kg,
+            "rendimento": (file_kg / suja) if suja > 0 else None,
+            "residuo_kg": (suja - tilapia_kg) if suja > 0 else None,
+        }
+
+    manha, tarde = bloco(kg["manha"], suja_dia / 2), bloco(kg["tarde"], suja_dia / 2)
+    dia_pp = {pid: kg["manha"].get(pid, 0.0) + kg["tarde"].get(pid, 0.0) for pid in produtos}
+    dia = bloco(dia_pp, suja_dia)
+    dia["residuo_kg"] = (manha["residuo_kg"] or 0.0) + (tarde["residuo_kg"] or 0.0) if suja_dia > 0 else None
+
+    avisos = []
+    if sem_turno:
+        avisos.append(f"{sem_turno} lançamento(s) sem turno informado foram divididos meio a meio entre manhã e tarde.")
+    if sem_rendimento:
+        avisos.append("Sem rendimento calculável (despesca de origem não informada ou sem peso): " + "; ".join(sem_rendimento) + ". Esses filés não entram na tilápia suja utilizada.")
+    if rendimentos_baixos:
+        avisos.append("Rendimento fora do usual (25%–45%) — despesca ainda em processamento ou dado a conferir: " + "; ".join(rendimentos_baixos))
+    return {
+        "data": data, "produtos": sorted(produtos.values(), key=lambda p: (p["categoria"], p["nome"])),
+        "manha": manha, "tarde": tarde, "dia": dia, "avisos": avisos,
+    }
 
 
 @router.get("/despesca", response_model=list[DespescaDetalheOut])
@@ -1950,6 +2044,12 @@ def painel_estoque_racao(db: Session = Depends(get_db)):
             GROUP BY i.tipo_racao_id
         """)).mappings().all()
     }
+    ajustes_por_tipo = {
+        r["tipo_racao_id"]: float(r["ajuste"])
+        for r in db.execute(text("""
+            SELECT tipo_racao_id, SUM(sacos) AS ajuste FROM ajuste_racao WHERE excluido_em IS NULL GROUP BY tipo_racao_id
+        """)).mappings().all()
+    }
     consumido_por_tipo = {
         r["tipo_racao_id"]: float(r["consumido"])
         for r in db.execute(text(
@@ -1984,7 +2084,8 @@ def painel_estoque_racao(db: Session = Depends(get_db)):
     for t in tipos:
         chegou = chegou_por_tipo.get(t["id"], 0.0)
         consumido = consumido_por_tipo.get(t["id"], 0.0)
-        saldo = chegou - consumido
+        ajustes = ajustes_por_tipo.get(t["id"], 0.0)
+        saldo = chegou - consumido + ajustes
         consumo_dia = consumo_dia_por_tipo.get(t["id"])
         dias_restantes = (saldo / consumo_dia) if consumo_dia else None
         if dias_restantes is not None:
@@ -1992,7 +2093,7 @@ def painel_estoque_racao(db: Session = Depends(get_db)):
         sugestao = max(0.0, consumo_dia * _HORIZONTE_SUGESTAO_DIAS - saldo) if consumo_dia else None
         por_tipo.append(EstoqueRacaoTipoOut(
             tipo_racao_id=t["id"], tipo_racao_codigo=t["codigo"], fornecedor_nome=t["fornecedor_nome"],
-            chegou_sacos=chegou, consumido_sacos=consumido, saldo_sacos=saldo,
+            chegou_sacos=chegou, consumido_sacos=consumido, ajustes_sacos=ajustes, saldo_sacos=saldo,
             consumo_sacos_dia=consumo_dia, dias_restantes=dias_restantes,
             sacos_sugeridos_proxima_carga=sugestao,
         ))
