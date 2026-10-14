@@ -401,8 +401,11 @@ export default function Recebimentos() {
           .print-table { table-layout: auto !important; width: 100% !important; font-size: 9pt !important; }
           .print-table th, .print-table td {
             white-space: normal !important; overflow: visible !important; text-overflow: clip !important;
-            padding: 3px 5px !important;
+            padding: 3px 5px !important; overflow-wrap: anywhere; vertical-align: top;
           }
+          /* observação inteira na página: coluna mais larga e quebra até texto sem espaço (ex.: "Pix01/04/2025-03/04/2025") */
+          .print-table th.obs-col, .print-table td.obs-col { width: 30% !important; }
+          .somente-impressao { white-space: normal !important; overflow-wrap: anywhere; word-break: break-word; }
         }
       `}</style>
       <div className={styles.appbar}>
@@ -583,7 +586,7 @@ export default function Recebimentos() {
                   {["Data", "Cliente", "Produto", "Qtd.", "Valor", "Vencimento / pagamento", "Vendedor", "Obs.", ""].map((rotulo) => (
                     <th
                       key={rotulo}
-                      className={rotulo === "" ? "no-print" : undefined}
+                      className={rotulo === "" ? "no-print" : rotulo === "Obs." ? "obs-col" : undefined}
                       style={{ padding: "8px 6px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
                     >
                       {rotulo}
@@ -728,7 +731,7 @@ export default function Recebimentos() {
                       <td style={{ padding: "6px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={v.vendedor ?? ""}>
                         {v.vendedor ?? "—"}
                       </td>
-                      <td style={{ padding: "6px" }}>
+                      <td className="obs-col" style={{ padding: "6px" }}>
                         {editandoObs === v.id ? (
                           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                             <input
