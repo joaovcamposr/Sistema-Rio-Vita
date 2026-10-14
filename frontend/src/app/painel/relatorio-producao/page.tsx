@@ -108,15 +108,15 @@ export default function RelatorioProducaoDiario() {
                       {cols.map(([k]) => <td key={k} style={th}>{pct(rel[k].rendimento)}</td>)}
                     </tr>
 
-                    {(grupo("subproduto").length > 0 || grupo("outro_tilapia").length > 0) && (
+                    {grupo("outro_tilapia").length > 0 && (
                       <>
-                        <tr><td colSpan={4} style={{ fontWeight: 700, color: "var(--ink-muted)", paddingTop: 12 }}>Subprodutos e outros produtos da tilápia</td></tr>
-                        {[...grupo("subproduto"), ...grupo("outro_tilapia")].map(linhaProduto)}
+                        <tr><td colSpan={4} style={{ fontWeight: 700, color: "var(--ink-muted)", paddingTop: 12 }}>Outros produtos da tilápia</td></tr>
+                        {grupo("outro_tilapia").map(linhaProduto)}
                       </>
                     )}
 
                     <tr style={negrito}>
-                      <td>Total de produtos (filé + subprodutos)</td>
+                      <td>Total de produtos (filé + demais)</td>
                       {cols.map(([k]) => <td key={k} style={th}>{kg(rel[k].total_produtos_tilapia_kg)}</td>)}
                     </tr>
                     <tr style={{ ...negrito, color: "var(--crit)" }}>
@@ -137,7 +137,7 @@ export default function RelatorioProducaoDiario() {
 
             <p className={styles.hint}>
               Tilápia suja do dia = filé de cada lançamento ÷ rendimento do lote/despesca dele; cada turno usa metade do dia.
-              Resíduo = suja − todos os produtos tirados dela (filé, subprodutos, postas e tilápia limpa). Lançamento sem turno
+              Resíduo = suja − produtos tirados dela (filé, postas e tilápia limpa). Lançamento sem turno
               é dividido meio a meio entre manhã e tarde.
             </p>
             {rel.avisos.map((a, i) => (

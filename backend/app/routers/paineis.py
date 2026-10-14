@@ -840,12 +840,12 @@ def _categoria_produto(nome: str) -> str:
 @router.get("/producao/relatorio-diario")
 def relatorio_producao_diario(data: date = Query(...), db: Session = Depends(get_db)):
     """Produção do dia por turno (manhã / tarde / total): filé por apresentação
-    (com código de barras), subprodutos, tilápia suja utilizada, rendimento e
-    resíduo estimado.
+    (com código de barras), tilápia suja utilizada, rendimento e resíduo estimado.
+    Subprodutos (contrafilé, barriguinha, pescocinho) não entram no relatório.
 
     Tilápia suja do dia = Σ (kg de filé de cada lançamento ÷ rendimento do lote/despesca
-    dele); cada turno usa metade (dia ÷ 2). Resíduo = suja − todos os produtos
-    tirados dela (filé + subprodutos + postas/limpa; tambaqui e tilápia suja de
+    dele); cada turno usa metade (dia ÷ 2). Resíduo = suja − produtos
+    tirados dela (filé + postas/limpa; subprodutos, tambaqui e tilápia suja de
     fora). Lançamento sem turno é dividido meio a meio entre manhã e tarde."""
     rows = db.execute(text("""
         SELECT d.id, d.produto_id, pr.nome AS produto_nome, pr.codigo_barras, d.quantidade_kg, d.rendimento,
@@ -860,6 +860,8 @@ def relatorio_producao_diario(data: date = Query(...), db: Session = Depends(get
 
     produtos: dict[int, dict] = {}
     kg = {"manha": {}, "tarde": {}}            # produto_id -> kg por turno
+    # subprodutos (contrafilé, barriguinha, pescocinho) ficam fora deste relatório
+    rows = [r for r in rows if _categoria_produto(r["produto_nome"]) != "subproduto"]
     suja_dia = 0.0
     sem_turno = 0
     sem_rendimento: list[str] = []

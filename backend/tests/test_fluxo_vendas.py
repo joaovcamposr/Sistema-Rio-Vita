@@ -278,6 +278,8 @@ def test_relatorio_diario_por_turno_e_residuo(api):
     lancar("Filé 500g", None, "manha", emb=40)       # 20 kg
     lancar("Contrafilé de tilápia", 5, "tarde")
     r = api.get("/paineis/producao/relatorio-diario", params={"data": str(dia)}).json()
-    assert r["manha"]["total_file_kg"] == 20 and r["tarde"]["por_produto"][str(prods["Contrafilé de tilápia"]["id"])] == 5
+    assert r["manha"]["total_file_kg"] == 20
+    assert all(p["categoria"] != "subproduto" for p in r["produtos"])      # subprodutos fora do relatório
+    assert str(prods["Contrafilé de tilápia"]["id"]) not in r["tarde"]["por_produto"]
     assert r["dia"]["suja_kg"] == 0 and any("Sem rendimento" in a for a in r["avisos"])
     assert r["manha"]["residuo_kg"] is None                     # sem suja, sem resíduo
