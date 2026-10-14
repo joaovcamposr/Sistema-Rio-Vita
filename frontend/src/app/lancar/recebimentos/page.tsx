@@ -108,6 +108,9 @@ export default function Recebimentos() {
   const [situacaoFiltro, setSituacaoFiltro] = useState("Em aberto");
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [buscaCliente, setBuscaCliente] = useState("");
+  // cliente escolhido na lista de sugestões: filtra só ele (por id), em vez de "contém o texto"
+  const [clienteEscolhido, setClienteEscolhido] = useState<Cliente | null>(null);
+  const [sugestoesAbertas, setSugestoesAbertas] = useState(false);
   const [vendedores, setVendedores] = useState<string[]>([]);
   const [vendedorFiltro, setVendedorFiltro] = useState("");
   const [produtos, setProdutos] = useState<Produto[]>([]);
@@ -157,7 +160,7 @@ export default function Recebimentos() {
     if (!vendas) return null;
     const busca = normaliza(buscaCliente);
     return vendas
-      .filter((v) => !busca || normaliza(v.cliente_nome).includes(busca))
+      .filter((v) => (clienteEscolhido ? v.cliente_id === clienteEscolhido.id : !busca || normaliza(v.cliente_nome).includes(busca)))
       .filter((v) => !produtoFiltro || v.produto_id === produtoFiltro)
       .filter((v) => !formaFiltro || v.parcelas.some((p) => p.forma_pgto === formaFiltro))
       .sort((a, b) => {
@@ -170,7 +173,21 @@ export default function Recebimentos() {
         else c = b.data.localeCompare(a.data);
         return c !== 0 ? c : ordem === "data_asc" ? a.id - b.id : b.id - a.id;
       });
-  }, [vendas, buscaCliente, produtoFiltro, formaFiltro, ordem]);
+  }, [vendas, buscaCliente, clienteEscolhido, produtoFiltro, formaFiltro, ordem]);
+
+  // sugestões enquanto digita: quem começa com o texto vem primeiro
+  const sugestoes = useMemo(() => {
+    const busca = normaliza(buscaCliente);
+    if (!busca || clienteEscolhido) return [];
+    return clientes
+      .filter((c) => normaliza(c.nome).includes(busca))
+      .sort((a, b) => {
+        const ia = normaliza(a.nome).startsWith(busca) ? 0 : 1;
+        const ib = normaliza(b.nome).startsWith(busca) ? 0 : 1;
+        return ia - ib || a.nome.localeCompare(b.nome, "pt-BR");
+      })
+      .slice(0, 8);
+  }, [buscaCliente, clienteEscolhido, clientes]);
 
   useEffect(() => {
     listarClientes().then(setClientes).catch(() => undefined);
@@ -372,9 +389,14 @@ export default function Recebimentos() {
   return (
     <div className={`${styles.page} print-fit`} style={{ maxWidth: 1360 }}>
       <style>{`
+        .somente-impressao { display: none; }
         @media print {
           @page { size: landscape; margin: 10mm; }
           .no-print { display: none !important; }
+          /* rede de segurança: na impressão nenhum botão aparece (Pagar parte, Marcar pago, Desfazer,
+             + adicionar, Editar, Excluir...) — só os textos */
+          .print-fit button, .print-fit select, .print-fit input { display: none !important; }
+          .somente-impressao { display: inline !important; }
           .print-fit { max-width: none !important; overflow: visible !important; }
           .print-table { table-layout: auto !important; width: 100% !important; font-size: 9pt !important; }
           .print-table th, .print-table td {
@@ -412,15 +434,61 @@ export default function Recebimentos() {
               <option value="Todas">Todas</option>
             </select>
           </div>
-          <div className={styles.field} style={{ margin: 0 }}>
+          <div className={styles.field} style={{ margin: 0, position: "relative" }}>
             <label>Buscar cliente</label>
-            <input
-              className={styles.inp}
-              type="text"
-              placeholder="Qualquer parte do nome"
-              value={buscaCliente}
-              onChange={(e) => setBuscaCliente(e.target.value)}
-            />
+            {clienteEscolhido ? (
+              <div
+                className={styles.inp}
+                style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "space-between", fontWeight: 700 }}
+              >
+                <span>{clienteEscolhido.nome}</span>
+                <button
+                  type="button"
+                  aria-label="Limpar cliente"
+                  title="Mostrar todos os clientes"
+                  onClick={() => { setClienteEscolhido(null); setBuscaCliente(""); }}
+                  style={{ background: "none", border: "none", fontSize: "1.1rem", lineHeight: 1, cursor: "pointer", color: "var(--ink-muted)" }}
+                >
+                  ×
+                </button>
+              </div>
+            ) : (
+              <input
+                className={styles.inp}
+                type="text"
+                placeholder="Qualquer parte do nome"
+                value={buscaCliente}
+                autoComplete="off"
+                onChange={(e) => { setBuscaCliente(e.target.value); setSugestoesAbertas(true); }}
+                onFocus={() => setSugestoesAbertas(true)}
+                onBlur={() => setTimeout(() => setSugestoesAbertas(false), 150)}
+              />
+            )}
+            {sugestoesAbertas && sugestoes.length > 0 && (
+              <ul
+                style={{
+                  position: "absolute", top: "100%", left: 0, right: 0, zIndex: 30, margin: "2px 0 0", padding: 4,
+                  listStyle: "none", background: "var(--surface)", border: "1px solid var(--rule-strong)", borderRadius: 9,
+                  boxShadow: "0 8px 24px rgba(0,0,0,0.15)", maxHeight: 280, overflowY: "auto", minWidth: 220,
+                }}
+              >
+                {sugestoes.map((c) => (
+                  <li key={c.id}>
+                    <button
+                      type="button"
+                      // onMouseDown: roda antes do blur do campo, senão a lista some antes do clique
+                      onMouseDown={(e) => { e.preventDefault(); setClienteEscolhido(c); setSugestoesAbertas(false); }}
+                      style={{
+                        display: "block", width: "100%", textAlign: "left", padding: "7px 9px", border: "none",
+                        background: "none", cursor: "pointer", fontSize: "0.85rem", color: "var(--ink)", borderRadius: 6,
+                      }}
+                    >
+                      {c.nome}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
           <div className={styles.field} style={{ margin: 0 }}>
             <label>Vendedor</label>
@@ -684,17 +752,20 @@ export default function Recebimentos() {
                             </div>
                           </div>
                         ) : (
-                          <button
-                            className={styles.btnLink}
-                            style={{
-                              textAlign: "left", fontSize: "0.76rem", display: "block", width: "100%",
-                              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                            }}
-                            title={v.observacoes ?? ""}
-                            onClick={() => iniciarEdicaoObs(v)}
-                          >
-                            {v.observacoes || "+ adicionar"}
-                          </button>
+                          <>
+                            <button
+                              className={`${styles.btnLink} no-print`}
+                              style={{
+                                textAlign: "left", fontSize: "0.76rem", display: "block", width: "100%",
+                                overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                              }}
+                              title={v.observacoes ?? ""}
+                              onClick={() => iniciarEdicaoObs(v)}
+                            >
+                              {v.observacoes || "+ adicionar"}
+                            </button>
+                            <span className="somente-impressao" style={{ fontSize: "0.76rem" }}>{v.observacoes ?? ""}</span>
+                          </>
                         )}
                       </td>
                       <td className="no-print" style={{ padding: "6px", fontSize: "0.76rem" }}>

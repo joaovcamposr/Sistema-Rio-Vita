@@ -86,3 +86,91 @@ def descrever_esquema(chaves: str | None = None, db: Session = Depends(get_db)):
     if chaves:
         return {k: d.get(k) for k in chaves.split(",")}
     return _esquema.resumo(d)
+
+
+# ---- datas de pagamento escritas nas observações das vendas ----
+
+_ORIGEM_OBS = "observacao"
+
+
+def _correcoes_por_observacao(db: Session, hoje) -> list[dict]:
+    from ..obs_pagamento import data_de_pagamento
+
+    rows = db.execute(text("""
+        SELECT vp.id AS parcela_id, v.id AS venda_id, v.data AS data_venda, v.observacoes, vp.data_pagamento
+        FROM venda v JOIN venda_parcela vp ON vp.venda_id = v.id
+        WHERE v.excluido_em IS NULL AND vp.excluido_em IS NULL AND vp.data_pagamento IS NOT NULL
+          AND btrim(COALESCE(v.observacoes, '')) <> ''
+          AND (SELECT count(*) FROM venda_parcela x WHERE x.venda_id = v.id AND x.excluido_em IS NULL) = 1
+        ORDER BY v.data, v.id
+    """)).mappings().all()
+    out = []
+    for r in rows:
+        nova = data_de_pagamento(r["observacoes"], r["data_venda"], hoje)
+        if nova is not None and nova != r["data_pagamento"]:
+            out.append({**r, "nova": nova})
+    return out
+
+
+@router.post("/datas-pagamento-por-observacao")
+def corrigir_datas_pelas_observacoes(
+    aplicar: bool = Query(default=False, description="false = só mostra o que mudaria (simulação)"),
+    db: Session = Depends(get_db),
+):
+    """Vendas quitadas, de uma parcela só, cuja observação cita a data do
+    pagamento: passa a valer a data escrita (a do último pagamento, se houver
+    vários). Cada mudança fica em venda_parcela_data_pagamento_hist, então
+    dá pra desfazer. Sem `aplicar=true` nada é alterado."""
+    from datetime import date as _date
+
+    hoje = _date.today()
+    correcoes = _correcoes_por_observacao(db, hoje)
+    resumo = {
+        "aplicado": aplicar, "a_alterar": len(correcoes),
+        "amostra": [
+            {"venda_id": c["venda_id"], "data_venda": str(c["data_venda"]), "de": str(c["data_pagamento"]),
+             "para": str(c["nova"]), "observacao": " ".join(c["observacoes"].split())[:140]}
+            for c in correcoes[:25]
+        ],
+    }
+    if not aplicar:
+        return resumo
+
+    alteradas = 0
+    for c in correcoes:
+        r = db.execute(
+            text("UPDATE venda_parcela SET data_pagamento = :nova WHERE id = :id AND data_pagamento = :antiga"),
+            {"nova": c["nova"], "id": c["parcela_id"], "antiga": c["data_pagamento"]},
+        )
+        if r.rowcount:
+            db.execute(text("""
+                INSERT INTO venda_parcela_data_pagamento_hist
+                  (parcela_id, venda_id, data_antiga, data_nova, origem, observacao)
+                VALUES (:p, :v, :antiga, :nova, :origem, :obs)
+            """), {"p": c["parcela_id"], "v": c["venda_id"], "antiga": c["data_pagamento"], "nova": c["nova"],
+                   "origem": _ORIGEM_OBS, "obs": c["observacoes"]})
+            alteradas += 1
+    db.commit()
+    resumo["alteradas"] = alteradas
+    return resumo
+
+
+@router.post("/datas-pagamento-por-observacao/desfazer")
+def desfazer_datas_pelas_observacoes(db: Session = Depends(get_db)):
+    """Volta cada parcela corrigida pela observação à data de pagamento que
+    tinha antes — só as que ainda estão com a data aplicada pela correção."""
+    rows = db.execute(text("""
+        SELECT id, parcela_id, data_antiga, data_nova FROM venda_parcela_data_pagamento_hist
+        WHERE origem = :o AND desfeito_em IS NULL ORDER BY id DESC
+    """), {"o": _ORIGEM_OBS}).mappings().all()
+    revertidas = 0
+    for h in rows:
+        r = db.execute(
+            text("UPDATE venda_parcela SET data_pagamento = :antiga WHERE id = :p AND data_pagamento = :nova"),
+            {"antiga": h["data_antiga"], "p": h["parcela_id"], "nova": h["data_nova"]},
+        )
+        if r.rowcount:
+            revertidas += 1
+        db.execute(text("UPDATE venda_parcela_data_pagamento_hist SET desfeito_em = now() WHERE id = :i"), {"i": h["id"]})
+    db.commit()
+    return {"revertidas": revertidas, "registros": len(rows)}

@@ -166,3 +166,44 @@ def test_pagamento_parcial_divide_a_parcela(api, produto_id):
     v = r.json()
     assert v["situacao"] == "Pago" and v["valor_pendente"] == 0 and len(v["parcelas"]) == 2
     assert v["parcelas"][1]["forma_pgto"] == "Dinheiro"
+
+
+def test_data_de_pagamento_nas_observacoes():
+    from app.obs_pagamento import data_de_pagamento as f
+    venda, hoje = date(2026, 2, 2), date(2026, 10, 14)
+    assert f("Pix24/02/2026", venda, hoje) == date(2026, 2, 24)
+    assert f("Pagou $700,00 no pix dia 28/04/2026 (pix de $1000,00), pagou $350 no pix dia 08/06/2026", venda, hoje) == date(2026, 6, 8)
+    assert f("Pix pago dia 20/09", date(2026, 9, 18), hoje) == date(2026, 9, 20)        # sem ano: ano da venda
+    assert f("Pix dia 05/01", date(2025, 12, 20), hoje) == date(2026, 1, 5)              # sem ano e antes da venda: ano seguinte
+    assert f("Descontado no salário dia 04/08/2026", date(2026, 8, 21), hoje) is None    # antes da venda: ignora
+    assert f("Pix 31/02/2026 e 15/03/2026", venda, hoje) == date(2026, 3, 15)            # dia impossível é descartado
+    assert f("Pix 10/11/2026", venda, hoje) is None                                      # futuro: ignora
+    assert f("Descontado", venda, hoje) is None and f(None, venda, hoje) is None
+
+
+def test_corrigir_datas_pelas_observacoes_simula_aplica_e_desfaz(api, produto_id):
+    _, cliente_id = _ids(api)
+    venda_dia = HOJE - timedelta(days=30)
+    pago_em = HOJE - timedelta(days=10)
+    r = api.post("/vendas", json={
+        "client_id": str(uuid.uuid4()), "data": str(venda_dia), "cliente_id": cliente_id, "vendedor": "Batista",
+        "produto_id": produto_id, "quantidade_un": 20, "quantidade_kg": 10, "preco_kg": 100,
+        "parcelas": [{"valor": 1000, "forma_pgto": "Pix", "data_prevista": str(venda_dia), "data_pagamento": str(venda_dia)}],
+    })
+    assert r.status_code == 201, r.text
+    venda_id = r.json()["id"]
+    assert api.patch(f"/vendas/{venda_id}/observacoes", json={"observacoes": f"Pix pago dia {pago_em:%d/%m/%Y}"}).status_code == 200
+
+    def data_pgto():
+        return api.get("/vendas", params={"id": venda_id}).json()[0]["parcelas"][0]["data_pagamento"]
+
+    sim = api.post("/admin/datas-pagamento-por-observacao").json()          # simulação: não muda nada
+    assert sim["aplicado"] is False and any(a["venda_id"] == venda_id for a in sim["amostra"] + [{"venda_id": -1}]) or sim["a_alterar"] >= 1
+    assert data_pgto() == str(venda_dia)
+
+    ap = api.post("/admin/datas-pagamento-por-observacao", params={"aplicar": "true"}).json()
+    assert ap["alteradas"] >= 1 and data_pgto() == str(pago_em)
+    assert api.post("/admin/datas-pagamento-por-observacao", params={"aplicar": "true"}).json()["alteradas"] == 0  # idempotente
+
+    api.post("/admin/datas-pagamento-por-observacao/desfazer")
+    assert data_pgto() == str(venda_dia)
