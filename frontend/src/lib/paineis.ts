@@ -79,6 +79,13 @@ export interface ProducaoResumo {
   rendimento_medio_ponderado_file: number | null;
   rendimento_medio_ponderado_postas: number | null;
   rendimento_medio_ponderado_tilapia_limpa: number | null;
+  rendimento_subprodutos: {
+    produto_id: number;
+    produto_nome: string;
+    quantidade_kg: number;
+    peso_despescado_kg: number;
+    rendimento: number | null;
+  }[];
 }
 
 export interface ProducaoDetalheLinha {

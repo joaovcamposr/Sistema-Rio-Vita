@@ -279,7 +279,16 @@ def test_relatorio_diario_por_turno_e_residuo(api):
     lancar("Contrafilé de tilápia", 5, "tarde")
     r = api.get("/paineis/producao/relatorio-diario", params={"data": str(dia)}).json()
     assert r["manha"]["total_file_kg"] == 20
-    assert all(p["categoria"] != "subproduto" for p in r["produtos"])      # subprodutos fora do relatório
+    assert all(p["categoria"] == "file" for p in r["produtos"])             # filé é o único produto do relatório
     assert str(prods["Contrafilé de tilápia"]["id"]) not in r["tarde"]["por_produto"]
     assert r["dia"]["suja_kg"] == 0 and any("Sem rendimento" in a for a in r["avisos"])
     assert r["manha"]["residuo_kg"] is None                     # sem suja, sem resíduo
+
+
+def test_rendimento_dos_subprodutos_no_painel_de_producao(api):
+    r = api.get("/paineis/producao", params={"de": "2020-01-01", "ate": str(HOJE)}).json()
+    nomes = [p["produto_nome"] for p in r["rendimento_subprodutos"]]
+    assert any(n.startswith("Contrafilé") for n in nomes) and any(n.startswith("Pescocinho") for n in nomes)
+    assert all(p["rendimento"] is None or 0 <= p["rendimento"] < 1 for p in r["rendimento_subprodutos"])
+    # o detalhe por lançamento continua respondendo (a consulta ganhou o cálculo por subproduto)
+    assert api.get("/paineis/producao/detalhe", params={"de": "2020-01-01", "ate": str(HOJE)}).status_code == 200

@@ -65,6 +65,7 @@ from ..schemas import (
     ProducaoDiaOut,
     ProducaoPorProdutoOut,
     ProducaoResumoOut,
+    RendimentoProdutoOut,
     ProducaoSerieBucketOut,
     ProducaoSerieOut,
     ProjecaoCapacidadeOut,
@@ -792,6 +793,48 @@ def _rendimento_por_destino(db: Session, de: date, ate: date, like_padrao: str, 
     """), {"de": de, "ate": ate, "like_padrao": like_padrao, "destino": destino}).scalar()
 
 
+_PREFIXOS_SUBPRODUTOS = ("Contrafilé", "Barriguinha", "Pescocinho")
+
+
+def _rendimento_subprodutos(db: Session, de: date, ate: date) -> list[RendimentoProdutoOut]:
+    """Rendimento de cada subproduto: kg produzido ÷ kg de tilápia despescada
+    (pra filé) — mesma base do rendimento do filé, pois saem do mesmo peixe.
+    Conta só os lotes/despescas em que o subproduto foi de fato lançado, pra
+    não derrubar o rendimento com despesca em que ele não foi registrado."""
+    produtos = db.execute(text("""
+        SELECT id, nome FROM produto
+        WHERE ativo AND (nome LIKE 'Contrafilé%' OR nome LIKE 'Barriguinha%' OR nome LIKE 'Pescocinho%')
+        ORDER BY nome
+    """)).mappings().all()
+    por_produto = {
+        r["produto_id"]: r for r in db.execute(text("""
+            SELECT produto_id, SUM(kg_produto) AS kg, SUM(kg_desp) AS kg_desp
+            FROM (
+              SELECT p.produto_id, p.lote_id, p.data_despesca, SUM(p.quantidade_kg) AS kg_produto,
+                     (SELECT SUM(d.peso_total_kg) FROM despesca d
+                      WHERE d.lote_id = p.lote_id AND d.data = p.data_despesca AND d.destino = 'file'
+                        AND d.excluido_em IS NULL) AS kg_desp
+              FROM producao p JOIN produto pr ON pr.id = p.produto_id
+              WHERE p.data_despesca BETWEEN :de AND :ate AND p.excluido_em IS NULL
+                AND (pr.nome LIKE 'Contrafilé%' OR pr.nome LIKE 'Barriguinha%' OR pr.nome LIKE 'Pescocinho%')
+              GROUP BY p.produto_id, p.lote_id, p.data_despesca
+            ) lotes
+            WHERE kg_desp > 0
+            GROUP BY produto_id
+        """), {"de": de, "ate": ate}).mappings().all()
+    }
+    out = []
+    for p in produtos:
+        r = por_produto.get(p["id"])
+        kg = float(r["kg"]) if r else 0.0
+        base = float(r["kg_desp"]) if r else 0.0
+        out.append(RendimentoProdutoOut(
+            produto_id=p["id"], produto_nome=p["nome"], quantidade_kg=kg, peso_despescado_kg=base,
+            rendimento=(kg / base) if base > 0 else None,
+        ))
+    return out
+
+
 @router.get("/producao/detalhe", response_model=list[ProducaoDetalheOut])
 def painel_producao_detalhe(
     de: date | None = Query(default=None),
@@ -810,7 +853,16 @@ def painel_producao_detalhe(
     rows = db.execute(text(f"""
         SELECT d.id, d.data, d.produto_id, pr.nome AS produto_nome, d.quantidade_embalagens, d.quantidade_kg,
                d.lote_id, l.codigo AS lote_codigo, v.codigo AS viveiro_codigo,
-               d.data_despesca, d.peso_medio_suja_g, d.rendimento, d.excluido_em, d.excluido_por, pd.turno
+               d.data_despesca, d.peso_medio_suja_g,
+               CASE WHEN pr.nome LIKE 'Contrafilé%' OR pr.nome LIKE 'Barriguinha%' OR pr.nome LIKE 'Pescocinho%' THEN
+                 (SELECT SUM(p2.quantidade_kg) FROM producao p2
+                  WHERE p2.lote_id = d.lote_id AND p2.data_despesca = d.data_despesca
+                    AND p2.produto_id = d.produto_id AND p2.excluido_em IS NULL)
+                 / NULLIF((SELECT SUM(x.peso_total_kg) FROM despesca x
+                           WHERE x.lote_id = d.lote_id AND x.data = d.data_despesca AND x.destino = 'file'
+                             AND x.excluido_em IS NULL), 0)
+               ELSE d.rendimento END AS rendimento,
+               d.excluido_em, d.excluido_por, pd.turno
         FROM vw_producao_detalhe d
         JOIN producao pd ON pd.id = d.id
         JOIN produto pr ON pr.id = d.produto_id
@@ -841,12 +893,10 @@ def _categoria_produto(nome: str) -> str:
 def relatorio_producao_diario(data: date = Query(...), db: Session = Depends(get_db)):
     """Produção do dia por turno (manhã / tarde / total): filé por apresentação
     (com código de barras), tilápia suja utilizada, rendimento e resíduo estimado.
-    Subprodutos (contrafilé, barriguinha, pescocinho) não entram no relatório.
+    O filé é o único produto do relatório.
 
     Tilápia suja do dia = Σ (kg de filé de cada lançamento ÷ rendimento do lote/despesca
-    dele); cada turno usa metade (dia ÷ 2). Resíduo = suja − produtos
-    tirados dela (filé + postas/limpa; subprodutos, tambaqui e tilápia suja de
-    fora). Lançamento sem turno é dividido meio a meio entre manhã e tarde."""
+    dele); cada turno usa metade (dia ÷ 2). Resíduo = suja − filé produzido. Lançamento sem turno é dividido meio a meio entre manhã e tarde."""
     rows = db.execute(text("""
         SELECT d.id, d.produto_id, pr.nome AS produto_nome, pr.codigo_barras, d.quantidade_kg, d.rendimento,
                pd.turno, d.lote_id, l.codigo AS lote_codigo
@@ -860,8 +910,8 @@ def relatorio_producao_diario(data: date = Query(...), db: Session = Depends(get
 
     produtos: dict[int, dict] = {}
     kg = {"manha": {}, "tarde": {}}            # produto_id -> kg por turno
-    # subprodutos (contrafilé, barriguinha, pescocinho) ficam fora deste relatório
-    rows = [r for r in rows if _categoria_produto(r["produto_nome"]) != "subproduto"]
+    # o relatório trata só de filé: demais produtos (subprodutos, postas, tilápia limpa, tambaqui) ficam fora
+    rows = [r for r in rows if _categoria_produto(r["produto_nome"]) == "file"]
     suja_dia = 0.0
     sem_turno = 0
     sem_rendimento: list[str] = []
@@ -1047,6 +1097,7 @@ def painel_producao(
         rendimento_medio_ponderado_file=_f(rendimento_file),
         rendimento_medio_ponderado_postas=_f(rendimento_postas),
         rendimento_medio_ponderado_tilapia_limpa=_f(rendimento_limpa),
+        rendimento_subprodutos=_rendimento_subprodutos(db, de, ate),
     )
 
 

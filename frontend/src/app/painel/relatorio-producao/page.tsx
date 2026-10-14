@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { relatorioProducaoDiario, type RelatorioProducaoDiario } from "@/lib/paineis";
 import styles from "../painel.module.css";
@@ -108,28 +108,11 @@ export default function RelatorioProducaoDiario() {
                       {cols.map(([k]) => <td key={k} style={th}>{pct(rel[k].rendimento)}</td>)}
                     </tr>
 
-                    {grupo("outro_tilapia").length > 0 && (
-                      <>
-                        <tr><td colSpan={4} style={{ fontWeight: 700, color: "var(--ink-muted)", paddingTop: 12 }}>Outros produtos da tilápia</td></tr>
-                        {grupo("outro_tilapia").map(linhaProduto)}
-                      </>
-                    )}
-
-                    <tr style={negrito}>
-                      <td>Total de produtos (filé + demais)</td>
-                      {cols.map(([k]) => <td key={k} style={th}>{kg(rel[k].total_produtos_tilapia_kg)}</td>)}
-                    </tr>
                     <tr style={{ ...negrito, color: "var(--crit)" }}>
-                      <td>Resíduos estimados (suja − produtos)</td>
+                      <td>Resíduos estimados (suja − filé)</td>
                       {cols.map(([k]) => <td key={k} style={th}>{kg(rel[k].residuo_kg)}</td>)}
                     </tr>
 
-                    {grupo("fora").filter((p) => p.nome.startsWith("Tambaqui")).length > 0 && (
-                      <Fragment>
-                        <tr><td colSpan={4} style={{ fontWeight: 700, color: "var(--ink-muted)", paddingTop: 12 }}>Outra espécie (não entra no resíduo da tilápia)</td></tr>
-                        {grupo("fora").filter((p) => p.nome.startsWith("Tambaqui")).map(linhaProduto)}
-                      </Fragment>
-                    )}
                   </tbody>
                 </table>
               </div>
@@ -137,7 +120,7 @@ export default function RelatorioProducaoDiario() {
 
             <p className={styles.hint}>
               Tilápia suja do dia = filé de cada lançamento ÷ rendimento do lote/despesca dele; cada turno usa metade do dia.
-              Resíduo = suja − produtos tirados dela (filé, postas e tilápia limpa). Lançamento sem turno
+              Resíduo = suja − filé produzido. Lançamento sem turno
               é dividido meio a meio entre manhã e tarde.
             </p>
             {rel.avisos.map((a, i) => (

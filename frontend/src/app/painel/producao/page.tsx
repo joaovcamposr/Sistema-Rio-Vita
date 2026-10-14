@@ -263,6 +263,26 @@ export default function PainelProducao() {
                 </div>
               </div>
             </div>
+            {dados.rendimento_subprodutos.length > 0 && (
+              <>
+                <div className={styles.section} style={{ marginTop: 16 }}>Rendimento dos subprodutos</div>
+                <div className={styles.cards}>
+                  {dados.rendimento_subprodutos.map((p) => (
+                    <div key={p.produto_id} className={styles.card}>
+                      <div className={styles.cardLabel}>Rendimento de {p.produto_nome}</div>
+                      <div className={styles.cardValue}>
+                        {p.rendimento !== null ? `${nf(p.rendimento * 100, 2)}%` : "—"}
+                      </div>
+                      <div className={styles.cardSub}>
+                        {p.rendimento !== null
+                          ? `${nf(p.quantidade_kg, 1)} kg sobre ${nf(p.peso_despescado_kg, 0)} kg despescados`
+                          : "sem lançamento no período"}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
           </>
         )}
 

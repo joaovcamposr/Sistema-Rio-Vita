@@ -870,6 +870,14 @@ class ProducaoDetalheOut(BaseModel):
     turno: str | None = None
 
 
+class RendimentoProdutoOut(BaseModel):
+    produto_id: int
+    produto_nome: str
+    quantidade_kg: float            # produzido no período (pela data de despesca de origem)
+    peso_despescado_kg: float       # tilápia despescada (pra filé) dos lotes/despescas onde foi produzido
+    rendimento: float | None
+
+
 class ProducaoResumoOut(BaseModel):
     de: date
     ate: date
@@ -881,6 +889,7 @@ class ProducaoResumoOut(BaseModel):
     rendimento_medio_ponderado_file: float | None
     rendimento_medio_ponderado_postas: float | None
     rendimento_medio_ponderado_tilapia_limpa: float | None
+    rendimento_subprodutos: list[RendimentoProdutoOut] = []
 
 
 class EstoqueItemOut(BaseModel):
