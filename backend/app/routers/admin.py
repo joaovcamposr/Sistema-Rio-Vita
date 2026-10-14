@@ -2,7 +2,7 @@
 import tempfile
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -174,3 +174,95 @@ def desfazer_datas_pelas_observacoes(db: Session = Depends(get_db)):
         db.execute(text("UPDATE venda_parcela_data_pagamento_hist SET desfeito_em = now() WHERE id = :i"), {"i": h["id"]})
     db.commit()
     return {"revertidas": revertidas, "registros": len(rows)}
+
+
+# ---- junção de clientes duplicados ----
+
+@router.post("/clientes/juntar")
+def juntar_clientes(
+    principal_id: int, duplicados: list[int] = Query(...),
+    aplicar: bool = Query(default=False, description="false = só mostra o que seria movido (simulação)"),
+    usuario=Depends(exigir_gerente), db: Session = Depends(get_db),
+):
+    """Passa vendas, interações, lembretes e preços dos cadastros `duplicados`
+    pro `principal_id` e INATIVA os duplicados (não apaga nada). O que foi
+    movido fica em cliente_juncao_hist e dá pra desfazer. Sem `aplicar=true`
+    só simula."""
+    if principal_id in duplicados:
+        raise HTTPException(422, "o principal não pode estar na lista de duplicados")
+    ids = [principal_id, *duplicados]
+    achados = {r["id"]: r for r in db.execute(
+        text("SELECT id, nome, ativo, observacoes FROM cliente WHERE id = ANY(:ids)"), {"ids": ids}).mappings().all()}
+    faltando = [i for i in ids if i not in achados]
+    if faltando:
+        raise HTTPException(404, f"cliente(s) não encontrado(s): {faltando}")
+    if not achados[principal_id]["ativo"]:
+        raise HTTPException(422, "o cadastro principal está inativo")
+
+    plano = []
+    for d in duplicados:
+        vendas = db.execute(text("SELECT id FROM venda WHERE cliente_id = :d ORDER BY id"), {"d": d}).scalars().all()
+        inter = db.execute(text("SELECT id FROM interacao_cliente WHERE cliente_id = :d ORDER BY id"), {"d": d}).scalars().all()
+        lemb = db.execute(text("SELECT id FROM lembrete_cliente WHERE cliente_id = :d ORDER BY id"), {"d": d}).scalars().all()
+        precos = db.execute(text("""
+            SELECT produto_id FROM cliente_produto_preco
+            WHERE cliente_id = :d AND produto_id NOT IN (SELECT produto_id FROM cliente_produto_preco WHERE cliente_id = :p)
+        """), {"d": d, "p": principal_id}).scalars().all()
+        plano.append({"duplicado_id": d, "nome": achados[d]["nome"], "vendas": list(vendas), "interacoes": list(inter),
+                      "lembretes": list(lemb), "precos": list(precos)})
+    resumo = {
+        "aplicado": aplicar, "principal": {"id": principal_id, "nome": achados[principal_id]["nome"]},
+        "duplicados": [{**p, "vendas": len(p["vendas"]), "interacoes": len(p["interacoes"]),
+                        "lembretes": len(p["lembretes"]), "precos": len(p["precos"])} for p in plano],
+    }
+    if not aplicar:
+        return resumo
+
+    for p in plano:
+        d = p["duplicado_id"]
+        db.execute(text("UPDATE venda SET cliente_id = :p WHERE cliente_id = :d"), {"p": principal_id, "d": d})
+        db.execute(text("UPDATE interacao_cliente SET cliente_id = :p WHERE cliente_id = :d"), {"p": principal_id, "d": d})
+        db.execute(text("UPDATE lembrete_cliente SET cliente_id = :p WHERE cliente_id = :d"), {"p": principal_id, "d": d})
+        if p["precos"]:
+            db.execute(text("UPDATE cliente_produto_preco SET cliente_id = :p WHERE cliente_id = :d AND produto_id = ANY(:pr)"),
+                       {"p": principal_id, "d": d, "pr": p["precos"]})
+        nota = f"Duplicado do cliente #{principal_id} ({achados[principal_id]['nome']}) — juntado em {datetime.now():%d/%m/%Y}."
+        db.execute(text("""
+            UPDATE cliente SET ativo = false,
+                               observacoes = CASE WHEN observacoes IS NULL OR btrim(observacoes) = '' THEN :nota
+                                                  ELSE observacoes || E'\n' || :nota END
+            WHERE id = :d
+        """), {"nota": nota, "d": d})
+        db.execute(text("""
+            INSERT INTO cliente_juncao_hist (principal_id, duplicado_id, venda_ids, interacao_ids, lembrete_ids,
+                                             preco_produto_ids, observacoes_antes, criado_por)
+            VALUES (:p, :d, :v, :i, :l, :pr, :obs, :quem)
+        """), {"p": principal_id, "d": d, "v": p["vendas"], "i": p["interacoes"], "l": p["lembretes"],
+               "pr": p["precos"], "obs": achados[d]["observacoes"], "quem": usuario.nome})
+    db.commit()
+    return resumo
+
+
+@router.post("/clientes/juntar/desfazer")
+def desfazer_juncao_clientes(principal_id: int, db: Session = Depends(get_db)):
+    """Devolve a cada cadastro duplicado (de uma junção feita para `principal_id`)
+    o que foi movido e reativa ele."""
+    rows = db.execute(text("""
+        SELECT * FROM cliente_juncao_hist WHERE principal_id = :p AND desfeito_em IS NULL ORDER BY id DESC
+    """), {"p": principal_id}).mappings().all()
+    for h in rows:
+        d, p = h["duplicado_id"], principal_id
+        db.execute(text("UPDATE venda SET cliente_id = :d WHERE id = ANY(:ids) AND cliente_id = :p"),
+                   {"d": d, "p": p, "ids": list(h["venda_ids"])})
+        db.execute(text("UPDATE interacao_cliente SET cliente_id = :d WHERE id = ANY(:ids) AND cliente_id = :p"),
+                   {"d": d, "p": p, "ids": list(h["interacao_ids"])})
+        db.execute(text("UPDATE lembrete_cliente SET cliente_id = :d WHERE id = ANY(:ids) AND cliente_id = :p"),
+                   {"d": d, "p": p, "ids": list(h["lembrete_ids"])})
+        if h["preco_produto_ids"]:
+            db.execute(text("UPDATE cliente_produto_preco SET cliente_id = :d WHERE cliente_id = :p AND produto_id = ANY(:pr)"),
+                       {"d": d, "p": p, "pr": list(h["preco_produto_ids"])})
+        db.execute(text("UPDATE cliente SET ativo = true, observacoes = :obs WHERE id = :d"),
+                   {"d": d, "obs": h["observacoes_antes"]})
+        db.execute(text("UPDATE cliente_juncao_hist SET desfeito_em = now() WHERE id = :i"), {"i": h["id"]})
+    db.commit()
+    return {"desfeitas": len(rows)}

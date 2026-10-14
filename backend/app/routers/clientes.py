@@ -1,4 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException
+import re
+import unicodedata
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
@@ -31,6 +34,29 @@ _COLUNAS_CRIAR_EDITAR = (
 )
 
 
+def normalizar_nome(nome: str) -> str:
+    """Nome sem acento, maiúscula, pontuação nem espaço repetido — 'Squina  Lounge'
+    e 'squina lounge' são o mesmo cliente."""
+    sem_acento = unicodedata.normalize("NFKD", nome).encode("ascii", "ignore").decode("ascii")
+    return re.sub(r"[^a-z0-9]+", " ", sem_acento.lower()).strip()
+
+
+def _exigir_nome_novo(db: Session, nome: str, ignorar_id: int | None = None) -> None:
+    """Recusa (409) cadastrar/renomear pra um nome que já existe entre os
+    clientes ativos, devolvendo o cliente existente pra tela oferecer 'usar
+    esse'. Quem realmente tem homônimo cadastra com forcar=true."""
+    alvo = normalizar_nome(nome)
+    if not alvo:
+        return
+    for r in db.execute(text("SELECT id, nome FROM cliente WHERE ativo")).mappings().all():
+        if r["id"] != ignorar_id and normalizar_nome(r["nome"]) == alvo:
+            raise HTTPException(409, detail={
+                "codigo": "cliente_duplicado",
+                "mensagem": f"Já existe um cliente chamado \"{r['nome']}\".",
+                "cliente_id": r["id"], "cliente_nome": r["nome"],
+            })
+
+
 @router.get("", response_model=list[ClienteOut])
 def listar_clientes(db: Session = Depends(get_db)):
     rows = db.execute(text(f"""
@@ -43,7 +69,12 @@ def listar_clientes(db: Session = Depends(get_db)):
 
 
 @router.post("", response_model=ClienteDetalheOut, status_code=201)
-def criar_cliente(body: ClienteIn, db: Session = Depends(get_db)):
+def criar_cliente(
+    body: ClienteIn, forcar: bool = Query(default=False, description="true = cria mesmo já existindo um cliente com esse nome"),
+    db: Session = Depends(get_db),
+):
+    if not forcar:
+        _exigir_nome_novo(db, body.nome)
     colunas = ", ".join(_COLUNAS_CRIAR_EDITAR)
     valores = ", ".join(f":{c}" for c in _COLUNAS_CRIAR_EDITAR)
     try:
@@ -70,7 +101,11 @@ def obter_cliente(cliente_id: int, db: Session = Depends(get_db)):
 
 
 @router.put("/{cliente_id}", response_model=ClienteDetalheOut)
-def atualizar_cliente(cliente_id: int, body: ClienteIn, db: Session = Depends(get_db)):
+def atualizar_cliente(
+    cliente_id: int, body: ClienteIn, forcar: bool = Query(default=False), db: Session = Depends(get_db),
+):
+    if not forcar:
+        _exigir_nome_novo(db, body.nome, ignorar_id=cliente_id)
     atribuicoes = ", ".join(f"{c} = :{c}" for c in _COLUNAS_CRIAR_EDITAR)
     try:
         row = db.execute(

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { criarCliente, listarVendedores, type Vendedor } from "@/lib/cadastros";
+import { clienteDuplicadoDoErro, criarCliente, listarVendedores, type Vendedor } from "@/lib/cadastros";
 import { FASES, TEMPERATURAS } from "../[id]/page";
 import styles from "../../cadastros.module.css";
 
@@ -24,14 +24,21 @@ export default function NovoCliente() {
   const [temperatura, setTemperatura] = useState("");
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const [duplicado, setDuplicado] = useState<{ id: number; nome: string } | null>(null);
 
   useEffect(() => {
     listarVendedores().then(setVendedores).catch(() => undefined);
   }, []);
 
-  async function salvar() {
+  function irParaCliente(id: number) {
+    router.push(retorno ? `${retorno}?clienteId=${id}` : `/cadastros/clientes/${id}`);
+  }
+
+  async function salvar(forcar = false) {
     if (!nome.trim()) return;
     setSalvando(true);
+    setDuplicado(null);
+    setErro(null);
     try {
       const cliente = await criarCliente({
         nome: nome.trim(),
@@ -47,10 +54,12 @@ export default function NovoCliente() {
         e_cliente: eCliente, fase: fase || null, temperatura: temperatura || null,
         motivo: null, proxima_acao: null, fornecedor_atual: null, preco_concorrente: null,
         preferencia_tamanho: null, fresco_congelado: null, observacoes: null,
-      });
-      router.push(retorno ? `${retorno}?clienteId=${cliente.id}` : `/cadastros/clientes/${cliente.id}`);
-    } catch {
-      setErro("Não foi possível salvar — verifique a conexão.");
+      }, forcar);
+      irParaCliente(cliente.id);
+    } catch (e) {
+      const existente = clienteDuplicadoDoErro(e);
+      if (existente) setDuplicado(existente);
+      else setErro("Não foi possível salvar — verifique a conexão.");
     } finally {
       setSalvando(false);
     }
@@ -68,6 +77,19 @@ export default function NovoCliente() {
       </div>
       <div className={styles.body}>
         {erro && <div className={styles.error}>{erro}</div>}
+        {duplicado && (
+          <div className={styles.error} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <span>Já existe um cliente chamado <strong>{duplicado.nome}</strong>. Quer usar esse em vez de criar outro?</span>
+            <span style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <button type="button" className={styles.btnPrimary} onClick={() => irParaCliente(duplicado.id)}>
+                Usar {duplicado.nome}
+              </button>
+              <button type="button" className={styles.btnLink} onClick={() => salvar(true)} disabled={salvando}>
+                É outro cliente — criar mesmo assim
+              </button>
+            </span>
+          </div>
+        )}
 
         <div className={styles.field}>
           <label>Nome</label>
@@ -124,7 +146,7 @@ export default function NovoCliente() {
           </select>
         </div>
 
-        <button className={styles.btnPrimary} disabled={!nome.trim() || salvando} onClick={salvar}>
+        <button className={styles.btnPrimary} disabled={!nome.trim() || salvando} onClick={() => salvar()}>
           {salvando ? "Salvando…" : "Cadastrar cliente"}
         </button>
       </div>

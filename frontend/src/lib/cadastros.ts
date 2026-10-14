@@ -278,8 +278,24 @@ export const editarRetorno = (id: number, body: { quantidade_embalagens: number 
 
 export const obterCliente = (id: number) =>
   cachedGet<ClienteDetalhe>(`cache:cliente:${id}`, `/clientes/${id}`);
-export const criarCliente = (body: Omit<ClienteDetalhe, "id">) =>
-  enviar<ClienteDetalhe>("/clientes", "POST", body);
+export const criarCliente = (body: Omit<ClienteDetalhe, "id">, forcar = false) =>
+  enviar<ClienteDetalhe>(forcar ? "/clientes?forcar=true" : "/clientes", "POST", body);
+
+/** Se o erro de criarCliente foi "já existe cliente com esse nome", devolve esse
+ * cliente (pra a tela oferecer usar o existente em vez de duplicar). */
+export function clienteDuplicadoDoErro(e: unknown): { id: number; nome: string } | null {
+  const msg = e instanceof Error ? e.message : "";
+  if (!msg.startsWith("HTTP 409")) return null;
+  try {
+    const obj = JSON.parse(msg.replace(/^HTTP \d+: /, "")) as {
+      detail?: { codigo?: string; cliente_id?: number; cliente_nome?: string };
+    };
+    const d = obj.detail;
+    return d?.codigo === "cliente_duplicado" && d.cliente_id != null ? { id: d.cliente_id, nome: d.cliente_nome ?? "" } : null;
+  } catch {
+    return null;
+  }
+}
 export const atualizarCliente = (id: number, body: Omit<ClienteDetalhe, "id">) =>
   enviar<ClienteDetalhe>(`/clientes/${id}`, "PUT", body);
 export const excluirCliente = (id: number) => excluir(`/clientes/${id}`);

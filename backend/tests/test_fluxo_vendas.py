@@ -13,7 +13,7 @@ HOJE = date.today()
 
 def _ids(api):
     vend = api.post("/vendedores", json={"nome": "Batista"}).json()
-    cli = api.post("/clientes", json={"nome": "Peixaria Teste", "prazo_dias": 14}).json()
+    cli = api.post("/clientes", json={"nome": f"Peixaria Teste {uuid.uuid4().hex[:6]}", "prazo_dias": 14}).json()
     return vend["id"], cli["id"]
 
 
@@ -207,3 +207,40 @@ def test_corrigir_datas_pelas_observacoes_simula_aplica_e_desfaz(api, produto_id
 
     api.post("/admin/datas-pagamento-por-observacao/desfazer")
     assert data_pgto() == str(venda_dia)
+
+
+def test_cliente_duplicado_e_bloqueado_e_juncao_reversivel(api, produto_id):
+    nome = f"Cliente Dup {uuid.uuid4().hex[:6]}"
+    corpo = {"nome": nome, "e_cliente": True}
+    c1 = api.post("/clientes", json=corpo)
+    assert c1.status_code == 201, c1.text
+    # mesmo nome (maiúscula/acento/espaço diferentes) é recusado com 409 e aponta o existente
+    r = api.post("/clientes", json={"nome": nome.upper() + "  "})
+    assert r.status_code == 409
+    det = r.json()["detail"]
+    assert det["codigo"] == "cliente_duplicado" and det["cliente_id"] == c1.json()["id"]
+    # forcar=true cria mesmo assim (homônimo de verdade)
+    c2 = api.post("/clientes", params={"forcar": "true"}, json=corpo)
+    assert c2.status_code == 201
+    principal, dup = c1.json()["id"], c2.json()["id"]
+
+    venda = api.post("/vendas", json={
+        "client_id": str(uuid.uuid4()), "data": str(HOJE), "cliente_id": dup, "produto_id": produto_id,
+        "quantidade_un": 20, "quantidade_kg": 10, "preco_kg": 50,
+        "parcelas": [{"valor": 500, "forma_pgto": "Pix", "data_prevista": str(HOJE)}],
+    }).json()
+
+    sim = api.post("/admin/clientes/juntar", params={"principal_id": principal, "duplicados": dup}).json()
+    assert sim["aplicado"] is False and sim["duplicados"][0]["vendas"] == 1
+    assert api.get(f"/vendas/{venda['id']}").json()["cliente_id"] == dup if api.get(f"/vendas/{venda['id']}").status_code == 200 else True
+
+    ap = api.post("/admin/clientes/juntar", params={"principal_id": principal, "duplicados": dup, "aplicar": "true"})
+    assert ap.status_code == 200, ap.text
+    ids_ativos = [c["id"] for c in api.get("/clientes").json()]
+    assert principal in ids_ativos and dup not in ids_ativos          # duplicado inativado, não apagado
+    vendas = api.get("/vendas", params={"id": venda["id"]}).json()
+    assert vendas[0]["cliente_id"] == principal
+
+    assert api.post("/admin/clientes/juntar/desfazer", params={"principal_id": principal}).json()["desfeitas"] == 1
+    assert dup in [c["id"] for c in api.get("/clientes").json()]
+    assert api.get("/vendas", params={"id": venda["id"]}).json()[0]["cliente_id"] == dup

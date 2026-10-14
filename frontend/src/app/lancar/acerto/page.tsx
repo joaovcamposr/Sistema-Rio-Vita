@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { listarClientes, listarProdutos, type Cliente, type Produto, type VendaParcelaEntrada } from "@/lib/api";
 import {
-  criarCliente, listarExpedicoesAbertas, listarPrecosCliente, listarVendedores,
+  clienteDuplicadoDoErro, criarCliente, listarExpedicoesAbertas, listarPrecosCliente, listarVendedores,
   type Expedicao, type Vendedor,
 } from "@/lib/cadastros";
 import { enfileirar } from "@/lib/offline-queue";
@@ -61,6 +61,7 @@ export default function AcertoExpedicao() {
   const [criandoClienteIdx, setCriandoClienteIdx] = useState<number | null>(null);
   const [novoClienteNome, setNovoClienteNome] = useState("");
   const [salvandoCliente, setSalvandoCliente] = useState(false);
+  const [clienteDuplicado, setClienteDuplicado] = useState<{ id: number; nome: string } | null>(null);
 
   useEffect(() => {
     Promise.all([listarExpedicoesAbertas(), listarClientes(), listarProdutos(), listarVendedores()])
@@ -122,10 +123,17 @@ export default function AcertoExpedicao() {
     setNovoClienteNome("");
   }
 
-  async function salvarNovoCliente(idx: number) {
+  async function usarClienteExistente(idx: number, existente: { id: number; nome: string }) {
+    setClienteDuplicado(null);
+    setCriandoClienteIdx(null);
+    await aoEscolherCliente(idx, existente.id);
+  }
+
+  async function salvarNovoCliente(idx: number, forcar = false) {
     const nome = novoClienteNome.trim();
     if (!nome) return;
     setSalvandoCliente(true);
+    setClienteDuplicado(null);
     try {
       const cliente = await criarCliente({
         nome, cnpj: null, contato: null, cidade: null, prazo_dias: null, emite_nf: false, emite_boleto: false,
@@ -133,12 +141,14 @@ export default function AcertoExpedicao() {
         nome_contato: null, endereco: null, ramo: null, priorizacao: null, e_cliente: true,
         fase: null, temperatura: null, motivo: null, proxima_acao: null, fornecedor_atual: null,
         preco_concorrente: null, preferencia_tamanho: null, fresco_congelado: null, observacoes: null,
-      });
+      }, forcar);
       setClientes((cs) => [...cs, cliente].sort((a, b) => a.nome.localeCompare(b.nome)));
       setCriandoClienteIdx(null);
       await aoEscolherCliente(idx, cliente.id);
-    } catch {
-      setErroCarregar("Não foi possível cadastrar o cliente — confira a conexão.");
+    } catch (e) {
+      const existente = clienteDuplicadoDoErro(e);
+      if (existente) setClienteDuplicado(existente);
+      else setErroCarregar("Não foi possível cadastrar o cliente — confira a conexão.");
     } finally {
       setSalvandoCliente(false);
     }
@@ -317,11 +327,29 @@ export default function AcertoExpedicao() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setCriandoClienteIdx(null)}
+                    onClick={() => { setCriandoClienteIdx(null); setClienteDuplicado(null); }}
                     style={{ background: "none", border: "none", color: "var(--ink-muted)", fontSize: ".85rem", cursor: "pointer" }}
                   >
                     Cancelar
                   </button>
+                  {clienteDuplicado && (
+                    <div style={{ flexBasis: "100%", marginTop: 8, padding: "8px 10px", borderRadius: 8, background: "var(--warn-soft)", color: "var(--warn)", fontSize: ".82rem" }}>
+                      Já existe um cliente chamado <strong>{clienteDuplicado.nome}</strong>.{" "}
+                      <button
+                        type="button" className={styles.btnPrimary} style={{ padding: "5px 10px", fontSize: ".8rem" }}
+                        onClick={() => usarClienteExistente(idx, clienteDuplicado)}
+                      >
+                        Usar {clienteDuplicado.nome}
+                      </button>{" "}
+                      <button
+                        type="button" disabled={salvandoCliente}
+                        onClick={() => salvarNovoCliente(idx, true)}
+                        style={{ background: "none", border: "none", color: "var(--ink-muted)", fontSize: ".8rem", cursor: "pointer", textDecoration: "underline" }}
+                      >
+                        É outro — criar mesmo assim
+                      </button>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
