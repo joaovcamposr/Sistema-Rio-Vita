@@ -292,3 +292,17 @@ def test_rendimento_dos_subprodutos_no_painel_de_producao(api):
     assert all(p["rendimento"] is None or 0 <= p["rendimento"] < 1 for p in r["rendimento_subprodutos"])
     # o detalhe por lançamento continua respondendo (a consulta ganhou o cálculo por subproduto)
     assert api.get("/paineis/producao/detalhe", params={"de": "2020-01-01", "ate": str(HOJE)}).status_code == 200
+
+
+def test_residuo_vende_mas_nao_entra_no_estoque(api):
+    prods = {p["nome"]: p for p in api.get("/produtos").json()}
+    assert prods["Resíduo"]["kg_digitado"] is True
+    _, cliente_id = _ids(api)
+    r = api.post("/vendas", json={
+        "client_id": str(uuid.uuid4()), "data": str(HOJE), "cliente_id": cliente_id, "produto_id": prods["Resíduo"]["id"],
+        "quantidade_kg": 100, "preco_kg": 1.5,
+        "parcelas": [{"valor": 150, "forma_pgto": "Pix", "data_prevista": str(HOJE)}],
+    })
+    assert r.status_code == 201, r.text
+    estoque = [e["nome"] for e in api.get("/paineis/estoque").json()]
+    assert "Resíduo" not in estoque

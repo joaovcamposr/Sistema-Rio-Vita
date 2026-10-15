@@ -1141,7 +1141,7 @@ def painel_estoque(
         -- Tilápia suja não passa por Produção (vai direto da despesca pra
         -- venda), então "produzido - vendido" não representa estoque real
         -- pra ela — fica de fora desse painel
-        WHERE pr.ativo AND pr.nome NOT ILIKE '%suja%'
+        WHERE pr.ativo AND pr.nome NOT ILIKE '%suja%' AND pr.nome NOT ILIKE 'Resíduo%'
         ORDER BY pr.nome
     """), {"de": de, "ate": ate}).mappings().all()
 

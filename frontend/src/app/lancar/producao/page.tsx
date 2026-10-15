@@ -55,9 +55,11 @@ export default function RegistrarProducao() {
       .then(([lv, lp]) => {
         const comLote = lv.filter((v) => v.lote_atual !== null);
         setViveiros(comLote);
-        setProdutos(lp);
+        // resíduo só se vende, não se produz: fora do lançamento de produção
+        const produziveis = lp.filter((p) => !p.nome.startsWith("Resíduo"));
+        setProdutos(produziveis);
         if (comLote.length > 0) setViveiroId(comLote[0].id);
-        if (lp.length > 0) setProdutoId(lp[0].id);
+        if (produziveis.length > 0) setProdutoId(produziveis[0].id);
       })
       .catch(() => setErroCarregar("Sem conexão e sem dados salvos deste aparelho ainda. Conecte-se ao menos uma vez."));
   }, []);

@@ -196,7 +196,7 @@ def ler_foto_producao(
     leu, não grava nada. O lançamento de verdade é o POST /producao
     normal, um por produto, feito pela tela de conferência."""
     produtos = db.execute(
-        text("SELECT nome FROM produto WHERE ativo AND nome NOT ILIKE '%suja%' ORDER BY nome")
+        text("SELECT nome FROM produto WHERE ativo AND nome NOT ILIKE '%suja%' AND nome NOT ILIKE 'Resíduo%' ORDER BY nome")
     ).scalars().all()
     prompt = (
         "Você está lendo uma ficha impressa de produção de pescado, preenchida à mão pelo pessoal do frigorífico — "
