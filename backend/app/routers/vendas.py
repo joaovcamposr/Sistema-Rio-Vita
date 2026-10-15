@@ -1,4 +1,5 @@
 from datetime import date, timedelta
+import uuid
 from decimal import ROUND_HALF_UP, Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -10,7 +11,7 @@ from ..auth import get_current_user
 from ..db import get_db
 from ..schemas import (
     UsuarioOut, VendaEditarIn, VendaIn, VendaListaOut, VendaObservacoesIn, VendaOut,
-    VendaParcelaOut, VendaParcelaPagamentoIn, VendaParcelaPagamentoParcialIn,
+    VendaParcelaOut, VendaParcelaPagamentoIn, VendaParcelaPagamentoParcialIn, VendaPedidoIn,
 )
 
 router = APIRouter(prefix="/vendas", tags=["vendas"])
@@ -167,6 +168,79 @@ def criar_venda(body: VendaIn, db: Session = Depends(get_db), usuario: UsuarioOu
     if venda_out is None:
         raise HTTPException(500, "venda criada mas não encontrada ao reler")
     return venda_out
+
+
+def _repartir_parcelas(totais: list[Decimal], parcelas: list) -> list[list[Decimal]]:
+    """Reparte cada parcela do pedido entre os produtos, em proporção ao valor
+    de cada um, em centavos. Garante que as parcelas de CADA produto somam o
+    total dele (o resto vai pra última parcela do produto) e que o último
+    produto fica com o que sobrou de cada parcela. Devolve [produto][parcela]."""
+    centavos = Decimal("0.01")
+    total_pedido = sum(totais)
+    valores = [Decimal(str(p.valor)).quantize(centavos, rounding=ROUND_HALF_UP) for p in parcelas]
+    partes: list[list[Decimal]] = []
+    for i, t in enumerate(totais[:-1]):
+        linha = [(v * t / total_pedido).quantize(centavos, rounding=ROUND_HALF_UP) if total_pedido > 0 else Decimal(0) for v in valores]
+        linha[-1] += t - sum(linha)                      # soma exata do produto
+        partes.append(linha)
+    ultimo = [valores[j] - sum(partes[i][j] for i in range(len(partes))) for j in range(len(valores))]
+    partes.append(ultimo)
+    return partes
+
+
+@router.post("/pedido", response_model=list[VendaOut], status_code=201)
+def criar_pedido(body: VendaPedidoIn, db: Session = Depends(get_db), usuario: UsuarioOut = Depends(get_current_user)):
+    """Cria uma venda por produto (mesmo cliente, data e pedido_id) numa única
+    transação, repartindo as parcelas entre elas. Reenviar o mesmo client_id não
+    duplica nada."""
+    centavos = Decimal("0.01")
+    totais = [
+        (Decimal(str(i.quantidade_kg)) * Decimal(str(i.preco_kg))).quantize(centavos, rounding=ROUND_HALF_UP)
+        for i in body.itens
+    ]
+    partes = _repartir_parcelas(totais, body.parcelas)
+    if any(v < 0 for linha in partes for v in linha):
+        raise HTTPException(422, "pagamento não consegue ser repartido entre os produtos — confira os valores")
+
+    ids: list[int] = []
+    try:
+        for n, item in enumerate(body.itens):
+            cid = uuid.uuid5(body.client_id, f"item-{n}")
+            row = db.execute(
+                text("""
+                    INSERT INTO venda (client_id, data, cliente_id, vendedor, produto_id,
+                                        quantidade_un, quantidade_kg, preco_kg, pedido_id, criado_por)
+                    VALUES (:client_id, :data, :cliente_id, :vendedor, :produto_id,
+                            :quantidade_un, :quantidade_kg, :preco_kg, :pedido_id, :criado_por)
+                    ON CONFLICT (client_id) DO NOTHING
+                    RETURNING id
+                """),
+                {"client_id": str(cid), "data": body.data, "cliente_id": body.cliente_id, "vendedor": body.vendedor,
+                 "produto_id": item.produto_id, "quantidade_un": item.quantidade_un, "quantidade_kg": item.quantidade_kg,
+                 "preco_kg": item.preco_kg, "pedido_id": str(body.client_id), "criado_por": usuario.nome},
+            ).mappings().first()
+            if row is not None:
+                for j, p in enumerate(body.parcelas, start=1):
+                    db.execute(
+                        text("""
+                            INSERT INTO venda_parcela (venda_id, numero, valor, forma_pgto, data_prevista, data_pagamento, criado_por)
+                            VALUES (:venda_id, :numero, :valor, :forma_pgto, :data_prevista, :data_pagamento, :criado_por)
+                        """),
+                        {"venda_id": row["id"], "numero": j, "criado_por": usuario.nome, "valor": partes[n][j - 1],
+                         "forma_pgto": p.forma_pgto, "data_prevista": p.data_prevista, "data_pagamento": p.data_pagamento},
+                    )
+                ids.append(row["id"])
+            else:   # reenvio: já existe
+                ids.append(db.execute(text("SELECT id FROM venda WHERE client_id = :c"), {"c": str(cid)}).scalar())
+        db.commit()
+    except DBAPIError as exc:
+        db.rollback()
+        raise HTTPException(422, f"cliente_id/produto_id inválido ou dado fora das regras: {exc.orig}") from exc
+
+    saidas = [_buscar_venda_out(db, i) for i in ids]
+    if any(s is None for s in saidas):
+        raise HTTPException(500, "pedido criado mas não encontrado ao reler")
+    return saidas  # type: ignore[return-value]
 
 
 @router.patch("/{venda_id}/parcelas/{parcela_id}/pagamento", response_model=VendaOut)

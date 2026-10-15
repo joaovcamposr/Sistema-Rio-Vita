@@ -20,6 +20,7 @@ export type TipoLancamento =
   | "arracoamento"
   | "analise_agua"
   | "venda"
+  | "pedido_venda"
   | "expedicao"
   | "expedicao_acerto"
   | "despesa"
@@ -120,6 +121,7 @@ const ENDPOINT: Record<TipoLancamento, (payload: Record<string, unknown>) => str
   arracoamento: () => "/arracoamento",
   analise_agua: () => "/analise-agua",
   venda: () => "/vendas",
+  pedido_venda: () => "/vendas/pedido",
   expedicao: () => "/expedicoes",
   expedicao_acerto: (p) => `/expedicoes/${p.expedicao_id}/acerto`,
   despesa: () => "/despesas",

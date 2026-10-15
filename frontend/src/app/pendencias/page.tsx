@@ -20,6 +20,7 @@ const ROTULO_TIPO: Record<TipoLancamento, string> = {
   arracoamento: "Arraçoamento",
   analise_agua: "Análise de água",
   venda: "Venda",
+  pedido_venda: "Venda (vários produtos)",
   expedicao: "Expedição",
   expedicao_acerto: "Acerto de expedição",
   despesa: "Despesa",

@@ -306,3 +306,40 @@ def test_residuo_vende_mas_nao_entra_no_estoque(api):
     assert r.status_code == 201, r.text
     estoque = [e["nome"] for e in api.get("/paineis/estoque").json()]
     assert "Resíduo" not in estoque
+
+
+def test_pedido_com_varios_produtos_reparte_o_pagamento(api, produto_id):
+    prods = {p["nome"]: p for p in api.get("/produtos").json()}
+    outro = prods["Tilápia limpa"]["id"]
+    _, cliente_id = _ids(api)
+    prevista = HOJE + timedelta(days=14)
+    corpo = {
+        "client_id": str(uuid.uuid4()), "data": str(HOJE), "cliente_id": cliente_id, "vendedor": "Batista",
+        "itens": [
+            {"produto_id": produto_id, "quantidade_un": 20, "quantidade_kg": 10, "preco_kg": 50},        # R$ 500
+            {"produto_id": outro, "quantidade_kg": 7.5, "preco_kg": 33.33},                              # R$ 249,98 (249,975)
+        ],
+        "parcelas": [
+            {"valor": 300, "forma_pgto": "Pix", "data_prevista": str(HOJE), "data_pagamento": str(HOJE)},
+            {"valor": 449.98, "forma_pgto": "Boleto", "data_prevista": str(prevista)},
+        ],
+    }
+    r = api.post("/vendas/pedido", json=corpo)
+    assert r.status_code == 201, r.text
+    vendas = r.json()
+    assert len(vendas) == 2
+    for v, esperado in zip(vendas, (500.0, 249.98)):
+        assert abs(v["valor_total"] - esperado) < 0.011
+        assert abs(sum(p["valor"] for p in v["parcelas"]) - v["valor_total"]) < 0.005     # parcelas de cada produto somam o total dele
+    # as parcelas do pedido inteiro somam o que foi pago/cobrado
+    assert abs(sum(p["valor"] for v in vendas for p in v["parcelas"]) - 749.98) < 0.005
+    assert abs(sum(v["valor_recebido"] for v in vendas) - 300) < 0.011
+
+    # reenviar o mesmo pedido (retry offline) não duplica
+    assert api.post("/vendas/pedido", json=corpo).status_code == 201
+    lista = api.get("/vendas", params={"de": str(HOJE), "ate": str(HOJE), "limite": 5000}).json()
+    assert len([v for v in lista if v["id"] in {x["id"] for x in vendas}]) == 2
+
+    # soma das parcelas diferente do total do pedido é recusada
+    ruim = {**corpo, "client_id": str(uuid.uuid4()), "parcelas": [{"valor": 100, "forma_pgto": "Pix", "data_prevista": str(HOJE)}]}
+    assert api.post("/vendas/pedido", json=ruim).status_code == 422

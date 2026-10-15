@@ -584,6 +584,29 @@ class VendaIn(BaseModel):
         return self
 
 
+class VendaItemPedidoIn(BaseModel):
+    produto_id: int
+    quantidade_un: float | None = Field(default=None, ge=0)
+    quantidade_kg: float = Field(gt=0)
+    preco_kg: float = Field(ge=0)
+
+
+class VendaPedidoIn(BaseModel):
+    """Venda de vários produtos pro mesmo cliente de uma vez. O pagamento
+    (parcelas) vale pro pedido inteiro e é repartido entre os produtos."""
+    client_id: uuid.UUID
+    data: date
+    cliente_id: int | None = None
+    vendedor: str | None = None
+    itens: list[VendaItemPedidoIn] = Field(min_length=1)
+    parcelas: list[VendaParcelaIn] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def parcelas_batem_total(self) -> "VendaPedidoIn":
+        _validar_soma_parcelas(self.parcelas, sum(i.quantidade_kg * i.preco_kg for i in self.itens))
+        return self
+
+
 class VendaEditarIn(BaseModel):
     data: date
     cliente_id: int | None = None

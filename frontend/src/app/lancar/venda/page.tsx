@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { listarClientes, listarProdutos, type Cliente, type Produto, type VendaParcelaEntrada } from "@/lib/api";
 import { listarPrecosCliente } from "@/lib/cadastros";
@@ -8,11 +8,27 @@ import { enfileirar } from "@/lib/offline-queue";
 import ParcelasEditor, { parcelaUnicaAVista } from "@/components/ParcelasEditor";
 import styles from "../form.module.css";
 
+// data local, não UTC: depois das 21h em Brasília toISOString() já é "amanhã"
 function hojeISO(): string {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 function nf(v: number, casas = 2): string {
   return v.toLocaleString("pt-BR", { minimumFractionDigits: casas, maximumFractionDigits: casas });
+}
+
+/** Uma linha do pedido: um produto, com sua quantidade e preço. */
+interface ItemVenda {
+  chave: number;
+  produtoId: number | null;
+  quantidade: string;
+  preco: string;
+  precoEditado: boolean; // true = o operador digitou o preço (não sobrescrever pelo preço do cliente)
+}
+
+function kgDoItem(item: ItemVenda, produto: Produto | undefined): number {
+  const qtd = parseFloat(item.quantidade.replace(",", ".")) || 0;
+  return produto?.kg_digitado ? qtd : qtd * (produto?.fator_kg ?? 1);
 }
 
 export default function RegistrarVenda() {
@@ -24,9 +40,9 @@ export default function RegistrarVenda() {
 
   const [data, setData] = useState(hojeISO());
   const [clienteId, setClienteId] = useState<number | null>(null);
-  const [produtoId, setProdutoId] = useState<number | null>(null);
-  const [quantidade, setQuantidade] = useState("");
-  const [preco, setPreco] = useState("");
+  const proximaChave = useRef(2);
+  const [itens, setItens] = useState<ItemVenda[]>([{ chave: 1, produtoId: null, quantidade: "", preco: "", precoEditado: false }]);
+  const [precosCliente, setPrecosCliente] = useState<Record<number, number>>({});
   const [parcelas, setParcelas] = useState<VendaParcelaEntrada[]>(() => parcelaUnicaAVista(hojeISO(), 0));
   const [parcelasBatem, setParcelasBatem] = useState(true);
   const [resetKey, setResetKey] = useState(0);
@@ -38,7 +54,7 @@ export default function RegistrarVenda() {
       .then(([cs, ps]) => {
         setClientes(cs);
         setProdutos(ps);
-        if (ps.length > 0) setProdutoId(ps[0].id);
+        if (ps.length > 0) setItens((its) => its.map((it) => (it.produtoId === null ? { ...it, produtoId: ps[0].id } : it)));
         // volta de "Cadastrar cliente" com o cliente recém-criado já selecionado
         const clienteCriado = searchParams.get("clienteId");
         if (clienteCriado) setClienteId(Number(clienteCriado));
@@ -47,14 +63,17 @@ export default function RegistrarVenda() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // preços combinados com o cliente, de todos os produtos de uma vez
   useEffect(() => {
-    if (!clienteId || !produtoId) return;
+    if (!clienteId) {
+      setPrecosCliente({});
+      return;
+    }
     let cancelado = false;
     listarPrecosCliente(clienteId)
       .then((precos) => {
         if (cancelado) return;
-        const p = precos.find((pp) => pp.produto_id === produtoId);
-        if (p && p.preco > 0) setPreco(String(p.preco));
+        setPrecosCliente(Object.fromEntries(precos.filter((p) => p.preco > 0).map((p) => [p.produto_id, p.preco])));
       })
       .catch(() => {
         /* sem preço cadastrado — operador digita na mão */
@@ -62,32 +81,66 @@ export default function RegistrarVenda() {
     return () => {
       cancelado = true;
     };
-  }, [clienteId, produtoId]);
+  }, [clienteId]);
 
-  const produto = useMemo(() => produtos.find((p) => p.id === produtoId) ?? null, [produtos, produtoId]);
-  const qtdNum = parseFloat(quantidade.replace(",", ".")) || 0;
-  const precoNum = parseFloat(preco.replace(",", ".")) || 0;
-  const kg = produto?.kg_digitado ? qtdNum : qtdNum * (produto?.fator_kg ?? 1);
-  const total = kg * precoNum;
+  // aplica o preço do cliente nos itens cujo preço o operador ainda não digitou
+  useEffect(() => {
+    setItens((its) =>
+      its.map((it) => {
+        if (it.precoEditado || it.produtoId === null) return it;
+        const p = precosCliente[it.produtoId];
+        return p !== undefined ? { ...it, preco: String(p) } : it;
+      })
+    );
+  }, [precosCliente]);
 
-  const podeSalvar = produto !== null && qtdNum > 0 && precoNum >= 0 && parcelasBatem && !enviando;
+  const linhas = useMemo(
+    () =>
+      itens.map((it) => {
+        const produto = produtos.find((p) => p.id === it.produtoId);
+        const kg = kgDoItem(it, produto);
+        const precoNum = parseFloat(it.preco.replace(",", ".")) || 0;
+        const qtdNum = parseFloat(it.quantidade.replace(",", ".")) || 0;
+        return { it, produto, kg, precoNum, qtdNum, total: kg * precoNum };
+      }),
+    [itens, produtos]
+  );
+  const totalPedido = linhas.reduce((s, l) => s + l.total, 0);
+  const itensValidos = linhas.every((l) => l.produto && l.qtdNum > 0 && l.precoNum >= 0);
+  const podeSalvar = itensValidos && parcelasBatem && !enviando;
+
+  function atualizarItem(chave: number, mudanca: Partial<ItemVenda>) {
+    setItens((its) => its.map((it) => (it.chave === chave ? { ...it, ...mudanca } : it)));
+  }
+
+  function trocarProduto(chave: number, produtoId: number) {
+    const p = precosCliente[produtoId];
+    atualizarItem(chave, { produtoId, precoEditado: false, ...(p !== undefined ? { preco: String(p) } : {}) });
+  }
+
+  function adicionarProduto() {
+    const emUso = new Set(itens.map((i) => i.produtoId));
+    const livre = produtos.find((p) => !emUso.has(p.id)) ?? produtos[0];
+    const preco = livre && precosCliente[livre.id] !== undefined ? String(precosCliente[livre.id]) : "";
+    setItens((its) => [...its, { chave: proximaChave.current++, produtoId: livre?.id ?? null, quantidade: "", preco, precoEditado: false }]);
+  }
 
   async function salvar() {
-    if (!produto) return;
     setEnviando(true);
     try {
-      await enfileirar("venda", {
+      await enfileirar("pedido_venda", {
         data,
         cliente_id: clienteId,
-        produto_id: produto.id,
-        quantidade_un: produto.kg_digitado ? null : qtdNum,
-        quantidade_kg: kg,
-        preco_kg: precoNum,
+        itens: linhas.map((l) => ({
+          produto_id: l.produto!.id,
+          quantidade_un: l.produto!.kg_digitado ? null : l.qtdNum,
+          quantidade_kg: l.kg,
+          preco_kg: l.precoNum,
+        })),
         parcelas,
       });
-      setToast("Venda registrada");
-      setQuantidade("");
-      setPreco("");
+      setToast(linhas.length > 1 ? `Venda registrada (${linhas.length} produtos)` : "Venda registrada");
+      setItens([{ chave: proximaChave.current++, produtoId: produtos[0]?.id ?? null, quantidade: "", preco: "", precoEditado: false }]);
       setResetKey((k) => k + 1);
       setTimeout(() => setToast(null), 2200);
     } finally {
@@ -137,59 +190,99 @@ export default function RegistrarVenda() {
           </button>
         </div>
 
-        <div className={styles.field}>
-          <label>Produto</label>
-          <div className={styles.chips}>
-            {produtos.map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                className={styles.chip}
-                aria-pressed={produtoId === p.id}
-                onClick={() => setProdutoId(p.id)}
-              >
-                {p.nome}
-              </button>
-            ))}
+        {linhas.map((l, idx) => (
+          <div
+            key={l.it.chave}
+            style={{ border: "1px solid var(--rule)", borderRadius: 12, padding: 12, marginBottom: 12, background: "var(--surface)" }}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+              <strong style={{ fontSize: "0.85rem" }}>{linhas.length > 1 ? `Produto ${idx + 1}` : "Produto"}</strong>
+              {linhas.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => setItens((its) => its.filter((i) => i.chave !== l.it.chave))}
+                  style={{ background: "none", border: "none", color: "var(--crit)", fontWeight: 700, fontSize: "0.8rem", cursor: "pointer" }}
+                >
+                  Remover
+                </button>
+              )}
+            </div>
+
+            <div className={styles.chips} style={{ marginBottom: 10 }}>
+              {produtos.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  className={styles.chip}
+                  aria-pressed={l.it.produtoId === p.id}
+                  onClick={() => trocarProduto(l.it.chave, p.id)}
+                >
+                  {p.nome}
+                </button>
+              ))}
+            </div>
+
+            <div className={styles.field}>
+              <label>
+                {l.produto?.kg_digitado
+                  ? "Quantidade (Kg)"
+                  : `Quantidade (${l.produto?.unidade_embalagem === "pacote" ? "pacotes" : "bandejas"})`}
+              </label>
+              <input
+                className={`${styles.inp} ${styles.num}`}
+                type="number"
+                inputMode={l.produto?.kg_digitado ? "decimal" : "numeric"}
+                placeholder="0"
+                value={l.it.quantidade}
+                onChange={(e) => atualizarItem(l.it.chave, { quantidade: e.target.value })}
+              />
+            </div>
+
+            <div className={styles.field}>
+              <label>Preço por Kg</label>
+              <input
+                className={`${styles.inp} ${styles.num}`}
+                type="number"
+                inputMode="decimal"
+                placeholder="0,00"
+                value={l.it.preco}
+                onChange={(e) => atualizarItem(l.it.chave, { preco: e.target.value, precoEditado: true })}
+              />
+            </div>
+
+            <div className={styles.derived}>
+              <span className={styles.l}>{nf(l.kg, 1)} Kg × R$ {nf(l.precoNum)}</span>
+              <span className={styles.v}>R$ {nf(l.total)}</span>
+            </div>
           </div>
-        </div>
+        ))}
 
-        <div className={styles.field}>
-          <label>{produto?.kg_digitado ? "Quantidade (Kg)" : `Quantidade (${produto?.unidade_embalagem === "pacote" ? "pacotes" : "bandejas"})`}</label>
-          <input
-            className={`${styles.inp} ${styles.num}`}
-            type="number"
-            inputMode={produto?.kg_digitado ? "decimal" : "numeric"}
-            placeholder="0"
-            value={quantidade}
-            onChange={(e) => setQuantidade(e.target.value)}
-          />
-        </div>
+        <button
+          type="button"
+          onClick={adicionarProduto}
+          disabled={produtos.length === 0}
+          style={{
+            width: "100%", padding: "11px 14px", borderRadius: 11, border: "1px dashed var(--rule-strong)",
+            background: "none", color: "var(--brand-deep)", fontWeight: 700, fontSize: "0.9rem", cursor: "pointer", marginBottom: 14,
+          }}
+        >
+          + Adicionar outro produto nesta venda
+        </button>
 
-        <div className={styles.field}>
-          <label>Preço por Kg</label>
-          <input
-            className={`${styles.inp} ${styles.num}`}
-            type="number"
-            inputMode="decimal"
-            placeholder="0,00"
-            value={preco}
-            onChange={(e) => setPreco(e.target.value)}
-          />
-        </div>
-
-        <div className={styles.derived}>
-          <span className={styles.l}>{nf(kg, 1)} Kg × R$ {nf(precoNum)}</span>
-          <span className={styles.v}>R$ {nf(total)}</span>
-        </div>
+        {linhas.length > 1 && (
+          <div className={styles.derived}>
+            <span className={styles.l}>Total da venda ({linhas.length} produtos)</span>
+            <span className={styles.v}>R$ {nf(totalPedido)}</span>
+          </div>
+        )}
 
         <div className={styles.field}>
           <label>Pagamento</label>
           <ParcelasEditor
             key={resetKey}
             dataBase={data}
-            valorTotal={total}
-            parcelasIniciais={parcelaUnicaAVista(data, total)}
+            valorTotal={totalPedido}
+            parcelasIniciais={parcelaUnicaAVista(data, totalPedido)}
             onChange={(ps, bate) => { setParcelas(ps); setParcelasBatem(bate); }}
           />
         </div>
@@ -197,7 +290,7 @@ export default function RegistrarVenda() {
 
       <div className={styles.savebar}>
         <button className={styles.btnPrimary} disabled={!podeSalvar} onClick={salvar}>
-          {enviando ? "Salvando…" : "Salvar venda"}
+          {enviando ? "Salvando…" : linhas.length > 1 ? "Salvar venda" : "Salvar venda"}
         </button>
       </div>
 
