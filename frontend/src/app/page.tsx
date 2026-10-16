@@ -62,6 +62,10 @@ export default function Home() {
           <span className={styles.ico}>📦</span>
           <span>Ajuste de estoque</span>
         </Link>
+        <Link href="/lancar/lancamentos" className={styles.tile}>
+          <span className={styles.ico}>🗂️</span>
+          <span>Lançamentos realizados</span>
+        </Link>
         <Link href="/lancar/recebimentos" className={styles.tile}>
           <span className={styles.ico}>💵</span>
           <span>Recebimentos</span>

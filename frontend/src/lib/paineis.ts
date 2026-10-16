@@ -103,6 +103,7 @@ export interface ProducaoDetalheLinha {
   rendimento: number | null;
   excluido_em: string | null;
   excluido_por: string | null;
+  turno?: string | null;
 }
 
 export interface EstoqueItem {

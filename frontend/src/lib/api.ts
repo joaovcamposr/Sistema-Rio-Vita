@@ -250,7 +250,7 @@ export async function restaurarArracoamento(id: number): Promise<void> {
 
 export async function editarProducao(id: number, body: {
   data: string; produto_id: number; quantidade_embalagens: number | null; quantidade_kg: number | null;
-  lote_id: number | null; data_despesca: string | null;
+  lote_id: number | null; data_despesca: string | null; turno?: "manha" | "tarde" | null;
 }): Promise<void> {
   const r = await fetch(`${apiBase()}/producao/${id}`, {
     method: "PATCH",
