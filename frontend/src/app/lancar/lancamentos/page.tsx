@@ -100,12 +100,13 @@ export default function LancamentosRealizados() {
               { chave: "kg", rotulo: "Peso (kg)", tipo: "number" as const, valor: String(r.quantidade_kg) },
             ]
           : [{ chave: "un", rotulo: "Embalagens", tipo: "number" as const, valor: r.quantidade_embalagens?.toString() ?? "" }]),
-        { chave: "turno", rotulo: "Turno", tipo: "select", valor: (r as { turno?: string | null }).turno ?? "",
+        { chave: "turno", rotulo: "Turno", tipo: "select", valor: r.turno ?? "",
           opcoes: [{ valor: "", rotulo: "—" }, { valor: "manha", rotulo: "Manhã" }, { valor: "tarde", rotulo: "Tarde" }] },
       ];
       return {
         chave: `producao-${r.id}`, tipo: "producao" as const, id: r.id, data: r.data, titulo: r.produto_nome,
         detalhe: `${nf(r.quantidade_kg)} kg${r.quantidade_embalagens ? ` · ${nf(r.quantidade_embalagens, 0)} un` : ""}`
+          + (r.turno ? ` · turno da ${r.turno === "manha" ? "manhã" : "tarde"}` : "")
           + (r.lote_codigo ? ` · ${r.lote_codigo}` : "") + (r.viveiro_codigo ? ` (viveiro ${r.viveiro_codigo})` : ""),
         campos,
         salvar: (v) => editarProducao(r.id, {
