@@ -7,6 +7,7 @@ import { listarFornecedoresRacao, type FornecedorRacao } from "@/lib/cadastros";
 import { enfileirar } from "@/lib/offline-queue";
 import styles from "../form.module.css";
 
+import HistoricoLancamentos from "@/components/HistoricoLancamentos";
 function hojeISO(): string {
   return new Date().toISOString().slice(0, 10);
 }
@@ -156,6 +157,7 @@ export default function RegistrarArracoamento() {
             />
           </div>
         ))}
+        <HistoricoLancamentos tipos={["arracoamento"]} titulo="Arraçoamentos lançados" />
       </div>
 
       <div className={styles.savebar}>

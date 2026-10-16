@@ -6,6 +6,7 @@ import { encerrarLote, listarViveiros, type Viveiro } from "@/lib/api";
 import { enfileirar } from "@/lib/offline-queue";
 import styles from "../form.module.css";
 
+import HistoricoLancamentos from "@/components/HistoricoLancamentos";
 const DESTINOS = [
   { valor: "file", rotulo: "Filé" },
   { valor: "postas", rotulo: "Postas" },
@@ -191,6 +192,7 @@ export default function RegistrarDespesca() {
             )}
           </div>
         )}
+        <HistoricoLancamentos tipos={["despesca"]} titulo="Despescas lançadas" />
       </div>
 
       <div className={styles.savebar}>

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { enfileirar } from "@/lib/offline-queue";
 import styles from "../form.module.css";
 
+import HistoricoLancamentos from "@/components/HistoricoLancamentos";
 const CATEGORIAS = ["Abastecimento", "Alimentação", "Manutenção", "Material de escritório", "Outro"];
 const FORMAS = ["Dinheiro", "Pix", "Cartão"];
 
@@ -100,6 +101,7 @@ export default function RegistrarDespesa() {
           <label>Observação (opcional)</label>
           <input className={styles.inp} value={observacao} onChange={(e) => setObservacao(e.target.value)} />
         </div>
+        <HistoricoLancamentos tipos={["despesa"]} titulo="Despesas lançadas" />
       </div>
 
       <div className={styles.savebar}>

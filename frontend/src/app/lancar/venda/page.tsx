@@ -8,6 +8,7 @@ import { enfileirar } from "@/lib/offline-queue";
 import ParcelasEditor, { parcelaUnicaAVista } from "@/components/ParcelasEditor";
 import styles from "../form.module.css";
 
+import HistoricoLancamentos from "@/components/HistoricoLancamentos";
 // data local, não UTC: depois das 21h em Brasília toISOString() já é "amanhã"
 function hojeISO(): string {
   const d = new Date();
@@ -301,6 +302,7 @@ export default function RegistrarVenda() {
             onChange={(ps, bate) => { setParcelas(ps); setParcelasBatem(bate); }}
           />
         </div>
+        <HistoricoLancamentos tipos={["venda"]} titulo="Vendas lançadas" />
       </div>
 
       <div className={styles.savebar}>

@@ -14,6 +14,7 @@ import {
 import { enfileirar } from "@/lib/offline-queue";
 import styles from "../form.module.css";
 
+import HistoricoLancamentos from "@/components/HistoricoLancamentos";
 // data local, não UTC: depois das 21h em Brasília toISOString() já é "amanhã"
 function hojeISO(): string {
   const d = new Date();
@@ -323,6 +324,7 @@ export default function RegistrarProducao() {
             <span className={styles.v}>{pct(rendimento)}</span>
           </div>
         )}
+        <HistoricoLancamentos tipos={["producao"]} titulo="Produção lançada" />
       </div>
 
       <div className={styles.savebar}>

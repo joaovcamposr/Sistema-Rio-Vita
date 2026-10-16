@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import {
   editarArracoamento, editarBiometria, editarDespesca, editarProducao, editarRepicagem,
   excluirArracoamento, excluirBiometria, excluirDespesca, excluirProducao, excluirRepicagem, excluirVenda,
@@ -12,9 +11,9 @@ import { listarChegadasRacao, listarDespesasSoltas } from "@/lib/cadastros";
 import {
   listarAjustesEstoque, painelArracoamento, painelBiometria, painelDespesca, painelProducaoDetalhe, painelRepicagem,
 } from "@/lib/paineis";
-import styles from "../form.module.css";
+import styles from "@/app/lancar/form.module.css";
 
-type Tipo =
+export type Tipo =
   | "producao" | "venda" | "despesca" | "repicagem" | "arracoamento" | "biometria"
   | "despesa" | "chegada_racao" | "ajuste_estoque";
 
@@ -66,11 +65,13 @@ function moeda(v: number): string {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
-export default function LancamentosRealizados() {
-  const router = useRouter();
+/** Histórico dos lançamentos de uma tela de Lançar: lista o que já foi lançado (últimos dias),
+ * permite corrigir/excluir ali mesmo, ou levar pra tela onde o tipo é ajustado. */
+export default function HistoricoLancamentos({ tipos, titulo = "Lançamentos recentes" }: { tipos: Tipo[]; titulo?: string }) {
   const [de, setDe] = useState(diasAtras(6));
   const [ate, setAte] = useState(dataLocalISO(new Date()));
   const [filtro, setFiltro] = useState<Tipo | "todos">("todos");
+  const [aberto, setAberto] = useState(true);
   const [itens, setItens] = useState<Lancamento[] | null>(null);
   const [falhas, setFalhas] = useState<string[]>([]);
   const [editando, setEditando] = useState<string | null>(null);
@@ -88,9 +89,14 @@ export default function LancamentosRealizados() {
     const prod = new Map(produtos.map((p) => [p.id, p]));
     const grupos: Promise<Lancamento[]>[] = [];
     const nomes: string[] = [];
-    const add = (nome: string, p: Promise<Lancamento[]>) => { nomes.push(nome); grupos.push(p); };
+    // só busca os tipos que esta tela mostra
+    const add = (tipo: Tipo, nome: string, p: () => Promise<Lancamento[]>) => {
+      if (!tipos.includes(tipo)) return;
+      nomes.push(nome);
+      grupos.push(p());
+    };
 
-    add("Produção", painelProducaoDetalhe(de, ate).then((rs) => rs.map((r) => {
+    add("producao", "Produção", () => painelProducaoDetalhe(de, ate).then((rs) => rs.map((r) => {
       const digitado = prod.get(r.produto_id)?.kg_digitado ?? true;
       const campos: Campo[] = [
         { chave: "data", rotulo: "Data", tipo: "date", valor: r.data },
@@ -119,14 +125,14 @@ export default function LancamentosRealizados() {
       };
     })));
 
-    add("Vendas", listarVendas({ de, ate }).then((rs) => rs.filter((v) => !v.excluido_em).map((v) => ({
+    add("venda", "Vendas", () => listarVendas({ de, ate }).then((rs) => rs.filter((v) => !v.excluido_em).map((v) => ({
       chave: `venda-${v.id}`, tipo: "venda" as const, id: v.id, data: v.data, titulo: `${v.produto_nome} → ${v.cliente_nome}`,
       detalhe: `${v.quantidade_un !== null ? `${nf(v.quantidade_un, 0)} un · ` : ""}${nf(v.quantidade_kg)} kg · ${moeda(v.valor_total)} · ${v.situacao}`,
       link: `/lancar/recebimentos?editar=${v.id}`,
       excluir: () => excluirVenda(v.id),
     }))));
 
-    add("Despesca", painelDespesca(de, ate).then((rs) => rs.map((r) => ({
+    add("despesca", "Despesca", () => painelDespesca(de, ate).then((rs) => rs.map((r) => ({
       chave: `despesca-${r.id}`, tipo: "despesca" as const, id: r.id, data: r.data,
       titulo: `Despesca ${r.destino.replace("_", " ")} — viveiro ${r.viveiro_codigo}`,
       detalhe: `${nf(r.quantidade_un, 0)} peixes · ${nf(r.peso_medio_g, 0)} g médio · ${nf(r.peso_total_kg)} kg · ${r.lote_codigo}`,
@@ -141,7 +147,7 @@ export default function LancamentosRealizados() {
       excluir: () => excluirDespesca(r.id),
     }))));
 
-    add("Repicagem", painelRepicagem(de, ate).then((rs) => rs.map((r) => ({
+    add("repicagem", "Repicagem", () => painelRepicagem(de, ate).then((rs) => rs.map((r) => ({
       chave: `repicagem-${r.id}`, tipo: "repicagem" as const, id: r.id, data: r.data,
       titulo: `Repicagem ${r.viveiro_origem_codigo} → ${r.viveiro_destino_codigo}`,
       detalhe: `${nf(r.quantidade, 0)} peixes · ${nf(r.peso_medio_g, 0)} g · ${r.lote_origem_codigo} → ${r.lote_destino_codigo}`,
@@ -154,7 +160,7 @@ export default function LancamentosRealizados() {
       excluir: () => excluirRepicagem(r.id),
     }))));
 
-    add("Arraçoamento", painelArracoamento(de, ate).then((rs) => rs.map((r) => ({
+    add("arracoamento", "Arraçoamento", () => painelArracoamento(de, ate).then((rs) => rs.map((r) => ({
       chave: `arracoamento-${r.id}`, tipo: "arracoamento" as const, id: r.id, data: r.data,
       titulo: `Arraçoamento — viveiro ${r.viveiro_codigo}${r.trato ? ` (${r.trato})` : ""}`,
       detalhe: `${nf(r.sacos)} sacos${r.tipo_racao_codigo ? ` · ${r.tipo_racao_codigo}` : " · sem tipo de ração"} · ${r.lote_codigo}`,
@@ -166,7 +172,7 @@ export default function LancamentosRealizados() {
       excluir: () => excluirArracoamento(r.id),
     }))));
 
-    add("Biometria", painelBiometria(de, ate).then((rs) => rs.map((r) => ({
+    add("biometria", "Biometria", () => painelBiometria(de, ate).then((rs) => rs.map((r) => ({
       chave: `biometria-${r.id}`, tipo: "biometria" as const, id: r.id, data: r.data,
       titulo: `Biometria — viveiro ${r.viveiro_codigo}`, detalhe: `${nf(r.peso_medio_g, 0)} g · ${r.lote_codigo}`,
       campos: [
@@ -177,20 +183,20 @@ export default function LancamentosRealizados() {
       excluir: () => excluirBiometria(r.id),
     }))));
 
-    add("Despesas", listarDespesasSoltas(de, ate).then((rs) => rs.filter((d) => !d.excluido_em).map((d) => ({
+    add("despesa", "Despesas", () => listarDespesasSoltas(de, ate).then((rs) => rs.filter((d) => !d.excluido_em).map((d) => ({
       chave: `despesa-${d.id}`, tipo: "despesa" as const, id: d.id, data: d.data,
       titulo: `Despesa — ${d.categoria}`, detalhe: `${moeda(d.valor)} · ${d.forma_pgto}${d.observacao ? ` · ${d.observacao}` : ""}`,
       link: "/painel/despesas",
     }))));
 
-    add("Chegadas de ração", listarChegadasRacao(de, ate).then((rs) => rs.filter((c) => !c.excluido_em).map((c) => ({
+    add("chegada_racao", "Chegadas de ração", () => listarChegadasRacao(de, ate).then((rs) => rs.filter((c) => !c.excluido_em).map((c) => ({
       chave: `chegada-${c.id}`, tipo: "chegada_racao" as const, id: c.id, data: c.data,
       titulo: `Chegada de ração — ${c.fornecedor_nome}`,
       detalhe: c.itens.map((i) => `${nf(i.quantidade_sacos, 0)} sacos ${i.tipo_racao_codigo}`).join(" · "),
       link: "/painel/estoque-racao",
     }))));
 
-    add("Ajustes de estoque", listarAjustesEstoque(de, ate).then((rs) => rs.filter((a) => !a.excluido_em).map((a) => ({
+    add("ajuste_estoque", "Ajustes de estoque", () => listarAjustesEstoque(de, ate).then((rs) => rs.filter((a) => !a.excluido_em).map((a) => ({
       chave: `ajuste-${a.id}`, tipo: "ajuste_estoque" as const, id: a.id, data: a.data,
       titulo: `Ajuste de estoque — ${a.produto_nome}`,
       detalhe: `${a.quantidade_embalagens !== null ? `${nf(a.quantidade_embalagens, 0)} un` : ""}${a.quantidade_kg !== null ? ` · ${nf(a.quantidade_kg)} kg` : ""}${a.observacao ? ` · ${a.observacao}` : ""}`,
@@ -207,12 +213,12 @@ export default function LancamentosRealizados() {
     todos.sort((a, b) => (a.data === b.data ? b.id - a.id : a.data < b.data ? 1 : -1));
     setFalhas(erros);
     setItens(todos);
-  }, [de, ate, produtos]);
+  }, [de, ate, produtos, tipos]);
 
   useEffect(() => {
-    if (produtos.length === 0) return;
+    if (!aberto || produtos.length === 0) return;
     carregar();
-  }, [carregar, produtos.length]);
+  }, [carregar, produtos.length, aberto]);
 
   const visiveis = useMemo(() => (itens ?? []).filter((l) => filtro === "todos" || l.tipo === filtro), [itens, filtro]);
   const contagem = useMemo(() => {
@@ -257,16 +263,16 @@ export default function LancamentosRealizados() {
   }
 
   return (
-    <div className={styles.page} style={{ maxWidth: 900 }}>
-      <div className={styles.appbar}>
-        <button className={styles.backbtn} aria-label="Voltar" onClick={() => router.push("/")}>←</button>
-        <div>
-          <h1>Lançamentos realizados</h1>
-          <div className={styles.sub}>Veja tudo que foi lançado e ajuste por aqui</div>
-        </div>
-      </div>
-
-      <div className={styles.body}>
+    <section style={{ marginTop: 28, paddingTop: 16, borderTop: "2px solid var(--rule)" }}>
+      <button
+        type="button"
+        onClick={() => setAberto((a) => !a)}
+        style={{ background: "none", border: "none", padding: 0, fontWeight: 800, fontSize: "1rem", cursor: "pointer", color: "var(--ink)" }}
+      >
+        {aberto ? "▾" : "▸"} {titulo}
+      </button>
+      {aberto && (
+      <div style={{ marginTop: 12 }}>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
           <div className={styles.field} style={{ margin: 0 }}>
             <label>De</label>
@@ -278,6 +284,7 @@ export default function LancamentosRealizados() {
           </div>
         </div>
 
+        {tipos.length > 1 && (
         <div className={styles.chips} style={{ marginBottom: 14 }}>
           <button type="button" className={styles.chip} aria-pressed={filtro === "todos"} onClick={() => setFiltro("todos")}>
             Todos ({itens?.length ?? "…"})
@@ -288,6 +295,7 @@ export default function LancamentosRealizados() {
             </button>
           ))}
         </div>
+        )}
 
         {msg && <div className={styles.toast} style={{ position: "static", marginBottom: 10 }}>{msg}</div>}
         {falhas.length > 0 && (
@@ -351,6 +359,7 @@ export default function LancamentosRealizados() {
           </div>
         ))}
       </div>
-    </div>
+      )}
+    </section>
   );
 }
