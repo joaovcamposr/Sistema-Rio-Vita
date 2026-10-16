@@ -114,6 +114,8 @@ export interface VendaLista {
   excluido_em: string | null;
   excluido_por: string | null;
   parcelas: VendaParcela[];
+  criado_por?: string | null;
+  criado_em?: string | null;
 }
 
 function apiBase(): string {
@@ -151,6 +153,10 @@ async function cachedGet<T>(cacheKey: string, path: string): Promise<T> {
     throw erroDeRede;
   }
 }
+
+/** Históricos de lançamentos sem lista própria (água, povoamento, expedição, acerto) — com quem lançou. */
+export const historicoLancamentos = <T,>(tipo: "agua" | "povoamento" | "expedicao" | "acerto", de: string, ate: string) =>
+  cachedGet<T[]>(`cache:historico:${tipo}:${de}:${ate}`, `/historico/${tipo}?de=${de}&ate=${ate}`);
 
 export const listarViveiros = () => cachedGet<Viveiro[]>("cache:viveiros", "/viveiros");
 export const listarViveirosTodos = () => cachedGet<ViveiroAtivo[]>("cache:viveiros-todos", "/viveiros/todos");

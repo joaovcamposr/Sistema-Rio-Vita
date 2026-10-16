@@ -40,6 +40,8 @@ export interface ChegadaRacao {
   itens: ChegadaRacaoItem[];
   excluido_em: string | null;
   excluido_por: string | null;
+  criado_por?: string | null;
+  criado_em?: string | null;
 }
 
 export interface ClienteDetalhe {
@@ -275,6 +277,7 @@ export interface Despesa {
   criado_em: string;
   excluido_em: string | null;
   excluido_por: string | null;
+  criado_por?: string | null;
 }
 export const listarDespesasExpedicao = (expedicaoId: number) =>
   cachedGet<Despesa[]>(`cache:despesas-expedicao:${expedicaoId}`, `/despesas?expedicao_id=${expedicaoId}`);

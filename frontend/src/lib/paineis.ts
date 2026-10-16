@@ -104,6 +104,8 @@ export interface ProducaoDetalheLinha {
   excluido_em: string | null;
   excluido_por: string | null;
   turno?: string | null;
+  criado_por?: string | null;
+  criado_em?: string | null;
 }
 
 export interface EstoqueItem {
@@ -137,6 +139,7 @@ export interface AjusteEstoque {
   criado_em: string;
   excluido_em: string | null;
   excluido_por: string | null;
+  criado_por?: string | null;
 }
 
 export interface MortalidadeLote {
@@ -556,6 +559,7 @@ export interface DespescaDetalhe {
   criado_em: string;
   excluido_em: string | null;
   excluido_por: string | null;
+  criado_por?: string | null;
 }
 
 export const painelDespesca = (de?: string, ate?: string, excluidos?: boolean) => {
@@ -582,6 +586,8 @@ export interface RepicagemDetalhe {
   lote_origem_fechado: boolean;
   excluido_em: string | null;
   excluido_por: string | null;
+  criado_por?: string | null;
+  criado_em?: string | null;
 }
 
 export const painelRepicagem = (de?: string, ate?: string, excluidos?: boolean) => {
@@ -607,6 +613,7 @@ export interface ArracoamentoDetalhe {
   criado_em: string;
   excluido_em: string | null;
   excluido_por: string | null;
+  criado_por?: string | null;
 }
 
 export const painelArracoamento = (de?: string, ate?: string, excluidos?: boolean) => {
@@ -629,6 +636,7 @@ export interface BiometriaDetalhe {
   criado_em: string;
   excluido_em: string | null;
   excluido_por: string | null;
+  criado_por?: string | null;
 }
 
 export const painelBiometria = (de?: string, ate?: string, excluidos?: boolean) => {

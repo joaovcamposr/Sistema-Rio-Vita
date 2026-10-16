@@ -22,6 +22,7 @@ from .routers import (
     despesas,
     despescas,
     expedicoes,
+    historico,
     interacoes,
     lembretes,
     lotes,
@@ -86,6 +87,7 @@ app.include_router(paineis.router, dependencies=_exige_login)
 app.include_router(parametros.router, dependencies=_exige_login)
 app.include_router(ajustes_estoque.router, dependencies=_exige_login)
 app.include_router(racao.router, dependencies=_exige_login)
+app.include_router(historico.router, dependencies=_exige_login)
 app.include_router(admin.router, dependencies=_exige_login)
 
 

@@ -862,7 +862,7 @@ def painel_producao_detalhe(
                            WHERE x.lote_id = d.lote_id AND x.data = d.data_despesca AND x.destino = 'file'
                              AND x.excluido_em IS NULL), 0)
                ELSE d.rendimento END AS rendimento,
-               d.excluido_em, d.excluido_por, pd.turno
+               d.excluido_em, d.excluido_por, pd.turno, pd.criado_por, pd.criado_em
         FROM vw_producao_detalhe d
         JOIN producao pd ON pd.id = d.id
         JOIN produto pr ON pr.id = d.produto_id
@@ -982,7 +982,7 @@ def painel_despesca(
     rows = db.execute(text(f"""
         SELECT d.id, d.data, d.destino, d.quantidade_un, d.peso_medio_g, d.peso_total_kg,
                d.lote_id, l.codigo AS lote_codigo, v.codigo AS viveiro_codigo, d.criado_em,
-               d.excluido_em, d.excluido_por
+               d.excluido_em, d.excluido_por, d.criado_por
         FROM despesca d
         JOIN lote l ON l.id = d.lote_id
         JOIN viveiro v ON v.id = l.viveiro_id
@@ -1009,7 +1009,7 @@ def painel_repicagem(
                ld.codigo AS lote_destino_codigo, vd.codigo AS viveiro_destino_codigo,
                lo.codigo AS lote_origem_codigo, vo.codigo AS viveiro_origem_codigo,
                (lo.data_fim IS NOT NULL) AS lote_origem_fechado,
-               o.excluido_em, o.excluido_por
+               o.excluido_em, o.excluido_por, o.criado_por, o.criado_em
         FROM lote_origem o
         JOIN lote ld ON ld.id = o.lote_id
         JOIN viveiro vd ON vd.id = ld.viveiro_id
@@ -1036,7 +1036,7 @@ def painel_arracoamento(
     rows = db.execute(text(f"""
         SELECT a.id, a.data, to_char(a.trato, 'HH24:MI') AS trato, a.sacos, a.tipo_racao_id, t.codigo AS tipo_racao_codigo,
                a.lote_id, l.codigo AS lote_codigo, v.codigo AS viveiro_codigo, a.criado_em,
-               a.excluido_em, a.excluido_por
+               a.excluido_em, a.excluido_por, a.criado_por
         FROM arracoamento a
         JOIN lote l ON l.id = a.lote_id
         JOIN viveiro v ON v.id = l.viveiro_id

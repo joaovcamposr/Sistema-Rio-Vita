@@ -258,12 +258,13 @@ def registrar_repicagem(
             for lote_origem_id, quantidade, saldo_atual in origem_lotes:
                 db.execute(
                     text("""
-                        INSERT INTO lote_origem (lote_id, lote_origem_id, quantidade, peso_medio_g, data, client_id)
-                        VALUES (:lote_id, :lote_origem_id, :quantidade, :peso_medio_g, :data, :client_id)
+                        INSERT INTO lote_origem (lote_id, lote_origem_id, quantidade, peso_medio_g, data, client_id, criado_por)
+                        VALUES (:lote_id, :lote_origem_id, :quantidade, :peso_medio_g, :data, :client_id, :criado_por)
                     """),
                     {
                         "lote_id": novo["id"], "lote_origem_id": lote_origem_id, "quantidade": quantidade,
                         "peso_medio_g": body.peso_medio_g, "data": body.data, "client_id": str(body.client_id),
+                        "criado_por": usuario.nome,
                     },
                 )
                 # só fecha o lote de origem quando a repicagem esvazia ele por

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  editarArracoamento, editarBiometria, editarDespesca, editarProducao, editarRepicagem,
+  editarArracoamento, editarBiometria, editarDespesca, editarPovoamento, editarProducao, editarRepicagem, historicoLancamentos,
   excluirArracoamento, excluirBiometria, excluirDespesca, excluirProducao, excluirRepicagem, excluirVenda,
   listarProdutos, listarVendas, type Produto,
 } from "@/lib/api";
@@ -15,11 +15,12 @@ import styles from "@/app/lancar/form.module.css";
 
 export type Tipo =
   | "producao" | "venda" | "despesca" | "repicagem" | "arracoamento" | "biometria"
-  | "despesa" | "chegada_racao" | "ajuste_estoque";
+  | "despesa" | "chegada_racao" | "ajuste_estoque" | "agua" | "povoamento" | "expedicao" | "acerto";
 
 const ROTULOS: Record<Tipo, string> = {
   producao: "Produção", venda: "Venda", despesca: "Despesca", repicagem: "Repicagem", arracoamento: "Arraçoamento",
   biometria: "Biometria", despesa: "Despesa", chegada_racao: "Chegada de ração", ajuste_estoque: "Ajuste de estoque",
+  agua: "Água", povoamento: "Povoamento", expedicao: "Expedição", acerto: "Acerto",
 };
 
 interface Campo {
@@ -37,6 +38,8 @@ interface Lancamento {
   data: string;
   titulo: string;
   detalhe: string;
+  por?: string | null; // quem lançou
+  em?: string | null; // quando foi lançado (ISO)
   campos?: Campo[];
   salvar?: (v: Record<string, string>) => Promise<void>;
   excluir?: () => Promise<void>;
@@ -57,6 +60,10 @@ function dataBr(iso: string): string {
 }
 function nf(v: number, casas = 1): string {
   return v.toLocaleString("pt-BR", { minimumFractionDigits: casas, maximumFractionDigits: casas });
+}
+function quando(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 function num(v: string): number {
   return parseFloat(v.replace(",", "."));
@@ -111,6 +118,7 @@ export default function HistoricoLancamentos({ tipos, titulo = "Lançamentos rec
       ];
       return {
         chave: `producao-${r.id}`, tipo: "producao" as const, id: r.id, data: r.data, titulo: r.produto_nome,
+        por: r.criado_por, em: r.criado_em,
         detalhe: `${nf(r.quantidade_kg)} kg${r.quantidade_embalagens ? ` · ${nf(r.quantidade_embalagens, 0)} un` : ""}`
           + (r.turno ? ` · turno da ${r.turno === "manha" ? "manhã" : "tarde"}` : "")
           + (r.lote_codigo ? ` · ${r.lote_codigo}` : "") + (r.viveiro_codigo ? ` (viveiro ${r.viveiro_codigo})` : ""),
@@ -127,7 +135,8 @@ export default function HistoricoLancamentos({ tipos, titulo = "Lançamentos rec
 
     add("venda", "Vendas", () => listarVendas({ de, ate }).then((rs) => rs.filter((v) => !v.excluido_em).map((v) => ({
       chave: `venda-${v.id}`, tipo: "venda" as const, id: v.id, data: v.data, titulo: `${v.produto_nome} → ${v.cliente_nome}`,
-      detalhe: `${v.quantidade_un !== null ? `${nf(v.quantidade_un, 0)} un · ` : ""}${nf(v.quantidade_kg)} kg · ${moeda(v.valor_total)} · ${v.situacao}`,
+      por: v.criado_por, em: v.criado_em,
+        detalhe: `${v.quantidade_un !== null ? `${nf(v.quantidade_un, 0)} un · ` : ""}${nf(v.quantidade_kg)} kg · ${moeda(v.valor_total)} · ${v.situacao}`,
       link: `/lancar/recebimentos?editar=${v.id}`,
       excluir: () => excluirVenda(v.id),
     }))));
@@ -135,7 +144,8 @@ export default function HistoricoLancamentos({ tipos, titulo = "Lançamentos rec
     add("despesca", "Despesca", () => painelDespesca(de, ate).then((rs) => rs.map((r) => ({
       chave: `despesca-${r.id}`, tipo: "despesca" as const, id: r.id, data: r.data,
       titulo: `Despesca ${r.destino.replace("_", " ")} — viveiro ${r.viveiro_codigo}`,
-      detalhe: `${nf(r.quantidade_un, 0)} peixes · ${nf(r.peso_medio_g, 0)} g médio · ${nf(r.peso_total_kg)} kg · ${r.lote_codigo}`,
+      por: r.criado_por, em: r.criado_em,
+        detalhe: `${nf(r.quantidade_un, 0)} peixes · ${nf(r.peso_medio_g, 0)} g médio · ${nf(r.peso_total_kg)} kg · ${r.lote_codigo}`,
       campos: [
         { chave: "data", rotulo: "Data", tipo: "date" as const, valor: r.data },
         { chave: "un", rotulo: "Peixes", tipo: "number" as const, valor: String(r.quantidade_un) },
@@ -150,7 +160,8 @@ export default function HistoricoLancamentos({ tipos, titulo = "Lançamentos rec
     add("repicagem", "Repicagem", () => painelRepicagem(de, ate).then((rs) => rs.map((r) => ({
       chave: `repicagem-${r.id}`, tipo: "repicagem" as const, id: r.id, data: r.data,
       titulo: `Repicagem ${r.viveiro_origem_codigo} → ${r.viveiro_destino_codigo}`,
-      detalhe: `${nf(r.quantidade, 0)} peixes · ${nf(r.peso_medio_g, 0)} g · ${r.lote_origem_codigo} → ${r.lote_destino_codigo}`,
+      por: r.criado_por, em: r.criado_em,
+        detalhe: `${nf(r.quantidade, 0)} peixes · ${nf(r.peso_medio_g, 0)} g · ${r.lote_origem_codigo} → ${r.lote_destino_codigo}`,
       campos: [
         { chave: "data", rotulo: "Data", tipo: "date" as const, valor: r.data },
         { chave: "qtd", rotulo: "Peixes", tipo: "number" as const, valor: String(r.quantidade) },
@@ -163,7 +174,8 @@ export default function HistoricoLancamentos({ tipos, titulo = "Lançamentos rec
     add("arracoamento", "Arraçoamento", () => painelArracoamento(de, ate).then((rs) => rs.map((r) => ({
       chave: `arracoamento-${r.id}`, tipo: "arracoamento" as const, id: r.id, data: r.data,
       titulo: `Arraçoamento — viveiro ${r.viveiro_codigo}${r.trato ? ` (${r.trato})` : ""}`,
-      detalhe: `${nf(r.sacos)} sacos${r.tipo_racao_codigo ? ` · ${r.tipo_racao_codigo}` : " · sem tipo de ração"} · ${r.lote_codigo}`,
+      por: r.criado_por, em: r.criado_em,
+        detalhe: `${nf(r.sacos)} sacos${r.tipo_racao_codigo ? ` · ${r.tipo_racao_codigo}` : " · sem tipo de ração"} · ${r.lote_codigo}`,
       campos: [
         { chave: "data", rotulo: "Data", tipo: "date" as const, valor: r.data },
         { chave: "sacos", rotulo: "Sacos", tipo: "number" as const, valor: String(r.sacos) },
@@ -174,7 +186,8 @@ export default function HistoricoLancamentos({ tipos, titulo = "Lançamentos rec
 
     add("biometria", "Biometria", () => painelBiometria(de, ate).then((rs) => rs.map((r) => ({
       chave: `biometria-${r.id}`, tipo: "biometria" as const, id: r.id, data: r.data,
-      titulo: `Biometria — viveiro ${r.viveiro_codigo}`, detalhe: `${nf(r.peso_medio_g, 0)} g · ${r.lote_codigo}`,
+      titulo: `Biometria — viveiro ${r.viveiro_codigo}`, por: r.criado_por, em: r.criado_em,
+        detalhe: `${nf(r.peso_medio_g, 0)} g · ${r.lote_codigo}`,
       campos: [
         { chave: "data", rotulo: "Data", tipo: "date" as const, valor: r.data },
         { chave: "peso", rotulo: "Peso médio (g)", tipo: "number" as const, valor: String(r.peso_medio_g) },
@@ -185,22 +198,73 @@ export default function HistoricoLancamentos({ tipos, titulo = "Lançamentos rec
 
     add("despesa", "Despesas", () => listarDespesasSoltas(de, ate).then((rs) => rs.filter((d) => !d.excluido_em).map((d) => ({
       chave: `despesa-${d.id}`, tipo: "despesa" as const, id: d.id, data: d.data,
-      titulo: `Despesa — ${d.categoria}`, detalhe: `${moeda(d.valor)} · ${d.forma_pgto}${d.observacao ? ` · ${d.observacao}` : ""}`,
+      titulo: `Despesa — ${d.categoria}`, por: d.criado_por, em: d.criado_em,
+        detalhe: `${moeda(d.valor)} · ${d.forma_pgto}${d.observacao ? ` · ${d.observacao}` : ""}`,
       link: "/painel/despesas",
     }))));
 
     add("chegada_racao", "Chegadas de ração", () => listarChegadasRacao(de, ate).then((rs) => rs.filter((c) => !c.excluido_em).map((c) => ({
       chave: `chegada-${c.id}`, tipo: "chegada_racao" as const, id: c.id, data: c.data,
       titulo: `Chegada de ração — ${c.fornecedor_nome}`,
-      detalhe: c.itens.map((i) => `${nf(i.quantidade_sacos, 0)} sacos ${i.tipo_racao_codigo}`).join(" · "),
+      por: c.criado_por, em: c.criado_em,
+        detalhe: c.itens.map((i) => `${nf(i.quantidade_sacos, 0)} sacos ${i.tipo_racao_codigo}`).join(" · "),
       link: "/painel/estoque-racao",
     }))));
 
     add("ajuste_estoque", "Ajustes de estoque", () => listarAjustesEstoque(de, ate).then((rs) => rs.filter((a) => !a.excluido_em).map((a) => ({
       chave: `ajuste-${a.id}`, tipo: "ajuste_estoque" as const, id: a.id, data: a.data,
       titulo: `Ajuste de estoque — ${a.produto_nome}`,
-      detalhe: `${a.quantidade_embalagens !== null ? `${nf(a.quantidade_embalagens, 0)} un` : ""}${a.quantidade_kg !== null ? ` · ${nf(a.quantidade_kg)} kg` : ""}${a.observacao ? ` · ${a.observacao}` : ""}`,
+      por: a.criado_por, em: a.criado_em,
+        detalhe: `${a.quantidade_embalagens !== null ? `${nf(a.quantidade_embalagens, 0)} un` : ""}${a.quantidade_kg !== null ? ` · ${nf(a.quantidade_kg)} kg` : ""}${a.observacao ? ` · ${a.observacao}` : ""}`,
       link: "/painel/estoque",
+    }))));
+
+    add("agua", "Água", () => historicoLancamentos<{
+      id: number; data: string; viveiro_codigo: string; oxigenio: number | null; temperatura_c: number | null;
+      amonia: number | null; ph: number | null; nitrito: number | null; nitrato: number | null; criado_em: string; criado_por: string | null;
+    }>("agua", de, ate).then((rs) => rs.map((r) => ({
+      chave: `agua-${r.id}`, tipo: "agua" as const, id: r.id, data: r.data, por: r.criado_por, em: r.criado_em,
+      titulo: `Análise de água — viveiro ${r.viveiro_codigo}`,
+      detalhe: [
+        r.oxigenio !== null ? `O₂ ${nf(r.oxigenio)}` : null, r.temperatura_c !== null ? `${nf(r.temperatura_c)} °C` : null,
+        r.ph !== null ? `pH ${nf(r.ph)}` : null, r.amonia !== null ? `amônia ${nf(r.amonia, 2)}` : null,
+        r.nitrito !== null ? `nitrito ${nf(r.nitrito, 2)}` : null, r.nitrato !== null ? `nitrato ${nf(r.nitrato, 2)}` : null,
+      ].filter(Boolean).join(" · "),
+    }))));
+
+    add("povoamento", "Povoamento", () => historicoLancamentos<{
+      id: number; codigo: string; viveiro_codigo: string; data: string; quantidade_inicial: number;
+      peso_medio_inicial_g: number; observacao: string | null; criado_em: string | null; criado_por: string | null;
+    }>("povoamento", de, ate).then((rs) => rs.map((r) => ({
+      chave: `povoamento-${r.id}`, tipo: "povoamento" as const, id: r.id, data: r.data, por: r.criado_por, em: r.criado_em,
+      titulo: `Povoamento — viveiro ${r.viveiro_codigo} (${r.codigo})`,
+      detalhe: `${nf(r.quantidade_inicial, 0)} peixes · ${nf(r.peso_medio_inicial_g)} g`,
+      campos: [
+        { chave: "data", rotulo: "Data", tipo: "date" as const, valor: r.data },
+        { chave: "qtd", rotulo: "Peixes", tipo: "number" as const, valor: String(r.quantidade_inicial) },
+        { chave: "peso", rotulo: "Peso médio (g)", tipo: "number" as const, valor: String(r.peso_medio_inicial_g) },
+      ],
+      salvar: (v: Record<string, string>) => editarPovoamento(r.id, v.data, Math.round(num(v.qtd)), num(v.peso), r.observacao),
+    }))));
+
+    add("expedicao", "Expedição", () => historicoLancamentos<{
+      id: number; vendedor_nome: string; data: string; data_acerto: string | null; itens: string; observacao: string | null;
+      criado_em: string; criado_por: string | null;
+    }>("expedicao", de, ate).then((rs) => rs.map((r) => ({
+      chave: `expedicao-${r.id}`, tipo: "expedicao" as const, id: r.id, data: r.data, por: r.criado_por, em: r.criado_em,
+      titulo: `Expedição — ${r.vendedor_nome}`,
+      detalhe: `${r.itens || "sem itens"}${r.data_acerto ? ` · acertada em ${dataBr(r.data_acerto)}` : " · em aberto"}`,
+      link: "/lancar/expedicao",
+    }))));
+
+    add("acerto", "Acerto", () => historicoLancamentos<{
+      id: number; vendedor_nome: string; data: string; data_saida: string; vendas: number; valor_vendas: number;
+      criado_por: string | null; criado_em: string | null;
+    }>("acerto", de, ate).then((rs) => rs.map((r) => ({
+      chave: `acerto-${r.id}`, tipo: "acerto" as const, id: r.id, data: r.data, por: r.criado_por, em: r.criado_em,
+      titulo: `Acerto — ${r.vendedor_nome} (saída ${dataBr(r.data_saida)})`,
+      detalhe: `${r.vendas} ${r.vendas === 1 ? "venda" : "vendas"} · ${moeda(r.valor_vendas)}`,
+      link: "/painel/acertos",
     }))));
 
     const resultados = await Promise.allSettled(grupos);
@@ -313,6 +377,9 @@ export default function HistoricoLancamentos({ tipos, titulo = "Lançamentos rec
                 </div>
                 <div style={{ fontWeight: 700 }}>{l.titulo}</div>
                 <div style={{ fontSize: "0.85rem", color: "var(--ink-muted)" }}>{l.detalhe}</div>
+                <div style={{ fontSize: "0.74rem", color: "var(--ink-muted)", marginTop: 2 }}>
+                  {l.por ? `Lançado por ${l.por}${l.em ? ` · ${quando(l.em)}` : ""}` : "Quem lançou: não registrado"}
+                </div>
               </div>
               <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
                 {l.campos && l.salvar && (

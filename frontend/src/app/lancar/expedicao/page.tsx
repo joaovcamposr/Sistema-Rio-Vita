@@ -7,6 +7,7 @@ import { editarExpedicao, listarExpedicoesAbertas, listarVendedores, type Expedi
 import { enfileirar } from "@/lib/offline-queue";
 import styles from "../form.module.css";
 
+import HistoricoLancamentos from "@/components/HistoricoLancamentos";
 function hojeISO(): string {
   return new Date().toISOString().slice(0, 10);
 }
@@ -187,6 +188,7 @@ export default function RegistrarExpedicao() {
             />
           </div>
         ))}
+        <HistoricoLancamentos tipos={["expedicao"]} titulo="Expedições lançadas" />
       </div>
 
       <div className={styles.savebar}>

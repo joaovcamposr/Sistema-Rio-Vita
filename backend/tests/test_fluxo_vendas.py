@@ -352,3 +352,22 @@ def test_producao_com_data_no_futuro_e_recusada(api):
         "produto_id": prods["Barriguinha de tilápia"]["id"], "quantidade_embalagens": 11, "quantidade_kg": 5.5,
     })
     assert r.status_code == 422
+
+
+def test_historicos_mostram_quem_lancou(api, produto_id):
+    _, cliente_id = _ids(api)
+    venda = api.post("/vendas", json={
+        "client_id": str(uuid.uuid4()), "data": str(HOJE), "cliente_id": cliente_id, "produto_id": produto_id,
+        "quantidade_un": 10, "quantidade_kg": 5, "preco_kg": 40,
+        "parcelas": [{"valor": 200, "forma_pgto": "Pix", "data_prevista": str(HOJE)}],
+    }).json()
+    lista = api.get("/vendas", params={"id": venda["id"]}).json()[0]
+    assert lista["criado_por"] == "Teste Gerente" and lista["criado_em"]
+    prod = api.post("/producao", json={
+        "client_id": str(uuid.uuid4()), "data": str(HOJE), "produto_id": produto_id, "quantidade_embalagens": 4,
+    }).json()
+    det = api.get("/paineis/producao/detalhe", params={"de": str(HOJE), "ate": str(HOJE)}).json()
+    assert [d["criado_por"] for d in det if d["id"] == prod["id"]] == ["Teste Gerente"]
+    for tipo in ("agua", "povoamento", "expedicao", "acerto"):
+        r = api.get(f"/historico/{tipo}", params={"de": "2020-01-01", "ate": str(HOJE)})
+        assert r.status_code == 200 and isinstance(r.json(), list), tipo

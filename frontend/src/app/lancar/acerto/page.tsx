@@ -12,6 +12,7 @@ import ClienteCombobox from "@/components/ClienteCombobox";
 import ParcelasEditor, { parcelaUnicaAVista } from "@/components/ParcelasEditor";
 import styles from "../form.module.css";
 
+import HistoricoLancamentos from "@/components/HistoricoLancamentos";
 const CATEGORIAS_DESPESA = ["Abastecimento", "Alimentação", "Manutenção", "Outro"];
 
 function hojeISO(): string {
@@ -483,6 +484,7 @@ export default function AcertoExpedicao() {
           <span className={styles.l}>Vendas em dinheiro − despesas em dinheiro</span>
           <span className={styles.v}>R$ {nf(totalVendidoDinheiro - totalDespesasDinheiro, 2)}</span>
         </div>
+        <HistoricoLancamentos tipos={["acerto"]} titulo="Acertos lançados" />
       </div>
 
       <div className={styles.savebar}>

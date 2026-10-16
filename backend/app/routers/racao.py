@@ -135,7 +135,7 @@ def listar_chegadas_racao(
     chegadas = db.execute(
         text(f"""
             SELECT c.id, c.data, c.fornecedor_id, f.nome AS fornecedor_nome, c.observacao,
-                   c.excluido_em, c.excluido_por
+                   c.excluido_em, c.excluido_por, c.criado_por, c.criado_em
             FROM chegada_racao c JOIN fornecedor_racao f ON f.id = c.fornecedor_id
             WHERE c.data BETWEEN :de AND :ate
               AND {"c.excluido_em IS NOT NULL" if excluidos else "c.excluido_em IS NULL"}
@@ -162,6 +162,7 @@ def listar_chegadas_racao(
             id=c["id"], data=c["data"], fornecedor_id=c["fornecedor_id"], fornecedor_nome=c["fornecedor_nome"],
             observacao=c["observacao"], itens=itens_por_chegada.get(c["id"], []),
             excluido_em=c["excluido_em"], excluido_por=c["excluido_por"],
+            criado_por=c["criado_por"], criado_em=c["criado_em"],
         )
         for c in chegadas
     ]
@@ -236,7 +237,7 @@ def _carregar_chegada(db: Session, chegada_id: int) -> ChegadaRacaoOut:
     row = db.execute(
         text("""
             SELECT c.id, c.data, c.fornecedor_id, f.nome AS fornecedor_nome, c.observacao,
-                   c.excluido_em, c.excluido_por
+                   c.excluido_em, c.excluido_por, c.criado_por, c.criado_em
             FROM chegada_racao c JOIN fornecedor_racao f ON f.id = c.fornecedor_id
             WHERE c.id = :id
         """),
@@ -255,6 +256,7 @@ def _carregar_chegada(db: Session, chegada_id: int) -> ChegadaRacaoOut:
     return ChegadaRacaoOut(
         id=row["id"], data=row["data"], fornecedor_id=row["fornecedor_id"], fornecedor_nome=row["fornecedor_nome"],
         observacao=row["observacao"], excluido_em=row["excluido_em"], excluido_por=row["excluido_por"],
+        criado_por=row["criado_por"], criado_em=row["criado_em"],
         itens=[
             ChegadaRacaoItemOut(
                 tipo_racao_id=i["tipo_racao_id"], tipo_racao_codigo=i["tipo_racao_codigo"],

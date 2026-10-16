@@ -68,7 +68,7 @@ _COLUNAS_LISTA = """
     c.prazo_dias AS cliente_prazo_dias, v.produto_id, pr.nome AS produto_nome,
     v.quantidade_un, v.quantidade_kg, v.preco_kg, v.valor_total, v.vendedor,
     p.situacao, p.valor_recebido, p.valor_pendente, p.proxima_data_prevista,
-    v.observacoes, v.excluido_em, v.excluido_por
+    v.observacoes, v.excluido_em, v.excluido_por, v.criado_por, v.criado_em
 """
 _FROM_LISTA = """
     FROM venda v

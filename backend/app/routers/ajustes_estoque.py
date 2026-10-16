@@ -12,7 +12,7 @@ from ..schemas import AjusteEstoqueEditarIn, AjusteEstoqueIn, AjusteEstoqueOut, 
 router = APIRouter(prefix="/ajustes-estoque", tags=["ajustes-estoque"])
 _COLUNAS = (
     "a.id, a.client_id, a.data, a.produto_id, pr.nome AS produto_nome, "
-    "a.quantidade_embalagens, a.quantidade_kg, a.tipo, a.observacao, a.criado_em, "
+    "a.quantidade_embalagens, a.quantidade_kg, a.tipo, a.observacao, a.criado_em, a.criado_por, "
     "a.excluido_em, a.excluido_por"
 )
 _FROM = "FROM ajuste_estoque a JOIN produto pr ON pr.id = a.produto_id"

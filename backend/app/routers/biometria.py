@@ -57,7 +57,7 @@ def painel_biometria(
     de = de or (ate - timedelta(days=30))
     rows = db.execute(text(f"""
         SELECT b.id, b.lote_id, l.codigo AS lote_codigo, v.codigo AS viveiro_codigo,
-               b.data, b.peso_medio_g, b.criado_em, b.excluido_em, b.excluido_por
+               b.data, b.peso_medio_g, b.criado_em, b.excluido_em, b.excluido_por, b.criado_por
         FROM biometria b
         JOIN lote l ON l.id = b.lote_id
         JOIN viveiro v ON v.id = l.viveiro_id

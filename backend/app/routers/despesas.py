@@ -10,7 +10,7 @@ from ..db import get_db
 from ..schemas import DespesaEditarIn, DespesaIn, DespesaOut, UsuarioOut
 
 router = APIRouter(prefix="/despesas", tags=["despesas"])
-_COLUNAS = "id, client_id, data, categoria, valor, forma_pgto, expedicao_id, observacao, criado_em, excluido_em, excluido_por"
+_COLUNAS = "id, client_id, data, categoria, valor, forma_pgto, expedicao_id, observacao, criado_em, criado_por, excluido_em, excluido_por"
 
 
 @router.get("", response_model=list[DespesaOut])

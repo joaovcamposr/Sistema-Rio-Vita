@@ -140,6 +140,7 @@ class DespescaDetalheOut(BaseModel):
     criado_em: datetime
     excluido_em: datetime | None = None
     excluido_por: str | None = None
+    criado_por: str | None = None
 
 
 class ProducaoIn(BaseModel):
@@ -265,6 +266,8 @@ class RepicagemDetalheOut(BaseModel):
     lote_origem_fechado: bool
     excluido_em: datetime | None = None
     excluido_por: str | None = None
+    criado_por: str | None = None
+    criado_em: datetime | None = None
 
 
 # ---------- Biometria ----------
@@ -302,6 +305,7 @@ class BiometriaDetalheOut(BaseModel):
     criado_em: datetime
     excluido_em: datetime | None = None
     excluido_por: str | None = None
+    criado_por: str | None = None
 
 
 # ---------- Arraçoamento ----------
@@ -345,6 +349,7 @@ class ArracoamentoDetalheOut(BaseModel):
     criado_em: datetime
     excluido_em: datetime | None = None
     excluido_por: str | None = None
+    criado_por: str | None = None
 
 
 class LeituraArracoamentoLinhaOut(BaseModel):
@@ -429,6 +434,8 @@ class ChegadaRacaoOut(BaseModel):
     itens: list[ChegadaRacaoItemOut]
     excluido_em: datetime | None = None
     excluido_por: str | None = None
+    criado_por: str | None = None
+    criado_em: datetime | None = None
 
 
 class ChegadaRacaoEditarIn(BaseModel):
@@ -663,6 +670,8 @@ class VendaListaOut(BaseModel):
     observacoes: str | None
     excluido_em: datetime | None = None
     excluido_por: str | None = None
+    criado_por: str | None = None
+    criado_em: datetime | None = None
     parcelas: list[VendaParcelaOut]
 
 
@@ -738,6 +747,7 @@ class AjusteEstoqueOut(BaseModel):
     criado_em: datetime
     excluido_em: datetime | None = None
     excluido_por: str | None = None
+    criado_por: str | None = None
 
 
 # ---------- Painéis gerenciais (somente leitura) ----------
@@ -894,6 +904,8 @@ class ProducaoDetalheOut(BaseModel):
     excluido_em: datetime | None = None
     excluido_por: str | None = None
     turno: str | None = None
+    criado_por: str | None = None
+    criado_em: datetime | None = None
 
 
 class RendimentoProdutoOut(BaseModel):
@@ -1430,6 +1442,7 @@ class DespesaOut(BaseModel):
     criado_em: datetime
     excluido_em: datetime | None = None
     excluido_por: str | None = None
+    criado_por: str | None = None
 
 
 # ---------- Painel Caixa ----------
