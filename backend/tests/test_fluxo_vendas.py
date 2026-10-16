@@ -260,7 +260,7 @@ def test_relatorio_diario_por_turno_e_residuo(api):
     assert cat("Postas de tilápia 800g") == "outro_tilapia" and cat("Tambaqui") == "fora" and cat("Tilápia suja") == "fora"
 
     prods = {p["nome"]: p for p in api.get("/produtos").json()}
-    dia = date(2031, 3, 3)                      # dia sem outros lançamentos
+    dia = date(2020, 3, 3)                      # dia sem outros lançamentos
     with get_engine_admin().begin() as c:        # roda de novo no mesmo banco sem acumular
         c.execute(text("DELETE FROM producao WHERE data = :d"), {"d": dia})
     def lancar(produto, kg, turno=None, emb=None):
@@ -343,3 +343,12 @@ def test_pedido_com_varios_produtos_reparte_o_pagamento(api, produto_id):
     # soma das parcelas diferente do total do pedido é recusada
     ruim = {**corpo, "client_id": str(uuid.uuid4()), "parcelas": [{"valor": 100, "forma_pgto": "Pix", "data_prevista": str(HOJE)}]}
     assert api.post("/vendas/pedido", json=ruim).status_code == 422
+
+
+def test_producao_com_data_no_futuro_e_recusada(api):
+    prods = {p["nome"]: p for p in api.get("/produtos").json()}
+    r = api.post("/producao", json={
+        "client_id": str(uuid.uuid4()), "data": str(HOJE + timedelta(days=13)),
+        "produto_id": prods["Barriguinha de tilápia"]["id"], "quantidade_embalagens": 11, "quantidade_kg": 5.5,
+    })
+    assert r.status_code == 422

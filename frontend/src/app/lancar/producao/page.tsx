@@ -121,6 +121,7 @@ export default function RegistrarProducao() {
       : null;
 
   const podeSalvar =
+    data <= hojeISO() &&
     produto !== null &&
     (produto.kg_digitado ? kgDigitadoNum > 0 : qtdBandejasNum > 0) &&
     !enviando;
@@ -175,7 +176,12 @@ export default function RegistrarProducao() {
 
         <div className={styles.field}>
           <label>Data</label>
-          <input className={styles.inp} type="date" value={data} onChange={(e) => setData(e.target.value)} />
+          <input className={styles.inp} type="date" value={data} max={hojeISO()} onChange={(e) => setData(e.target.value)} />
+          {data > hojeISO() && (
+            <p style={{ margin: "8px 0 0", fontSize: "0.82rem", color: "var(--crit)", fontWeight: 700 }}>
+              ⚠ Data no futuro — a produção não entra no estoque até esse dia. Confira a data.
+            </p>
+          )}
         </div>
 
         <div className={styles.field}>

@@ -5,7 +5,7 @@ já existente na planilha — ver Etapa 2 (documentação funcional).
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
@@ -156,6 +156,9 @@ class ProducaoIn(BaseModel):
     def um_dos_dois_informado(self) -> "ProducaoIn":
         if self.quantidade_embalagens is None and self.quantidade_kg is None:
             raise ValueError("informe quantidade_embalagens ou quantidade_kg")
+        # produção com data futura não entra no estoque e some do relatório: quase sempre erro de digitação
+        if self.data > date.today() + timedelta(days=1):
+            raise ValueError("data da produção no futuro — confira a data")
         return self
 
 

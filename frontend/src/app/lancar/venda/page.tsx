@@ -22,6 +22,7 @@ interface ItemVenda {
   chave: number;
   produtoId: number | null;
   quantidade: string;
+  unidades: string; // só pra produto de peso digitado: quantas peças/pacotes (o estoque em unidades baixa por isso)
   preco: string;
   precoEditado: boolean; // true = o operador digitou o preço (não sobrescrever pelo preço do cliente)
 }
@@ -41,7 +42,7 @@ export default function RegistrarVenda() {
   const [data, setData] = useState(hojeISO());
   const [clienteId, setClienteId] = useState<number | null>(null);
   const proximaChave = useRef(2);
-  const [itens, setItens] = useState<ItemVenda[]>([{ chave: 1, produtoId: null, quantidade: "", preco: "", precoEditado: false }]);
+  const [itens, setItens] = useState<ItemVenda[]>([{ chave: 1, produtoId: null, quantidade: "", unidades: "", preco: "", precoEditado: false }]);
   const [precosCliente, setPrecosCliente] = useState<Record<number, number>>({});
   const [parcelas, setParcelas] = useState<VendaParcelaEntrada[]>(() => parcelaUnicaAVista(hojeISO(), 0));
   const [parcelasBatem, setParcelasBatem] = useState(true);
@@ -122,7 +123,7 @@ export default function RegistrarVenda() {
     const emUso = new Set(itens.map((i) => i.produtoId));
     const livre = produtos.find((p) => !emUso.has(p.id)) ?? produtos[0];
     const preco = livre && precosCliente[livre.id] !== undefined ? String(precosCliente[livre.id]) : "";
-    setItens((its) => [...its, { chave: proximaChave.current++, produtoId: livre?.id ?? null, quantidade: "", preco, precoEditado: false }]);
+    setItens((its) => [...its, { chave: proximaChave.current++, produtoId: livre?.id ?? null, quantidade: "", unidades: "", preco, precoEditado: false }]);
   }
 
   async function salvar() {
@@ -133,14 +134,14 @@ export default function RegistrarVenda() {
         cliente_id: clienteId,
         itens: linhas.map((l) => ({
           produto_id: l.produto!.id,
-          quantidade_un: l.produto!.kg_digitado ? null : l.qtdNum,
+          quantidade_un: l.produto!.kg_digitado ? (parseFloat(l.it.unidades.replace(",", ".")) > 0 ? parseFloat(l.it.unidades.replace(",", ".")) : null) : l.qtdNum,
           quantidade_kg: l.kg,
           preco_kg: l.precoNum,
         })),
         parcelas,
       });
       setToast(linhas.length > 1 ? `Venda registrada (${linhas.length} produtos)` : "Venda registrada");
-      setItens([{ chave: proximaChave.current++, produtoId: produtos[0]?.id ?? null, quantidade: "", preco: "", precoEditado: false }]);
+      setItens([{ chave: proximaChave.current++, produtoId: produtos[0]?.id ?? null, quantidade: "", unidades: "", preco: "", precoEditado: false }]);
       setResetKey((k) => k + 1);
       setTimeout(() => setToast(null), 2200);
     } finally {
@@ -165,7 +166,7 @@ export default function RegistrarVenda() {
 
         <div className={styles.field}>
           <label>Data</label>
-          <input className={styles.inp} type="date" value={data} onChange={(e) => setData(e.target.value)} />
+          <input className={styles.inp} type="date" value={data} max={hojeISO()} onChange={(e) => setData(e.target.value)} />
         </div>
 
         <div className={styles.field}>
@@ -237,6 +238,20 @@ export default function RegistrarVenda() {
                 onChange={(e) => atualizarItem(l.it.chave, { quantidade: e.target.value })}
               />
             </div>
+
+            {l.produto?.kg_digitado && (
+              <div className={styles.field}>
+                <label>Unidades / pacotes (opcional — baixa o estoque em unidades)</label>
+                <input
+                  className={`${styles.inp} ${styles.num}`}
+                  type="number"
+                  inputMode="numeric"
+                  placeholder="0"
+                  value={l.it.unidades}
+                  onChange={(e) => atualizarItem(l.it.chave, { unidades: e.target.value })}
+                />
+              </div>
+            )}
 
             <div className={styles.field}>
               <label>Preço por Kg</label>
