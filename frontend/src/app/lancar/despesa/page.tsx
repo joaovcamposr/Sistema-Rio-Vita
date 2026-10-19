@@ -6,6 +6,8 @@ import { enfileirar } from "@/lib/offline-queue";
 import styles from "../form.module.css";
 
 import HistoricoLancamentos from "@/components/HistoricoLancamentos";
+import { MODULOS_OCULTOS } from "@/lib/modulos";
+import ModuloOculto from "@/components/ModuloOculto";
 const CATEGORIAS = ["Abastecimento", "Alimentação", "Manutenção", "Material de escritório", "Outro"];
 const FORMAS = ["Dinheiro", "Pix", "Cartão"];
 
@@ -13,7 +15,7 @@ function hojeISO(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-export default function RegistrarDespesa() {
+function RegistrarDespesaOriginal() {
   const router = useRouter();
   const [data, setData] = useState(hojeISO());
   const [categoria, setCategoria] = useState(CATEGORIAS[0]);
@@ -113,4 +115,8 @@ export default function RegistrarDespesa() {
       {toast && <div className={styles.toast}>{toast}</div>}
     </div>
   );
+}
+
+export default function RegistrarDespesa() {
+  return MODULOS_OCULTOS.despesas ? <ModuloOculto nome="Despesas" /> : <RegistrarDespesaOriginal />;
 }

@@ -7,6 +7,7 @@ import { caixaConferencia, type CaixaConferencia, type VendaConferencia, type De
 import Modal from "@/components/Modal";
 import styles from "../painel.module.css";
 
+import { MODULOS_OCULTOS } from "@/lib/modulos";
 function hojeISO(): string {
   return new Date().toISOString().slice(0, 10);
 }
@@ -101,11 +102,11 @@ function TabelaDespesas({ despesas }: { despesas: DespesaConferencia[] }) {
               <td>{d.forma_pgto ?? <em>vazio</em>}</td>
               <td>{moeda(d.valor)}</td>
               <td>
-                {d.origem === "Solta" ? (
+                {d.origem === "Solta" ? (MODULOS_OCULTOS.despesas ? null : (
                   <Link href={`/painel/despesas?editar=${d.id}`} style={{ color: "var(--brand-deep)", fontWeight: 700, fontSize: "0.82rem" }}>
                     Editar
                   </Link>
-                ) : (
+                )) : (
                   <Link href="/painel/acertos" style={{ color: "var(--ink-faint)", fontSize: "0.78rem" }}>
                     ver acerto
                   </Link>

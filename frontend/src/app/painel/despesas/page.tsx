@@ -7,6 +7,8 @@ import {
 } from "@/lib/cadastros";
 import styles from "../painel.module.css";
 
+import { MODULOS_OCULTOS } from "@/lib/modulos";
+import ModuloOculto from "@/components/ModuloOculto";
 const CATEGORIAS = ["Abastecimento", "Alimentação", "Manutenção", "Material de escritório", "Outro"];
 const FORMAS = ["Dinheiro", "Pix", "Cartão"];
 
@@ -38,7 +40,7 @@ interface EdicaoForm {
   observacao: string;
 }
 
-export default function PainelDespesas() {
+function PainelDespesasOriginal() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [de, setDe] = useState(diasAtras(30));
@@ -333,4 +335,8 @@ export default function PainelDespesas() {
       )}
     </div>
   );
+}
+
+export default function PainelDespesas() {
+  return MODULOS_OCULTOS.despesas ? <ModuloOculto nome="Despesas" /> : <PainelDespesasOriginal />;
 }

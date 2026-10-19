@@ -29,6 +29,7 @@ import {
 } from "@/lib/cadastros";
 import styles from "../../cadastros.module.css";
 
+import { MODULOS_OCULTOS } from "@/lib/modulos";
 export const FASES = ["Prospecção", "Negociação", "Cliente ativo", "Inativo"];
 export const TEMPERATURAS = ["Frio", "Morno", "Quente"];
 export const TIPOS_INTERACAO = ["Ligação", "Visita", "WhatsApp", "E-mail", "Outro"];
@@ -164,6 +165,7 @@ export default function EditarCliente() {
   const [mostrarExcluidosLembretes, setMostrarExcluidosLembretes] = useState(false);
 
   function carregarLembretes(excluidos = mostrarExcluidosLembretes) {
+    if (MODULOS_OCULTOS.followups) return;
     listarLembretesCliente(clienteId, excluidos).then(setLembretes).catch(() => undefined);
   }
 
@@ -636,6 +638,8 @@ export default function EditarCliente() {
           </div>
         ))}
 
+        {!MODULOS_OCULTOS.followups && (
+        <>
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
           <p className={styles.section} style={{ margin: "22px 0 10px" }}>Lembretes / follow-up</p>
           <button
@@ -786,6 +790,8 @@ export default function EditarCliente() {
             </div>
           );
         })}
+        </>
+        )}
       </div>
       {toast && <div className={styles.toast}>{toast}</div>}
     </div>

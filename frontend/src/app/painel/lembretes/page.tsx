@@ -7,6 +7,8 @@ import { concluirLembrete, excluirLembrete, listarVendedores, reabrirLembrete, t
 import { painelLembretes } from "@/lib/paineis";
 import styles from "../painel.module.css";
 
+import { MODULOS_OCULTOS } from "@/lib/modulos";
+import ModuloOculto from "@/components/ModuloOculto";
 function hojeISO(): string {
   return new Date().toISOString().slice(0, 10);
 }
@@ -24,7 +26,7 @@ const SITUACOES: { valor: Situacao; label: string }[] = [
   { valor: "todos", label: "Todos" },
 ];
 
-export default function PainelLembretes() {
+function PainelLembretesOriginal() {
   const router = useRouter();
   const [situacao, setSituacao] = useState<Situacao>("pendente");
   const [vendedorId, setVendedorId] = useState<number | null>(null);
@@ -207,4 +209,8 @@ export default function PainelLembretes() {
       )}
     </div>
   );
+}
+
+export default function PainelLembretes() {
+  return MODULOS_OCULTOS.followups ? <ModuloOculto nome="Follow-ups" /> : <PainelLembretesOriginal />;
 }

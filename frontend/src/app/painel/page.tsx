@@ -20,8 +20,6 @@ const PAINEIS = [
   { href: "/painel/estoque-racao", ico: "🌾", nome: "Estoque de ração", desc: "Chegadas − consumo por tipo, e quando pedir a próxima carga" },
   { href: "/painel/mortalidade", ico: "📉", nome: "Mortalidade por fase", desc: "Pré-engorda e engorda, por lote encerrado" },
   { href: "/painel/comercial", ico: "💰", nome: "Comercial", desc: "Vendas por período e funil de clientes" },
-  { href: "/painel/lembretes", ico: "📌", nome: "Follow-ups", desc: "Lembretes de clientes — pendentes, atrasados e concluídos" },
-  { href: "/painel/despesas", ico: "🧾", nome: "Despesas", desc: "Despesas soltas, sem vínculo com expedição — conferência e correção" },
   { href: "/painel/agua", ico: "💧", nome: "Análise da água", desc: "Série dos últimos 60 dias, por viveiro" },
   { href: "/painel/caixa", ico: "🧮", nome: "Caixa", desc: "Conferência do dinheiro, por dia e por expedição" },
   { href: "/painel/acertos", ico: "🚚", nome: "Acertos de expedição", desc: "Acertos já fechados, com opção de corrigir despesas e retornos" },
