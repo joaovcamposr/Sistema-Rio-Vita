@@ -292,7 +292,7 @@ export default function RegistrarVenda() {
           </div>
         )}
 
-        <div className={styles.field}>
+        <div className={`${styles.field} ${styles.full}`}>
           <label>Pagamento</label>
           <ParcelasEditor
             key={resetKey}

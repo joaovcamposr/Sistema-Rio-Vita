@@ -6,6 +6,9 @@
 @media (min-width: 720px) {
   .wrap { max-width: 1200px; padding: 18px 36px 24px; }
 }
+@media (min-width: 1400px) {
+  .wrap { max-width: 1560px; padding: 22px 48px 32px; }
+}
 
 .dt {
   font-size: 0.7rem;

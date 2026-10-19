@@ -7,7 +7,7 @@
 }
 @media (min-width: 900px) {
   .page {
-    max-width: 860px;
+    max-width: 960px;
     min-height: auto;
     margin: 28px auto 60px;
     border: 1px solid var(--rule);
@@ -156,4 +156,24 @@ table.tabela tbody tr:hover { background: var(--surface-sunk); }
 
 @media (min-width: 900px) {
   .appbar { position: static; background: var(--surface); }
+}
+
+/* ---------- computador: usa a largura da tela ---------- */
+@media (min-width: 1100px) {
+  .page { max-width: min(1320px, calc(100vw - 64px)); }
+  /* campos em colunas; o que não é campo (blocos, tabelas, históricos, avisos) ocupa a linha toda */
+  .body {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 36px;
+    align-content: start;
+  }
+  .body > * { min-width: 0; }
+  .body > :not(.field),
+  .body > .field:has(.chips),
+  .body > .field.full { grid-column: 1 / -1; }
+}
+@media (min-width: 1600px) {
+  .page { max-width: min(1560px, calc(100vw - 96px)); }
+  .body { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }

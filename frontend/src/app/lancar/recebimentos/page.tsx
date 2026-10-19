@@ -387,7 +387,7 @@ export default function Recebimentos() {
   }
 
   return (
-    <div className={`${styles.page} print-fit`} style={{ maxWidth: 1360 }}>
+    <div className={`${styles.page} print-fit`} style={{ maxWidth: "min(1800px, calc(100vw - 32px))" }}>
       <style>{`
         .somente-impressao { display: none; }
         @media print {
