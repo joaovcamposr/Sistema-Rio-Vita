@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { listarClientes, listarProdutos, type Cliente, type Produto, type VendaParcelaEntrada } from "@/lib/api";
-import { listarPrecosCliente } from "@/lib/cadastros";
+import { creditoDoCliente, listarPrecosCliente, type CreditoCliente } from "@/lib/cadastros";
 import { enfileirar } from "@/lib/offline-queue";
 import ParcelasEditor, { parcelaUnicaAVista } from "@/components/ParcelasEditor";
 import styles from "../form.module.css";
@@ -13,6 +13,9 @@ import HistoricoLancamentos from "@/components/HistoricoLancamentos";
 function hojeISO(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+function moeda(v: number): string {
+  return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 function nf(v: number, casas = 2): string {
   return v.toLocaleString("pt-BR", { minimumFractionDigits: casas, maximumFractionDigits: casas });
@@ -45,6 +48,7 @@ export default function RegistrarVenda() {
   const proximaChave = useRef(2);
   const [itens, setItens] = useState<ItemVenda[]>([{ chave: 1, produtoId: null, quantidade: "", unidades: "", preco: "", precoEditado: false }]);
   const [precosCliente, setPrecosCliente] = useState<Record<number, number>>({});
+  const [credito, setCredito] = useState<CreditoCliente | null>(null);
   const [parcelas, setParcelas] = useState<VendaParcelaEntrada[]>(() => parcelaUnicaAVista(hojeISO(), 0));
   const [parcelasBatem, setParcelasBatem] = useState(true);
   const [resetKey, setResetKey] = useState(0);
@@ -83,6 +87,15 @@ export default function RegistrarVenda() {
     return () => {
       cancelado = true;
     };
+  }, [clienteId]);
+
+  // situação de crédito do cliente: limite, em aberto, vencido e disponível
+  useEffect(() => {
+    setCredito(null);
+    if (!clienteId) return;
+    let cancelado = false;
+    creditoDoCliente(clienteId).then((c) => { if (!cancelado) setCredito(c); }).catch(() => undefined);
+    return () => { cancelado = true; };
   }, [clienteId]);
 
   // aplica o preço do cliente nos itens cujo preço o operador ainda não digitou
@@ -127,7 +140,17 @@ export default function RegistrarVenda() {
     setItens((its) => [...its, { chave: proximaChave.current++, produtoId: livre?.id ?? null, quantidade: "", unidades: "", preco, precoEditado: false }]);
   }
 
+  // quanto o pedido passa do limite (só quando há limite definido)
+  const excedente = credito && credito.disponivel !== null ? totalPedido - credito.disponivel : 0;
+
   async function salvar() {
+    if (credito && credito.disponivel !== null && excedente > 0.005) {
+      const ok = window.confirm(
+        `${credito.nome} tem limite de ${moeda(credito.limite_credito ?? 0)} e já deve ${moeda(credito.em_aberto)}.\n` +
+        `Esta venda de ${moeda(totalPedido)} passa do limite em ${moeda(excedente)}.\n\nLançar mesmo assim?`
+      );
+      if (!ok) return;
+    }
     setEnviando(true);
     try {
       await enfileirar("pedido_venda", {
@@ -191,6 +214,37 @@ export default function RegistrarVenda() {
             + Cadastrar cliente
           </button>
         </div>
+
+        {credito && (
+          <div
+            className={styles.full}
+            style={{
+              marginBottom: 14, padding: "10px 14px", borderRadius: 12, fontSize: "0.88rem", lineHeight: 1.5,
+              border: `1px solid ${credito.status === "estourado" || excedente > 0.005 ? "var(--crit)" : credito.status === "atencao" || credito.vencido > 0 ? "var(--warn)" : "var(--rule)"}`,
+              background: credito.status === "estourado" || excedente > 0.005 ? "var(--crit-soft)" : credito.status === "atencao" || credito.vencido > 0 ? "var(--warn-soft)" : "var(--surface)",
+            }}
+          >
+            <strong>Crédito de {credito.nome}</strong>
+            {credito.limite_credito === null ? (
+              <span> — sem limite definido. Em aberto: <strong>{moeda(credito.em_aberto)}</strong>.</span>
+            ) : (
+              <span>
+                {" "}— limite {moeda(credito.limite_credito)} · em aberto <strong>{moeda(credito.em_aberto)}</strong> · disponível{" "}
+                <strong>{moeda(credito.disponivel ?? 0)}</strong>
+              </span>
+            )}
+            {credito.vencido > 0 && (
+              <div style={{ color: "var(--crit)", fontWeight: 700 }}>
+                ⚠ {moeda(credito.vencido)} já vencido{credito.maior_atraso_dias ? ` (atraso de até ${credito.maior_atraso_dias} dias)` : ""}.
+              </div>
+            )}
+            {excedente > 0.005 && (
+              <div style={{ color: "var(--crit)", fontWeight: 700 }}>
+                ⚠ Esta venda passa do limite em {moeda(excedente)} — será pedida confirmação ao salvar.
+              </div>
+            )}
+          </div>
+        )}
 
         {linhas.map((l, idx) => (
           <div

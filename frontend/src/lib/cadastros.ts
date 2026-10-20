@@ -51,6 +51,7 @@ export interface ClienteDetalhe {
   contato: string | null;
   cidade: string | null;
   prazo_dias: number | null;
+  limite_credito?: number | null;
   emite_nf: boolean;
   emite_boleto: boolean;
   vendedor_id: number | null;
@@ -70,6 +71,26 @@ export interface ClienteDetalhe {
   preferencia_tamanho: string | null;
   fresco_congelado: string | null;
   observacoes: string | null;
+}
+
+export type StatusCredito = "sem_limite" | "ok" | "atencao" | "estourado";
+export interface CreditoCliente {
+  cliente_id: number;
+  nome: string;
+  cidade: string | null;
+  vendedor_nome: string | null;
+  prazo_dias: number | null;
+  limite_credito: number | null;
+  em_aberto: number;
+  vencido: number;
+  a_vencer: number;
+  disponivel: number | null;
+  uso: number | null;
+  status: StatusCredito;
+  maior_atraso_dias: number | null;
+  proximo_vencimento: string | null;
+  vendas_abertas: number;
+  ultima_compra: string | null;
 }
 
 export interface ClienteProdutoPreco {
@@ -314,6 +335,25 @@ export const editarRetorno = (id: number, body: { quantidade_embalagens: number 
 
 export const obterCliente = (id: number) =>
   cachedGet<ClienteDetalhe>(`cache:cliente:${id}`, `/clientes/${id}`);
+export const listarCredito = () => enviarGet<CreditoCliente[]>("/credito/clientes");
+export const creditoDoCliente = (id: number) => enviarGet<CreditoCliente>(`/credito/clientes/${id}`);
+export async function definirLimiteCredito(id: number, limite: number | null): Promise<CreditoCliente> {
+  const r = await fetch(`${apiBase()}/credito/clientes/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...authHeader() },
+    body: JSON.stringify({ limite_credito: limite }),
+  });
+  if (r.status === 401) sessaoInvalida();
+  if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+  return (await r.json()) as CreditoCliente;
+}
+async function enviarGet<T>(path: string): Promise<T> {
+  const r = await fetch(`${apiBase()}${path}`, { cache: "no-store", headers: authHeader() });
+  if (r.status === 401) sessaoInvalida();
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return (await r.json()) as T;
+}
+
 export const criarCliente = (body: Omit<ClienteDetalhe, "id">, forcar = false) =>
   enviar<ClienteDetalhe>(forcar ? "/clientes?forcar=true" : "/clientes", "POST", body);
 

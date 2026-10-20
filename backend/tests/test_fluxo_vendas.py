@@ -371,3 +371,24 @@ def test_historicos_mostram_quem_lancou(api, produto_id):
     for tipo in ("agua", "povoamento", "expedicao", "acerto"):
         r = api.get(f"/historico/{tipo}", params={"de": "2020-01-01", "ate": str(HOJE)})
         assert r.status_code == 200 and isinstance(r.json(), list), tipo
+
+
+def test_limite_de_credito_mostra_aberto_vencido_e_disponivel(api, produto_id):
+    nome = f"Cliente Credito {uuid.uuid4().hex[:6]}"
+    cli = api.post("/clientes", json={"nome": nome, "e_cliente": True, "limite_credito": 1000}).json()
+    assert cli["limite_credito"] == 1000
+    ontem = HOJE - timedelta(days=3)
+    for valor, prevista, pago in ((400, ontem, None), (300, HOJE + timedelta(days=10), None), (250, ontem, ontem)):
+        r = api.post("/vendas", json={
+            "client_id": str(uuid.uuid4()), "data": str(ontem), "cliente_id": cli["id"], "produto_id": produto_id,
+            "quantidade_un": 1, "quantidade_kg": 1, "preco_kg": valor,
+            "parcelas": [{"valor": valor, "forma_pgto": "Pix", "data_prevista": str(prevista),
+                          **({"data_pagamento": str(pago)} if pago else {})}],
+        })
+        assert r.status_code == 201, r.text
+    c = api.get(f"/credito/clientes/{cli['id']}").json()
+    assert c["em_aberto"] == 700 and c["vencido"] == 400 and c["a_vencer"] == 300      # a de 250 já foi paga
+    assert c["disponivel"] == 300 and c["status"] == "ok" and c["maior_atraso_dias"] == 3
+    assert api.patch(f"/credito/clientes/{cli['id']}", json={"limite_credito": 600}).json()["status"] == "estourado"
+    assert api.patch(f"/credito/clientes/{cli['id']}", json={"limite_credito": None}).json()["status"] == "sem_limite"
+    assert any(x["cliente_id"] == cli["id"] for x in api.get("/credito/clientes").json())

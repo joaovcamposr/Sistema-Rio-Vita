@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
+  creditoDoCliente,
+  type CreditoCliente,
   atualizarCliente,
   concluirLembrete,
   criarInteracao,
@@ -154,6 +156,10 @@ export default function EditarCliente() {
     }
   }
 
+  const [credito, setCredito] = useState<CreditoCliente | null>(null);
+  useEffect(() => {
+    creditoDoCliente(clienteId).then(setCredito).catch(() => undefined);
+  }, [clienteId, cliente?.limite_credito === undefined]); // recarrega ao abrir o cliente
   const [lembretes, setLembretes] = useState<LembreteCliente[] | null>(null);
   const [novaDataLembrete, setNovaDataLembrete] = useState(hojeISO());
   const [novoVendedorLembreteId, setNovoVendedorLembreteId] = useState<number | null>(null);
@@ -277,7 +283,8 @@ export default function EditarCliente() {
     try {
       const atualizado = await atualizarCliente(clienteId, {
         nome: cliente.nome, cnpj: cliente.cnpj, contato: cliente.contato, cidade: cliente.cidade,
-        prazo_dias: cliente.prazo_dias, emite_nf: cliente.emite_nf, emite_boleto: cliente.emite_boleto,
+        prazo_dias: cliente.prazo_dias, limite_credito: cliente.limite_credito,
+        emite_nf: cliente.emite_nf, emite_boleto: cliente.emite_boleto,
         vendedor_id: cliente.vendedor_id, vendedor_nome: cliente.vendedor_nome,
         nome_contato: cliente.nome_contato, endereco: cliente.endereco, ramo: cliente.ramo,
         priorizacao: cliente.priorizacao, e_cliente: cliente.e_cliente, fase: cliente.fase,
@@ -375,6 +382,21 @@ export default function EditarCliente() {
             value={cliente.prazo_dias ?? ""}
             onChange={(e) => atualizarCampo("prazo_dias", e.target.value ? Number(e.target.value) : null)}
           />
+        </div>
+        <div className={styles.field}>
+          <label>Limite de crédito (R$) — deixe vazio para sem limite</label>
+          <input
+            className={styles.inp} type="number" inputMode="decimal" min={0} step="0.01"
+            value={cliente.limite_credito ?? ""}
+            onChange={(e) => atualizarCampo("limite_credito", e.target.value ? Number(e.target.value) : null)}
+          />
+          {credito && (
+            <p style={{ margin: "8px 0 0", fontSize: "0.82rem", color: credito.status === "estourado" ? "var(--crit)" : "var(--ink-muted)" }}>
+              Em aberto hoje: <strong>{credito.em_aberto.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</strong>
+              {credito.vencido > 0 && <> · vencido <strong style={{ color: "var(--crit)" }}>{credito.vencido.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</strong></>}
+              {credito.disponivel !== null && <> · disponível <strong>{credito.disponivel.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</strong></>}
+            </p>
+          )}
         </div>
         <div className={styles.field}>
           <label>Vendedor</label>

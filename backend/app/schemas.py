@@ -1145,6 +1145,7 @@ class ClienteDetalheOut(BaseModel):
     contato: str | None
     cidade: str | None
     prazo_dias: int | None
+    limite_credito: float | None = None
     emite_nf: bool
     emite_boleto: bool
     vendedor_id: int | None = None
@@ -1172,6 +1173,7 @@ class ClienteIn(BaseModel):
     contato: str | None = None
     cidade: str | None = None
     prazo_dias: int | None = None
+    limite_credito: float | None = Field(default=None, ge=0)
     emite_nf: bool = False
     emite_boleto: bool = False
     vendedor_id: int | None = None

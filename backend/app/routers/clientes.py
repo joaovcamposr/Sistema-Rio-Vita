@@ -18,7 +18,7 @@ from ..schemas import (
 router = APIRouter(prefix="/clientes", tags=["clientes"])
 
 _COLUNAS_DETALHE = (
-    "c.id, c.nome, c.cnpj, c.contato, c.cidade, c.prazo_dias, c.emite_nf, c.emite_boleto, "
+    "c.id, c.nome, c.cnpj, c.contato, c.cidade, c.prazo_dias, c.limite_credito, c.emite_nf, c.emite_boleto, "
     "c.vendedor_id, vd.nome AS vendedor_nome, "
     "c.nome_contato, c.endereco, c.ramo, c.priorizacao, c.e_cliente, c.fase, c.temperatura, "
     "c.motivo, c.proxima_acao, c.fornecedor_atual, c.preco_concorrente, c.preferencia_tamanho, "
@@ -27,7 +27,7 @@ _COLUNAS_DETALHE = (
 _FROM_DETALHE = "FROM cliente c LEFT JOIN vendedor vd ON vd.id = c.vendedor_id"
 
 _COLUNAS_CRIAR_EDITAR = (
-    "nome", "cnpj", "contato", "cidade", "prazo_dias", "emite_nf", "emite_boleto", "vendedor_id",
+    "nome", "cnpj", "contato", "cidade", "prazo_dias", "limite_credito", "emite_nf", "emite_boleto", "vendedor_id",
     "nome_contato", "endereco", "ramo", "priorizacao", "e_cliente", "fase", "temperatura",
     "motivo", "proxima_acao", "fornecedor_atual", "preco_concorrente", "preferencia_tamanho",
     "fresco_congelado", "observacoes",
