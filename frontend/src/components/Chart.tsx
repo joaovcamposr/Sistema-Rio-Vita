@@ -24,6 +24,8 @@ interface ChartProps {
   // horizontal quando não cabe; com isso ligado, o gráfico encolhe pra
   // caber todos os buckets do período de uma vez, sem precisar rolar
   caberNaTela?: boolean;
+  // clique numa barra/ponto/rótulo de um período (devolve o bucket) — usado pra abrir o detalhe
+  aoClicarBucket?: (bucket: string) => void;
 }
 
 // paleta restrita à identidade visual da Rio Vita — tons do azul da marca
@@ -36,6 +38,7 @@ export default function Chart({
   formatarBucket = (b) => b,
   altura = 260,
   caberNaTela = false,
+  aoClicarBucket,
 }: ChartProps) {
   const [ocultas, setOcultas] = useState<Set<string>>(new Set());
   const [dica, setDica] = useState<{ x: number; y: number; texto: string } | null>(null);
@@ -135,7 +138,8 @@ export default function Chart({
             const grupoX = margemEsq + bi * passoX;
             const larguraBarra = Math.min(28, (passoX - 8) / Math.max(1, visiveis.length));
             return (
-              <g key={`${p.bucket}-${bi}`}>
+              <g key={`${p.bucket}-${bi}`} onClick={aoClicarBucket ? () => aoClicarBucket(p.bucket) : undefined}
+                style={aoClicarBucket ? { cursor: "pointer" } : undefined}>
                 {visiveis.map((s, si) => {
                   const v = p.valores[s];
                   if (typeof v !== "number") return null;
@@ -168,7 +172,8 @@ export default function Chart({
             let acumulado = 0;
             const total = totalDoBucket(p);
             return (
-              <g key={`${p.bucket}-${bi}`}>
+              <g key={`${p.bucket}-${bi}`} onClick={aoClicarBucket ? () => aoClicarBucket(p.bucket) : undefined}
+                style={aoClicarBucket ? { cursor: "pointer" } : undefined}>
                 {visiveis.map((s) => {
                   const v = p.valores[s];
                   if (typeof v !== "number" || v <= 0) return null;
@@ -219,6 +224,8 @@ export default function Chart({
                 {pontos.map((p) => (
                   <circle
                     key={p.bi} cx={p.x} cy={p.y} r={raio} fill={cor}
+                    onClick={aoClicarBucket ? () => aoClicarBucket(dados[p.bi].bucket) : undefined}
+                    style={aoClicarBucket ? { cursor: "pointer" } : undefined}
                     onMouseEnter={(e) => setDica({
                       x: e.nativeEvent.offsetX, y: e.nativeEvent.offsetY,
                       texto: `${s} · ${formatarBucket(dados[p.bi].bucket)}: ${formatarValor(p.v)}`,
@@ -231,7 +238,7 @@ export default function Chart({
           })}
 
           {tipo === "linha" && dados.map((p, bi) => (
-            <text key={`${p.bucket}-${bi}`} x={margemEsq + bi * passoX + passoX / 2} y={altura - 12} textAnchor="middle" fontSize={10} fill="var(--ink-faint)">
+            <text key={`${p.bucket}-${bi}`} onClick={aoClicarBucket ? () => aoClicarBucket(p.bucket) : undefined} style={aoClicarBucket ? { cursor: "pointer" } : undefined} x={margemEsq + bi * passoX + passoX / 2} y={altura - 12} textAnchor="middle" fontSize={10} fill="var(--ink-faint)">
               {formatarBucket(p.bucket)}
             </text>
           ))}

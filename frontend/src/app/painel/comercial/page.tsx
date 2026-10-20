@@ -13,6 +13,7 @@ import {
 } from "@/lib/paineis";
 import Chart, { type SeriePonto } from "@/components/Chart";
 import ClienteCombobox from "@/components/ClienteCombobox";
+import VendasDoPeriodo from "@/components/VendasDoPeriodo";
 import styles from "../painel.module.css";
 
 function hojeISO(): string {
@@ -64,6 +65,7 @@ export default function PainelComercial() {
   const [serie, setSerie] = useState<ComercialSerie | null>(null);
   const [comoTabela, setComoTabela] = useState(false);
   const [produtosFiltroCliente, setProdutosFiltroCliente] = useState<number[]>([]);
+  const [periodoAberto, setPeriodoAberto] = useState<string | null>(null); // bucket cujas vendas estão abertas
 
   useEffect(() => {
     setDados(null);
@@ -297,20 +299,23 @@ export default function PainelComercial() {
 
         {serie && serie.buckets.length > 0 && !comoTabela && (
           <>
+            <p className={styles.hint} style={{ margin: "0 0 8px" }}>
+              Clique numa barra ou num {granularidade === "dia" ? "dia" : granularidade === "mes" ? "mês" : "ano"} para ver as vendas desse período.
+            </p>
             <div className={styles.section}>Volume total vendido por produto (Kg)</div>
             <Chart
               dados={pontosVolume} series={produtos} tipo="barra" modoBarra="empilhada" mostrarTotal
-              formatarBucket={formatarBucket} formatarValor={(v) => nf(v)}
+              formatarBucket={formatarBucket} formatarValor={(v) => nf(v)} aoClicarBucket={setPeriodoAberto}
             />
 
             <div className={styles.section}>Faturamento por produto</div>
             <Chart
               dados={pontosFaturamento} series={produtos} tipo="barra" modoBarra="empilhada" mostrarTotal
-              formatarBucket={formatarBucket} formatarValor={(v) => moeda(v)}
+              formatarBucket={formatarBucket} formatarValor={(v) => moeda(v)} aoClicarBucket={setPeriodoAberto}
             />
 
             <div className={styles.section}>Preço médio ponderado por produto (R$/Kg)</div>
-            <Chart dados={pontosPreco} series={produtos} tipo="linha" formatarBucket={formatarBucket} formatarValor={(v) => moeda(v)} />
+            <Chart dados={pontosPreco} series={produtos} tipo="linha" formatarBucket={formatarBucket} formatarValor={(v) => moeda(v)} aoClicarBucket={setPeriodoAberto} />
           </>
         )}
 
@@ -318,13 +323,18 @@ export default function PainelComercial() {
           <div className={styles.tableWrap}>
             <table className={styles.tabela}>
               <thead>
-                <tr><th>Período</th><th>Produto</th><th>Kg</th><th>Valor</th><th>Preço médio (R$/Kg)</th></tr>
+                <tr><th>Período (mais recente primeiro)</th><th>Produto</th><th>Kg</th><th>Valor</th><th>Preço médio (R$/Kg)</th></tr>
               </thead>
               <tbody>
-                {serie.buckets.flatMap((b) =>
+                {[...serie.buckets].sort((a, b) => (a.bucket < b.bucket ? 1 : a.bucket > b.bucket ? -1 : 0)).flatMap((b) =>
                   b.por_produto.map((p) => (
-                    <tr key={`${b.bucket}-${p.produto_id}`}>
-                      <td>{formatarBucket(b.bucket)}</td>
+                    <tr key={`${b.bucket}-${p.produto_id}`} onClick={() => setPeriodoAberto(b.bucket)} style={{ cursor: "pointer" }} title="Ver as vendas desse período">
+                      <td>
+                        <button type="button" onClick={() => setPeriodoAberto(b.bucket)}
+                          style={{ background: "none", border: "none", padding: 0, color: "var(--brand-deep)", fontWeight: 700, cursor: "pointer", textDecoration: "underline" }}>
+                          {formatarBucket(b.bucket)}
+                        </button>
+                      </td>
                       <td>{p.produto_nome}</td>
                       <td>{nf(p.quantidade_kg, 1)}</td>
                       <td>{moeda(p.valor_total)}</td>
@@ -429,6 +439,18 @@ export default function PainelComercial() {
           </>
         )}
       </div>
+
+      {periodoAberto && serie && (
+        <VendasDoPeriodo
+          bucket={periodoAberto}
+          buckets={serie.buckets.map((b) => b.bucket)}
+          clienteId={clienteFiltro}
+          vendedores={vendedoresFiltro}
+          excluirVendedores={excluirVendedores}
+          onFechar={() => setPeriodoAberto(null)}
+          onTrocarBucket={setPeriodoAberto}
+        />
+      )}
     </div>
   );
 }
