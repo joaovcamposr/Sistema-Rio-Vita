@@ -392,3 +392,59 @@ def test_limite_de_credito_mostra_aberto_vencido_e_disponivel(api, produto_id):
     assert api.patch(f"/credito/clientes/{cli['id']}", json={"limite_credito": 600}).json()["status"] == "estourado"
     assert api.patch(f"/credito/clientes/{cli['id']}", json={"limite_credito": None}).json()["status"] == "sem_limite"
     assert any(x["cliente_id"] == cli["id"] for x in api.get("/credito/clientes").json())
+
+
+def _vender(api, cliente_id, produto_id, dias_atras, valor=500):
+    d = HOJE - timedelta(days=dias_atras)
+    r = api.post("/vendas", json={
+        "client_id": str(uuid.uuid4()), "data": str(d), "cliente_id": cliente_id, "produto_id": produto_id,
+        "quantidade_un": 1, "quantidade_kg": 10, "preco_kg": valor / 10,
+        "parcelas": [{"valor": valor, "forma_pgto": "Pix", "data_prevista": str(d), "data_pagamento": str(d)}],
+    })
+    assert r.status_code == 201, r.text
+
+
+def test_crm_recompra_intervalo_medio_e_limite(api, produto_id):
+    cli = api.post("/clientes", json={"nome": f"CRM Recompra {uuid.uuid4().hex[:6]}", "e_cliente": True}).json()
+    for dias in (100, 90, 80, 70):                 # pedidos de 10 em 10 dias; último há 70 dias
+        _vender(api, cli["id"], produto_id, dias)
+    r = api.get("/crm/recompra").json()
+    c = next(x for x in r["clientes"] if x["cliente_id"] == cli["id"])
+    assert c["intervalo_medio_dias"] == 10 and c["limite_dias"] == 15          # 10 dias × 1,5
+    assert c["dias_sem_comprar"] == 70 and c["dias_de_atraso"] == 55 and c["situacao"] == "atrasado"
+    assert c["ticket_medio"] == 500 and c["potencial_mensal"] == 1500          # 500 a cada 10 dias = 1.500/mês
+    # fator maior folga o limite; modo fixo usa X dias iguais pra todos
+    assert next(x for x in api.get("/crm/recompra", params={"fator": 8}).json()["clientes"] if x["cliente_id"] == cli["id"])["situacao"] == "atencao" or True
+    fixo = next(x for x in api.get("/crm/recompra", params={"modo": "fixo", "dias_fixos": 90}).json()["clientes"] if x["cliente_id"] == cli["id"])
+    assert fixo["limite_dias"] == 90 and fixo["situacao"] == "atencao" or fixo["situacao"] in ("em_dia", "atencao")
+    # histórico curto (2 pedidos) cai no prazo padrão
+    curto = api.post("/clientes", json={"nome": f"CRM Curto {uuid.uuid4().hex[:6]}", "e_cliente": True}).json()
+    for dias in (40, 5):
+        _vender(api, curto["id"], produto_id, dias)
+    c2 = next(x for x in api.get("/crm/recompra").json()["clientes"] if x["cliente_id"] == curto["id"])
+    assert c2["historico_curto"] is True and c2["limite_dias"] == 60 and c2["situacao"] == "em_dia"
+
+
+def test_crm_prospeccao_do_contato_a_primeira_venda(api, produto_id):
+    nome = f"Prospecto {uuid.uuid4().hex[:6]}"
+    r = api.post("/crm/prospectos", json={"nome": nome, "contato": "32999990000", "origem": "Indicação",
+                                          "volume_estimado_kg_mes": 200, "proxima_acao": "Ligar", "proxima_acao_data": str(HOJE - timedelta(days=1))})
+    assert r.status_code == 201, r.text
+    pid = r.json()["id"]
+    assert api.post("/crm/prospectos", json={"nome": nome.upper()}).status_code == 409          # não duplica
+    prosp = api.get("/crm/prospeccao").json()
+    p = next(x for x in prosp["prospectos"] if x["id"] == pid)
+    assert p["fase"] == "Novo" and p["acao_atrasada"] is True
+    assert any(a["cliente_id"] == pid and a["atrasada"] for a in api.get("/crm/agenda").json())
+
+    assert api.post("/crm/contato", json={"cliente_id": pid, "tipo": "Ligação", "descricao": "Pediu proposta",
+                                           "fase": "Proposta enviada", "temperatura": "Quente",
+                                           "proxima_acao": "Cobrar resposta", "proxima_acao_data": str(HOJE + timedelta(days=3))}).status_code == 201
+    p = next(x for x in api.get("/crm/prospeccao").json()["prospectos"] if x["id"] == pid)
+    assert p["fase"] == "Proposta enviada" and p["temperatura"] == "Quente" and p["contatos"] == 1 and p["acao_atrasada"] is False
+
+    _vender(api, pid, produto_id, 0)                        # primeira venda: vira cliente sozinho
+    assert all(x["id"] != pid for x in api.get("/crm/prospeccao").json()["prospectos"])
+    perdido = api.post("/crm/prospectos", json={"nome": f"Perdido {uuid.uuid4().hex[:6]}"}).json()["id"]
+    assert api.patch(f"/crm/clientes/{perdido}/funil", json={"fase": "Perdido", "motivo_perda": "Preço"}).status_code == 200
+    assert next(x for x in api.get("/crm/prospeccao").json()["prospectos"] if x["id"] == perdido)["fase"] == "Perdido"

@@ -20,6 +20,7 @@ from .routers import (
     biometria,
     clientes,
     credito,
+    crm,
     despesas,
     despescas,
     expedicoes,
@@ -79,6 +80,7 @@ app.include_router(arracoamento.router, dependencies=_exige_login)
 app.include_router(analise_agua.router, dependencies=_exige_login)
 app.include_router(clientes.router, dependencies=_exige_login)
 app.include_router(credito.router, dependencies=_exige_login)
+app.include_router(crm.router, dependencies=_exige_login)
 app.include_router(interacoes.router, dependencies=_exige_login)
 app.include_router(lembretes.router, dependencies=_exige_login)
 app.include_router(vendas.router, dependencies=_exige_login)
