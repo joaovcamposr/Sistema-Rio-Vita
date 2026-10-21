@@ -448,3 +448,24 @@ def test_crm_prospeccao_do_contato_a_primeira_venda(api, produto_id):
     perdido = api.post("/crm/prospectos", json={"nome": f"Perdido {uuid.uuid4().hex[:6]}"}).json()["id"]
     assert api.patch(f"/crm/clientes/{perdido}/funil", json={"fase": "Perdido", "motivo_perda": "Preço"}).status_code == 200
     assert next(x for x in api.get("/crm/prospeccao").json()["prospectos"] if x["id"] == perdido)["fase"] == "Perdido"
+
+
+def test_crm_limite_de_recompra_manual_por_cliente(api, produto_id):
+    cli = api.post("/clientes", json={"nome": f"CRM Manual {uuid.uuid4().hex[:6]}", "e_cliente": True}).json()
+    for dias in (100, 90, 80, 70):                       # ritmo de 10 dias; último pedido há 70 dias
+        _vender(api, cli["id"], produto_id, dias)
+
+    def linha():
+        return next(x for x in api.get("/crm/recompra").json()["clientes"] if x["cliente_id"] == cli["id"])
+
+    auto = linha()
+    assert auto["limite_dias"] == 15 and auto["limite_manual"] is False and auto["situacao"] == "atrasado"
+    # ajuste manual vale no lugar do automático — só pra esse cliente
+    assert api.patch(f"/crm/clientes/{cli['id']}/limite-recompra", json={"dias": 90}).status_code == 200
+    manual = linha()
+    assert manual["limite_dias"] == 90 and manual["limite_manual"] is True and manual["limite_automatico_dias"] == 15
+    assert manual["situacao"] == "atencao" and manual["dias_de_atraso"] == 0
+    # voltar ao automático
+    assert api.patch(f"/crm/clientes/{cli['id']}/limite-recompra", json={"dias": None}).status_code == 200
+    assert linha()["limite_manual"] is False and linha()["limite_dias"] == 15
+    assert api.patch(f"/crm/clientes/{cli['id']}/limite-recompra", json={"dias": 0}).status_code == 422

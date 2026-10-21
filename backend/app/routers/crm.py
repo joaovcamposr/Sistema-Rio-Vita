@@ -58,7 +58,7 @@ def clientes_sem_comprar(
     clientes = {
         r["id"]: r for r in db.execute(text("""
             SELECT c.id, c.nome, c.cidade, c.contato, c.temperatura, c.proxima_acao, c.proxima_acao_data, c.fase,
-                   vd.nome AS vendedor_cadastro
+                   c.limite_recompra_dias, vd.nome AS vendedor_cadastro
             FROM cliente c LEFT JOIN vendedor vd ON vd.id = c.vendedor_id
             WHERE c.ativo AND c.e_cliente
         """)).mappings().all()
@@ -99,13 +99,16 @@ def clientes_sem_comprar(
         intervalo_medio = mean(intervalos) if intervalos and not historico_curto else None
 
         if modo == "fixo":
-            limite = dias_fixos
+            limite_auto = dias_fixos
         elif intervalo_medio is not None:
-            limite = max(1, math.ceil(intervalo_medio * fator))
+            limite_auto = max(1, math.ceil(intervalo_medio * fator))
         else:
-            limite = dias_padrao
+            limite_auto = dias_padrao
+        # ajuste manual por cliente vale no lugar do cálculo automático
+        manual = c["limite_recompra_dias"]
+        limite = manual if manual else limite_auto
         dias_sem = (hoje - ultima).days
-        base = intervalo_medio if (modo == "relativo" and intervalo_medio is not None) else limite
+        base = limite if (modo == "fixo" or intervalo_medio is None) else min(intervalo_medio, limite)
         if dias_sem <= base:
             situacao = "em_dia"
         elif dias_sem <= limite:
@@ -126,7 +129,8 @@ def clientes_sem_comprar(
             "vendedor": vendedor_mais_frequente.get(cid) or c["vendedor_cadastro"],
             "pedidos": len(datas), "ultima_compra": ultima, "dias_sem_comprar": dias_sem,
             "intervalo_medio_dias": round(intervalo_medio, 1) if intervalo_medio is not None else None,
-            "limite_dias": limite, "dias_de_atraso": max(0, dias_sem - limite),
+            "limite_dias": limite, "limite_automatico_dias": limite_auto, "limite_manual": bool(manual),
+            "dias_de_atraso": max(0, dias_sem - limite),
             "proxima_compra_prevista": (ultima + timedelta(days=round(intervalo_medio))) if intervalo_medio else None,
             "historico_curto": historico_curto, "situacao": situacao,
             "ticket_medio": round(ticket, 2), "valor_90d": round(valor_90d, 2), "valor_12m": round(valor_12m, 2),
@@ -145,6 +149,23 @@ def clientes_sem_comprar(
                        "min_pedidos": min_pedidos, "dias_padrao": dias_padrao},
         "resumo": resumo, "clientes": saida,
     }
+
+
+class LimiteRecompraIn(BaseModel):
+    dias: int | None = Field(default=None, ge=1, le=730)     # None = volta ao automático
+
+
+@router.patch("/clientes/{cliente_id}/limite-recompra")
+def definir_limite_recompra(
+    cliente_id: int, body: LimiteRecompraIn, db: Session = Depends(get_db), _u: UsuarioOut = Depends(get_current_user),
+):
+    """Ajusta, só para esse cliente, depois de quantos dias sem comprar ele entra em atraso. `dias` nulo = automático."""
+    r = db.execute(text("UPDATE cliente SET limite_recompra_dias = :d WHERE id = :id AND ativo RETURNING id"),
+                   {"d": body.dias, "id": cliente_id}).first()
+    db.commit()
+    if r is None:
+        raise HTTPException(404, "cliente não encontrado")
+    return {"ok": True, "limite_recompra_dias": body.dias}
 
 
 # --------------------------------------------------------------------------- prospecção

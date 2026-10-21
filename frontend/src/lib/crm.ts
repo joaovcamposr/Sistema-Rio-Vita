@@ -28,6 +28,8 @@ export interface ClienteRecompra {
   dias_sem_comprar: number;
   intervalo_medio_dias: number | null;
   limite_dias: number;
+  limite_automatico_dias: number;
+  limite_manual: boolean;
   dias_de_atraso: number;
   proxima_compra_prevista: string | null;
   historico_curto: boolean;
@@ -63,6 +65,10 @@ export const buscarRecompra = (p: ParametrosRecompra) =>
     modo: p.modo, fator: String(p.fator), dias_fixos: String(p.dias_fixos),
     pedidos_do_intervalo: String(p.pedidos_do_intervalo), min_pedidos: String(p.min_pedidos), dias_padrao: String(p.dias_padrao),
   })}`);
+
+/** Ajusta o limite (dias sem comprar) só desse cliente. `null` volta ao cálculo automático. */
+export const definirLimiteRecompra = (id: number, dias: number | null) =>
+  chamar<{ ok: boolean }>(`/crm/clientes/${id}/limite-recompra`, "PATCH", { dias });
 
 export interface Prospecto {
   id: number;

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  atualizarFunil, buscarAgenda, buscarProspeccao, buscarRecompra, criarProspecto, registrarContato,
+  atualizarFunil, buscarAgenda, buscarProspeccao, buscarRecompra, criarProspecto, definirLimiteRecompra, registrarContato,
   type ClienteRecompra, type ItemAgenda, type ParametrosRecompra, type Prospecto, type Prospeccao, type Recompra, type SituacaoRecompra,
 } from "@/lib/crm";
 import styles from "../painel/painel.module.css";
@@ -226,6 +226,8 @@ export default function CRM() {
   const [vendedorSel, setVendedorSel] = useState("");
   const [ordem, setOrdem] = useState<{ col: string; asc: boolean } | null>(null);
   const [avancado, setAvancado] = useState(false);
+  const [editandoLimite, setEditandoLimite] = useState<number | null>(null);
+  const [valorLimite, setValorLimite] = useState("");
 
   // ---- prospecção / agenda
   const [pros, setPros] = useState<Prospeccao | null>(null);
@@ -267,6 +269,21 @@ export default function CRM() {
     };
     return [...f].sort((a, b) => { const ka = chave(a), kb = chave(b); const r = ka < kb ? -1 : ka > kb ? 1 : 0; return ordem.asc ? r : -r; });
   }, [recompra, situacoes, busca, vendedorSel, ordem]);
+
+  async function salvarLimite(clienteId: number, valor: string) {
+    const dias = valor.trim() === "" ? null : Math.round(Number(valor));
+    if (dias !== null && !(dias >= 1 && dias <= 730)) { setMsg("Informe de 1 a 730 dias."); setTimeout(() => setMsg(null), 2500); return; }
+    try {
+      await definirLimiteRecompra(clienteId, dias);
+      setEditandoLimite(null);
+      setMsg(dias === null ? "Voltou ao cálculo automático" : `Limite do cliente ajustado para ${dias} dias`);
+      setTimeout(() => setMsg(null), 2500);
+      carregarRecompra();
+    } catch {
+      setMsg("Não foi possível salvar o limite.");
+      setTimeout(() => setMsg(null), 2500);
+    }
+  }
 
   function ordenar(col: string) { setOrdem((o) => (o?.col === col ? { col, asc: !o.asc } : { col, asc: col === "nome" })); }
   const th = (col: string, rotulo: string, dir = false) => (
@@ -348,7 +365,7 @@ export default function CRM() {
               {param.modo === "relativo"
                 ? `Cliente fica "atrasado" quando passa do intervalo médio entre os últimos pedidos + ${Math.round((param.fator - 1) * 100)}%. Quem tem menos de ${param.min_pedidos} pedidos usa ${param.dias_padrao} dias.`
                 : `Cliente fica "atrasado" quando está há mais de ${param.dias_fixos} dias sem comprar.`}{" "}
-              Um pedido = um dia de compra do cliente.
+              Um pedido = um dia de compra do cliente. O limite de cada cliente pode ser ajustado à mão (clique no valor da coluna Limite); o ajuste vale no lugar do automático.
             </p>
 
             {!recompra && !erro && <div className={styles.carregando}>Calculando…</div>}
@@ -402,7 +419,30 @@ export default function CRM() {
                             <td>{dataBr(c.ultima_compra)}<div style={{ fontSize: "0.72rem", color: "var(--ink-faint)" }}>{c.pedidos} pedido(s)</div></td>
                             <td style={{ textAlign: "right", fontWeight: 700 }}>{c.dias_sem_comprar} d</td>
                             <td style={{ textAlign: "right" }}>{c.intervalo_medio_dias !== null ? `a cada ${c.intervalo_medio_dias.toLocaleString("pt-BR", { maximumFractionDigits: 0 })} d` : <span title="poucos pedidos">curto</span>}</td>
-                            <td style={{ textAlign: "right" }}>{c.limite_dias} d</td>
+                            <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                              {editandoLimite === c.cliente_id ? (
+                                <span style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
+                                  <input
+                                    autoFocus type="number" min={1} max={730} value={valorLimite} onChange={(e) => setValorLimite(e.target.value)}
+                                    onKeyDown={(e) => { if (e.key === "Enter") salvarLimite(c.cliente_id, valorLimite); if (e.key === "Escape") setEditandoLimite(null); }}
+                                    style={{ ...campo, width: 70, padding: "4px 6px", textAlign: "right" }}
+                                  />
+                                  <button type="button" onClick={() => salvarLimite(c.cliente_id, valorLimite)} style={{ ...chip(true), padding: "4px 9px" }}>OK</button>
+                                  {c.limite_manual && (
+                                    <button type="button" title={`Voltar ao cálculo automático (${c.limite_automatico_dias} d)`} onClick={() => salvarLimite(c.cliente_id, "")}
+                                      style={{ background: "none", border: "none", color: "var(--brand-deep)", fontWeight: 700, cursor: "pointer", fontSize: "0.74rem" }}>automático</button>
+                                  )}
+                                </span>
+                              ) : (
+                                <button
+                                  type="button" title={c.limite_manual ? `Ajustado manualmente (automático seria ${c.limite_automatico_dias} d) — clique para alterar` : "Calculado automaticamente — clique para ajustar só este cliente"}
+                                  onClick={() => { setEditandoLimite(c.cliente_id); setValorLimite(String(c.limite_dias)); }}
+                                  style={{ background: "none", border: "1px dashed var(--rule-strong)", borderRadius: 8, padding: "2px 8px", cursor: "pointer", font: "inherit", color: c.limite_manual ? "var(--brand-deep)" : "var(--ink)", fontWeight: c.limite_manual ? 800 : 400 }}
+                                >
+                                  {c.limite_dias} d {c.limite_manual ? "✎" : ""}
+                                </button>
+                              )}
+                            </td>
                             <td style={{ textAlign: "right", color: c.dias_de_atraso > 0 ? "var(--crit)" : undefined, fontWeight: c.dias_de_atraso > 0 ? 700 : 400 }}>{c.dias_de_atraso > 0 ? `+${c.dias_de_atraso} d` : "—"}</td>
                             <td style={{ textAlign: "right" }}>{moeda(c.ticket_medio)}</td>
                             <td style={{ textAlign: "right", fontWeight: 700 }}>{moeda(c.potencial_mensal)}</td>
