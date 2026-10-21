@@ -469,3 +469,46 @@ def test_crm_limite_de_recompra_manual_por_cliente(api, produto_id):
     assert api.patch(f"/crm/clientes/{cli['id']}/limite-recompra", json={"dias": None}).status_code == 200
     assert linha()["limite_manual"] is False and linha()["limite_dias"] == 15
     assert api.patch(f"/crm/clientes/{cli['id']}/limite-recompra", json={"dias": 0}).status_code == 422
+
+
+def test_crm_curva_abc_cobranca_e_rota(api, produto_id):
+    sufixo = uuid.uuid4().hex[:6]
+    cidade = f"Cidade{sufixo}"
+    grande = api.post("/clientes", json={"nome": f"ABC Grande {sufixo}", "cidade": cidade, "e_cliente": True}).json()
+    pequeno = api.post("/clientes", json={"nome": f"ABC Pequeno {sufixo}", "cidade": cidade, "e_cliente": True}).json()
+    for dias in (100, 90, 80, 70):                           # grande: ritmo de 10 dias, parado há 70 (atrasado), vendas altas
+        _vender(api, grande["id"], produto_id, dias, valor=500000)
+    for dias in (30, 20, 10, 3):
+        _vender(api, pequeno["id"], produto_id, dias, valor=100)
+    # cobrança: parcela vencida e outra que vence em 2 dias, no cliente grande
+    d = HOJE - timedelta(days=70)                            # mesmo dia do último pedido: não muda a recência
+    api.post("/vendas", json={
+        "client_id": str(uuid.uuid4()), "data": str(d), "cliente_id": grande["id"], "produto_id": produto_id,
+        "quantidade_un": 1, "quantidade_kg": 10, "preco_kg": 100,
+        "parcelas": [{"valor": 600, "forma_pgto": "Boleto", "data_prevista": str(HOJE - timedelta(days=4))},
+                     {"valor": 400, "forma_pgto": "Boleto", "data_prevista": str(HOJE + timedelta(days=2))}],
+    })
+
+    rec = api.get("/crm/recompra").json()
+    g = next(x for x in rec["clientes"] if x["cliente_id"] == grande["id"])
+    p = next(x for x in rec["clientes"] if x["cliente_id"] == pequeno["id"])
+    assert g["curva"] == "A" and g["participacao_12m"] > 0.2
+    assert p["curva"] in ("B", "C") and set(rec["abc"]) == {"A", "B", "C", "-"}
+    assert g["vencido"] == 600 and g["em_aberto"] == 1000          # crédito junto da recompra
+
+    cob = api.get("/crm/cobranca").json()
+    c = next(x for x in cob["clientes"] if x["cliente_id"] == grande["id"])
+    assert c["vencido"] == 600 and c["a_vencer_3d"] == 400 and c["curva"] == "A" and c["situacao_recompra"] == "atrasado"
+    assert cob["resumo"]["faixas"]["1-30"] >= 600
+    parc = api.get(f"/crm/cobranca/{grande['id']}/parcelas").json()
+    assert [x["dias_de_atraso"] for x in parc] == [4, 0] and parc[0]["valor"] == 600
+
+    prosp = api.post("/crm/prospectos", json={"nome": f"Prosp Rota {sufixo}", "cidade": cidade}).json()
+    rota = api.get("/crm/rota").json()
+    cid = next(x for x in rota["cidades"] if x["cidade"] == cidade)
+    nomes = {(s["tipo"], s["cliente_id"]) for s in cid["paradas"]}
+    assert ("cliente", grande["id"]) in nomes and ("prospecto", prosp["id"]) in nomes
+    assert ("cliente", pequeno["id"]) not in nomes                  # em dia: não entra na rota
+    parada = next(s for s in cid["paradas"] if s["cliente_id"] == grande["id"])
+    assert any("Recompra" in m for m in parada["motivos"]) and any("Cobrança" in m for m in parada["motivos"])
+    assert cid["prospectos"] == 1 and cid["vencido"] == 600

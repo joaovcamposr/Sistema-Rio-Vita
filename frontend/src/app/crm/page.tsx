@@ -1,16 +1,26 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  atualizarFunil, buscarAgenda, buscarProspeccao, buscarRecompra, criarProspecto, definirLimiteRecompra, registrarContato,
-  type ClienteRecompra, type ItemAgenda, type ParametrosRecompra, type Prospecto, type Prospeccao, type Recompra, type SituacaoRecompra,
+  atualizarFunil, buscarAgenda, buscarCobranca, buscarParcelasAbertas, buscarProspeccao, buscarRecompra, buscarRota, criarProspecto,
+  definirLimiteRecompra, registrarContato,
+  type ClienteCobranca, type ClienteRecompra, type Cobranca, type ItemAgenda, type ParcelaAberta, type ParametrosRecompra, type Prospecto,
+  type Prospeccao, type Recompra, type Rota, type SituacaoRecompra,
 } from "@/lib/crm";
 import styles from "../painel/painel.module.css";
 
-type Aba = "recompra" | "prospeccao" | "agenda";
-const TIPOS_CONTATO = ["WhatsApp", "Ligação", "Visita", "E-mail", "Outro"];
+type Aba = "recompra" | "cobranca" | "abc" | "prospeccao" | "rota" | "agenda";
+const TIPOS_CONTATO = ["WhatsApp", "Ligação", "Visita", "Cobrança", "E-mail", "Outro"];
+const COR_CURVA: Record<string, { bg: string; fg: string }> = {
+  A: { bg: "var(--ok-soft)", fg: "var(--ok)" }, B: { bg: "var(--warn-soft)", fg: "var(--warn)" },
+  C: { bg: "var(--surface-sunk)", fg: "var(--ink-muted)" }, "-": { bg: "var(--surface-sunk)", fg: "var(--ink-faint)" },
+};
+function Curva({ c }: { c: string }) {
+  const cor = COR_CURVA[c] ?? COR_CURVA["-"];
+  return <span title={c === "-" ? "sem compras nos últimos 12 meses" : `Curva ${c}`} style={{ display: "inline-block", minWidth: 22, textAlign: "center", padding: "1px 7px", borderRadius: 6, fontSize: "0.74rem", fontWeight: 800, background: cor.bg, color: cor.fg }}>{c}</span>;
+}
 const TEMPERATURAS = ["Frio", "Morno", "Quente"];
 const ORIGENS = ["Indicação", "Visita", "Instagram / WhatsApp", "Cliente antigo", "Feira / evento", "Outro"];
 
@@ -54,14 +64,14 @@ const chip = (ativo: boolean) => ({
 const campo = { padding: "8px 11px", borderRadius: 9, border: "1px solid var(--rule-strong)", background: "var(--surface)", font: "inherit", width: "100%" } as const;
 
 /* ------------------------------------------------------------------ modal de contato */
-interface AlvoContato { id: number; nome: string; fase?: string | null; temperatura?: string | null; etapas?: string[] }
+interface AlvoContato { id: number; nome: string; fase?: string | null; temperatura?: string | null; etapas?: string[]; tipo?: string; acao?: string; descricao?: string }
 
 function ModalContato({ alvo, onFechar, onSalvo }: { alvo: AlvoContato; onFechar: () => void; onSalvo: () => void }) {
-  const [tipo, setTipo] = useState("WhatsApp");
-  const [descricao, setDescricao] = useState("");
+  const [tipo, setTipo] = useState(alvo.tipo ?? "WhatsApp");
+  const [descricao, setDescricao] = useState(alvo.descricao ?? "");
   const [fase, setFase] = useState(alvo.fase ?? "");
   const [temperatura, setTemperatura] = useState(alvo.temperatura ?? "");
-  const [acao, setAcao] = useState("");
+  const [acao, setAcao] = useState(alvo.acao ?? "");
   const [dataAcao, setDataAcao] = useState("");
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -219,13 +229,23 @@ export default function CRM() {
   const [msg, setMsg] = useState<string | null>(null);
 
   // ---- recompra
-  const [param, setParam] = useState<ParametrosRecompra>({ modo: "relativo", fator: 1.5, dias_fixos: 45, pedidos_do_intervalo: 5, min_pedidos: 3, dias_padrao: 60 });
+  const [param, setParam] = useState<ParametrosRecompra>({ modo: "relativo", fator: 1.5, dias_fixos: 45, pedidos_do_intervalo: 5, min_pedidos: 3, dias_padrao: 60, abc_a: 0.8, abc_b: 0.95 });
   const [recompra, setRecompra] = useState<Recompra | null>(null);
   const [situacoes, setSituacoes] = useState<SituacaoRecompra[]>(["atrasado", "atencao"]);
   const [busca, setBusca] = useState("");
   const [vendedorSel, setVendedorSel] = useState("");
   const [ordem, setOrdem] = useState<{ col: string; asc: boolean } | null>(null);
   const [avancado, setAvancado] = useState(false);
+  const [curvasSel, setCurvasSel] = useState<string[]>([]);
+  const [cobranca, setCobranca] = useState<Cobranca | null>(null);
+  const [filtroCobranca, setFiltroCobranca] = useState<"vencidos" | "vence3" | "estourado" | "curvaA" | "pararam" | "todos">("vencidos");
+  const [buscaCobranca, setBuscaCobranca] = useState("");
+  const [parcelasAbertas, setParcelasAbertas] = useState<Record<number, ParcelaAberta[]>>({});
+  const [expandidoCobranca, setExpandidoCobranca] = useState<number | null>(null);
+  const [rota, setRota] = useState<Rota | null>(null);
+  const [vendedorRota, setVendedorRota] = useState("");
+  const [cidadesAbertas, setCidadesAbertas] = useState<string[]>([]);
+  const [roteiro, setRoteiro] = useState<string[]>([]); // chaves "tipo-id" das paradas escolhidas
   const [editandoLimite, setEditandoLimite] = useState<number | null>(null);
   const [valorLimite, setValorLimite] = useState("");
 
@@ -241,12 +261,18 @@ export default function CRM() {
 
   useEffect(() => { carregarRecompra(); }, [carregarRecompra]);
   useEffect(() => { carregarPros(); carregarAgenda(); }, [carregarPros, carregarAgenda]);
+  const carregarCobranca = useCallback(() => { buscarCobranca().then(setCobranca).catch(() => setErro("Não foi possível carregar a cobrança.")); }, []);
+  const carregarRota = useCallback(() => { buscarRota(vendedorRota || undefined).then(setRota).catch(() => setErro("Não foi possível carregar a rota.")); }, [vendedorRota]);
+  useEffect(() => { if (aba === "cobranca") carregarCobranca(); }, [aba, carregarCobranca]);
+  useEffect(() => { if (aba === "rota") carregarRota(); }, [aba, carregarRota]);
 
   function depoisDoContato() {
     setContato(null);
     setMsg("Contato registrado");
     setTimeout(() => setMsg(null), 2500);
     carregarRecompra(); carregarPros(); carregarAgenda();
+    if (aba === "cobranca") carregarCobranca();
+    if (aba === "rota") carregarRota();
   }
 
   const vendedores = useMemo(() => Array.from(new Set((recompra?.clientes ?? []).map((c) => c.vendedor).filter(Boolean) as string[])).sort(), [recompra]);
@@ -254,7 +280,8 @@ export default function CRM() {
   const linhas = useMemo(() => {
     const q = normaliza(busca);
     const f = (recompra?.clientes ?? []).filter((c) =>
-      situacoes.includes(c.situacao) && (!q || normaliza(c.nome).includes(q)) && (!vendedorSel || c.vendedor === vendedorSel));
+      situacoes.includes(c.situacao) && (!q || normaliza(c.nome).includes(q)) && (!vendedorSel || c.vendedor === vendedorSel) &&
+      (curvasSel.length === 0 || curvasSel.includes(c.curva)));
     if (!ordem) return f;
     const chave = (c: ClienteRecompra): number | string => {
       switch (ordem.col) {
@@ -268,7 +295,31 @@ export default function CRM() {
       }
     };
     return [...f].sort((a, b) => { const ka = chave(a), kb = chave(b); const r = ka < kb ? -1 : ka > kb ? 1 : 0; return ordem.asc ? r : -r; });
-  }, [recompra, situacoes, busca, vendedorSel, ordem]);
+  }, [recompra, situacoes, busca, vendedorSel, ordem, curvasSel]);
+
+  // ---- cobrança: filtro e abertura das parcelas
+  const linhasCobranca = useMemo(() => {
+    const q = normaliza(buscaCobranca);
+    return (cobranca?.clientes ?? []).filter((c) => {
+      if (q && !normaliza(c.nome).includes(q)) return false;
+      switch (filtroCobranca) {
+        case "vencidos": return c.vencido > 0;
+        case "vence3": return c.a_vencer_3d > 0;
+        case "estourado": return c.status === "estourado";
+        case "curvaA": return c.curva === "A";
+        case "pararam": return c.situacao_recompra === "atrasado" || c.situacao_recompra === "inativo";
+        default: return true;
+      }
+    });
+  }, [cobranca, filtroCobranca, buscaCobranca]);
+
+  function abrirParcelas(id: number) {
+    setExpandidoCobranca((atual) => (atual === id ? null : id));
+    if (!parcelasAbertas[id]) buscarParcelasAbertas(id).then((l) => setParcelasAbertas((m) => ({ ...m, [id]: l }))).catch(() => undefined);
+  }
+
+  const curvaClientes = useMemo(() => (recompra?.clientes ?? []).filter((c) => c.curva !== "-" ).sort((a, b) => b.valor_12m - a.valor_12m), [recompra]);
+  const [classeAbc, setClasseAbc] = useState<string>("todas");
 
   async function salvarLimite(clienteId: number, valor: string) {
     const dias = valor.trim() === "" ? null : Math.round(Number(valor));
@@ -318,7 +369,10 @@ export default function CRM() {
 
         <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
           <button type="button" style={chip(aba === "recompra")} onClick={() => setAba("recompra")}>Recompra {recompra ? `(${recompra.resumo.atrasado + recompra.resumo.atencao})` : ""}</button>
+          <button type="button" style={chip(aba === "cobranca")} onClick={() => setAba("cobranca")}>Cobrança {cobranca ? `(${cobranca.resumo.clientes_vencidos})` : ""}</button>
+          <button type="button" style={chip(aba === "abc")} onClick={() => setAba("abc")}>Curva ABC</button>
           <button type="button" style={chip(aba === "prospeccao")} onClick={() => setAba("prospeccao")}>Prospecção {pros ? `(${pros.prospectos.filter((p) => p.fase !== "Perdido").length})` : ""}</button>
+          <button type="button" style={chip(aba === "rota")} onClick={() => setAba("rota")}>Rota de visitas {rota ? `(${rota.total_paradas})` : ""}</button>
           <button type="button" style={chip(aba === "agenda")} onClick={() => setAba("agenda")}>
             Agenda {agenda ? `(${agenda.length})` : ""}{agendaAtrasadas > 0 ? ` · ${agendaAtrasadas} atrasada(s)` : ""}
           </button>
@@ -385,6 +439,10 @@ export default function CRM() {
                       {SITUACAO[s].rotulo} ({recompra.resumo[s]})
                     </button>
                   ))}
+                  {["A", "B", "C"].map((k) => (
+                    <button key={k} type="button" title={`Só clientes da curva ${k}`} style={chip(curvasSel.includes(k))}
+                      onClick={() => setCurvasSel((l) => (l.includes(k) ? l.filter((x) => x !== k) : [...l, k]))}>Curva {k}</button>
+                  ))}
                   <select value={vendedorSel} onChange={(e) => setVendedorSel(e.target.value)} style={{ ...campo, width: "auto" }}>
                     <option value="">Todos os vendedores</option>
                     {vendedores.map((v) => <option key={v} value={v}>{v}</option>)}
@@ -397,14 +455,14 @@ export default function CRM() {
                   <table className={styles.tabela}>
                     <thead>
                       <tr>
-                        {th("nome", "Cliente")}{th("ultima", "Última compra")}{th("dias", "Sem comprar", true)}
+                        {th("nome", "Cliente")}<th>Curva</th>{th("ultima", "Última compra")}{th("dias", "Sem comprar", true)}
                         <th style={{ textAlign: "right" }}>Ritmo</th><th style={{ textAlign: "right" }}>Limite (X)</th>{th("atraso", "Atraso", true)}
                         {th("ticket", "Ticket médio", true)}{th("potencial", "Compra/mês", true)}
                         <th>Último contato</th><th>Situação</th><th />
                       </tr>
                     </thead>
                     <tbody>
-                      {linhas.length === 0 && <tr><td colSpan={11} className={styles.hint}>Nenhum cliente nesse filtro.</td></tr>}
+                      {linhas.length === 0 && <tr><td colSpan={12} className={styles.hint}>Nenhum cliente nesse filtro.</td></tr>}
                       {linhas.map((c) => {
                         const st = SITUACAO[c.situacao];
                         const wa = linkWhatsApp(c.telefone, `Olá, ${c.nome.split(" ")[0]}! Faz um tempo que não nos falamos — posso separar o peixe dessa semana pra você?`);
@@ -415,6 +473,10 @@ export default function CRM() {
                               <div style={{ fontSize: "0.72rem", color: "var(--ink-faint)" }}>
                                 {[c.cidade, c.vendedor, c.produtos_principais.join(", ")].filter(Boolean).join(" · ")}
                               </div>
+                            </td>
+                            <td>
+                              <Curva c={c.curva} />
+                              {c.vencido > 0 && <div title="valor vencido a receber deste cliente" style={{ fontSize: "0.7rem", color: "var(--crit)", fontWeight: 700 }}>deve {moeda(c.vencido)}</div>}
                             </td>
                             <td>{dataBr(c.ultima_compra)}<div style={{ fontSize: "0.72rem", color: "var(--ink-faint)" }}>{c.pedidos} pedido(s)</div></td>
                             <td style={{ textAlign: "right", fontWeight: 700 }}>{c.dias_sem_comprar} d</td>
@@ -461,6 +523,156 @@ export default function CRM() {
                     </tbody>
                   </table>
                 </div>
+              </>
+            )}
+          </>
+        )}
+
+        {/* ============================ COBRANÇA ============================ */}
+        {aba === "cobranca" && (
+          <>
+            {!cobranca && !erro && <div className={styles.carregando}>Carregando…</div>}
+            {cobranca && (
+              <>
+                <div className={styles.cards}>
+                  <div className={styles.card}><div className={styles.cardLabel}>Vencido a receber</div><div className={styles.cardValue} style={{ color: "var(--crit)" }}>{moeda(cobranca.resumo.vencido)}</div><div className={styles.cardSub}>{cobranca.resumo.clientes_vencidos} cliente(s)</div></div>
+                  <div className={styles.card}><div className={styles.cardLabel}>Vence em até 3 dias</div><div className={styles.cardValue}>{moeda(cobranca.resumo.a_vencer_3d)}</div></div>
+                  <div className={styles.card}><div className={styles.cardLabel}>Vencido de clientes curva A</div><div className={styles.cardValue}>{moeda(cobranca.resumo.vencido_de_clientes_curva_a)}</div><div className={styles.cardSub}>quem mais compra</div></div>
+                  <div className={styles.card}>
+                    <div className={styles.cardLabel}>Atraso por faixa</div>
+                    {(["1-30", "31-60", "61-90", "90+"] as const).map((f) => (
+                      <div key={f} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem" }}><span>{f} dias</span><strong>{moeda(cobranca.resumo.faixas[f])}</strong></div>
+                    ))}
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
+                  {([["vencidos", "Com vencido"], ["vence3", "Vence em 3 dias"], ["estourado", "Acima do limite"], ["curvaA", "Curva A"], ["pararam", "Pararam de comprar"], ["todos", "Todos"]] as const).map(([f, r]) => (
+                    <button key={f} type="button" style={chip(filtroCobranca === f)} onClick={() => setFiltroCobranca(f)}>{r}</button>
+                  ))}
+                  <input value={buscaCobranca} onChange={(e) => setBuscaCobranca(e.target.value)} placeholder="Buscar cliente…" style={{ ...campo, flex: "1 1 180px", width: "auto" }} />
+                </div>
+                <div className={styles.tableWrap}>
+                  <table className={styles.tabela}>
+                    <thead><tr><th>Cliente</th><th>Curva</th><th style={{ textAlign: "right" }}>Vencido</th><th style={{ textAlign: "right" }}>Vence em 3 d</th><th style={{ textAlign: "right" }}>Em aberto</th><th style={{ textAlign: "right" }}>Maior atraso</th><th>Compras</th><th>Última cobrança</th><th /></tr></thead>
+                    <tbody>
+                      {linhasCobranca.length === 0 && <tr><td colSpan={9} className={styles.hint}>Ninguém nesse filtro.</td></tr>}
+                      {linhasCobranca.map((c: ClienteCobranca) => {
+                        const wa = linkWhatsApp(c.telefone, `Olá, ${c.nome.split(" ")[0]}! Tudo bem? Passando pra lembrar do pagamento de ${moeda(c.vencido > 0 ? c.vencido : c.a_vencer_3d)} ${c.vencido > 0 ? "em aberto" : "que vence em breve"}. Pode me confirmar a data?`);
+                        const prioridade = c.curva === "A" && c.vencido > 0;
+                        return (
+                          <Fragment key={c.cliente_id}>
+                            <tr>
+                              <td>
+                                <Link href={`/cadastros/clientes/${c.cliente_id}`} style={{ color: "var(--ink)", fontWeight: 700, textDecoration: "none" }}>{prioridade ? "🔥 " : ""}{c.nome}</Link>
+                                <div style={{ fontSize: "0.72rem", color: "var(--ink-faint)" }}>{[c.cidade, c.vendedor_nome, c.limite_credito !== null ? `limite ${moeda(c.limite_credito)}${c.status === "estourado" ? " (estourado)" : ""}` : null].filter(Boolean).join(" · ")}</div>
+                              </td>
+                              <td><Curva c={c.curva} /></td>
+                              <td style={{ textAlign: "right", color: c.vencido > 0 ? "var(--crit)" : undefined, fontWeight: 700 }}>{c.vencido > 0 ? moeda(c.vencido) : "—"}</td>
+                              <td style={{ textAlign: "right" }}>{c.a_vencer_3d > 0 ? moeda(c.a_vencer_3d) : "—"}</td>
+                              <td style={{ textAlign: "right" }}>{moeda(c.em_aberto)}</td>
+                              <td style={{ textAlign: "right", color: (c.maior_atraso_dias ?? 0) > 30 ? "var(--crit)" : undefined }}>{c.maior_atraso_dias ? `${c.maior_atraso_dias} d` : "—"}</td>
+                              <td>
+                                {c.situacao_recompra ? <span style={{ fontSize: "0.74rem", fontWeight: 700, color: SITUACAO[c.situacao_recompra].fg }}>{SITUACAO[c.situacao_recompra].rotulo}{c.dias_sem_comprar !== null ? ` · ${c.dias_sem_comprar} d sem comprar` : ""}</span> : "—"}
+                                {c.potencial_mensal ? <div style={{ fontSize: "0.7rem", color: "var(--ink-faint)" }}>compra ~{moeda(c.potencial_mensal)}/mês</div> : null}
+                              </td>
+                              <td>
+                                {dataBr(c.ultima_cobranca)}
+                                {c.proxima_acao_data && <div style={{ fontSize: "0.72rem", color: c.proxima_acao_data < hojeISO() ? "var(--crit)" : "var(--ink-faint)" }}>↳ {dataBr(c.proxima_acao_data)} {c.proxima_acao ?? ""}</div>}
+                              </td>
+                              <td style={{ whiteSpace: "nowrap" }}>
+                                <button type="button" onClick={() => abrirParcelas(c.cliente_id)} style={{ background: "none", border: "none", color: "var(--ink-muted)", fontWeight: 700, cursor: "pointer" }}>{expandidoCobranca === c.cliente_id ? "▾" : "▸"} parcelas</button>
+                                <button type="button" onClick={() => setContato({ id: c.cliente_id, nome: c.nome, tipo: "Cobrança", acao: "Conferir se pagou", descricao: `Cobrança de ${moeda(c.vencido)} vencido. ` })} style={{ background: "none", border: "none", color: "var(--brand-deep)", fontWeight: 700, cursor: "pointer" }}>Registrar cobrança</button>
+                                {wa && <a href={wa} target="_blank" rel="noreferrer" style={{ marginLeft: 8, color: "var(--ok)", fontWeight: 700, textDecoration: "none" }}>WhatsApp</a>}
+                              </td>
+                            </tr>
+                            {expandidoCobranca === c.cliente_id && (
+                              <tr style={{ background: "var(--ground)" }}>
+                                <td colSpan={9} style={{ padding: "6px 14px 12px" }}>
+                                  {!parcelasAbertas[c.cliente_id] && <span className={styles.hint}>Carregando…</span>}
+                                  {(parcelasAbertas[c.cliente_id] ?? []).map((p, i) => (
+                                    <div key={i} style={{ display: "flex", gap: 14, flexWrap: "wrap", fontSize: "0.82rem", padding: "2px 0" }}>
+                                      <strong>{moeda(p.valor)}</strong><span>{p.produto}</span><span>venda de {dataBr(p.data_venda)}</span><span>{p.forma_pgto}</span>
+                                      <span style={{ color: p.dias_de_atraso > 0 ? "var(--crit)" : "var(--ink-muted)", fontWeight: 700 }}>vence {dataBr(p.data_prevista)}{p.dias_de_atraso > 0 ? ` (${p.dias_de_atraso} d de atraso)` : ""}</span>
+                                    </div>
+                                  ))}
+                                </td>
+                              </tr>
+                            )}
+                          </Fragment>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <p className={styles.hint}>🔥 = cliente da curva A com valor vencido: vale cobrar primeiro, antes que ele pare de comprar. Cobrar e vender se encontram aqui: veja quem ainda compra e quem já parou.</p>
+              </>
+            )}
+          </>
+        )}
+
+        {/* ============================ CURVA ABC ============================ */}
+        {aba === "abc" && (
+          <>
+            {!recompra && !erro && <div className={styles.carregando}>Calculando…</div>}
+            {recompra && (
+              <>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-end", marginBottom: 12, padding: 12, border: "1px solid var(--rule)", borderRadius: 12, background: "var(--surface)" }}>
+                  <div>
+                    <label style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--ink-muted)" }}>Curva A: até (% do faturamento de 12 meses)</label>
+                    <input type="number" min={10} max={95} value={Math.round(param.abc_a * 100)} onChange={(e) => setParam((p) => ({ ...p, abc_a: Math.min(0.95, Math.max(0.1, (Number(e.target.value) || 80) / 100)) }))} style={{ ...campo, width: 90 }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: "0.72rem", fontWeight: 700, color: "var(--ink-muted)" }}>Curva B: até (% acumulado)</label>
+                    <input type="number" min={20} max={99} value={Math.round(param.abc_b * 100)} onChange={(e) => setParam((p) => ({ ...p, abc_b: Math.min(0.99, Math.max(p.abc_a + 0.01, (Number(e.target.value) || 95) / 100)) }))} style={{ ...campo, width: 90 }} />
+                  </div>
+                  <span className={styles.hint} style={{ margin: 0 }}>O restante é curva C. Total vendido em 12 meses: <strong>{moeda(recompra.total_12m)}</strong></span>
+                </div>
+                <div className={styles.cards}>
+                  {(["A", "B", "C"] as const).map((k) => {
+                    const r = recompra.abc[k];
+                    return (
+                      <div key={k} className={styles.card}>
+                        <div className={styles.cardLabel}><Curva c={k} /> {r.clientes} cliente(s)</div>
+                        <div className={styles.cardValue}>{(r.participacao * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%</div>
+                        <div className={styles.cardSub}>{moeda(r.valor_12m)} em 12 meses</div>
+                        <div style={{ fontSize: "0.76rem", marginTop: 6, color: r.em_risco > 0 ? "var(--crit)" : "var(--ink-muted)" }}>
+                          {r.em_risco} em risco de parar · {moeda(r.potencial_mensal_em_risco)}/mês
+                        </div>
+                        {r.vencido > 0 && <div style={{ fontSize: "0.76rem", color: "var(--crit)" }}>{moeda(r.vencido)} vencido</div>}
+                      </div>
+                    );
+                  })}
+                </div>
+                <div style={{ display: "flex", height: 16, borderRadius: 999, overflow: "hidden", marginBottom: 14 }} title="participação de cada curva no faturamento">
+                  {(["A", "B", "C"] as const).map((k) => (
+                    <div key={k} style={{ width: `${recompra.abc[k].participacao * 100}%`, background: COR_CURVA[k].fg, opacity: 0.85 }} />
+                  ))}
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+                  {["todas", "A", "B", "C"].map((k) => <button key={k} type="button" style={chip(classeAbc === k)} onClick={() => setClasseAbc(k)}>{k === "todas" ? "Todas" : `Curva ${k}`}</button>)}
+                </div>
+                <div className={styles.tableWrap}>
+                  <table className={styles.tabela}>
+                    <thead><tr><th>#</th><th>Cliente</th><th>Curva</th><th style={{ textAlign: "right" }}>Vendido em 12 meses</th><th style={{ textAlign: "right" }}>% do total</th><th>% acumulado</th><th>Recompra</th><th style={{ textAlign: "right" }}>Vencido</th></tr></thead>
+                    <tbody>
+                      {curvaClientes.filter((c) => classeAbc === "todas" || c.curva === classeAbc).map((c, i) => (
+                        <tr key={c.cliente_id}>
+                          <td>{i + 1}</td>
+                          <td><Link href={`/cadastros/clientes/${c.cliente_id}`} style={{ color: "var(--ink)", fontWeight: 700, textDecoration: "none" }}>{c.nome}</Link><div style={{ fontSize: "0.72rem", color: "var(--ink-faint)" }}>{[c.cidade, c.vendedor].filter(Boolean).join(" · ")}</div></td>
+                          <td><Curva c={c.curva} /></td>
+                          <td style={{ textAlign: "right", fontWeight: 700 }}>{moeda(c.valor_12m)}</td>
+                          <td style={{ textAlign: "right" }}>{(c.participacao_12m * 100).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%</td>
+                          <td style={{ minWidth: 120 }}>
+                            <div style={{ background: "var(--surface-sunk)", borderRadius: 999, height: 8, overflow: "hidden" }}><div style={{ width: `${c.participacao_acumulada * 100}%`, height: "100%", background: COR_CURVA[c.curva]?.fg }} /></div>
+                          </td>
+                          <td><span style={{ display: "inline-block", padding: "2px 9px", borderRadius: 999, fontSize: "0.72rem", fontWeight: 700, background: SITUACAO[c.situacao].bg, color: SITUACAO[c.situacao].fg }}>{SITUACAO[c.situacao].rotulo}</span><div style={{ fontSize: "0.7rem", color: "var(--ink-faint)" }}>{c.dias_sem_comprar} d sem comprar</div></td>
+                          <td style={{ textAlign: "right", color: c.vencido > 0 ? "var(--crit)" : undefined }}>{c.vencido > 0 ? moeda(c.vencido) : "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <p className={styles.hint}>Curva A = poucos clientes que sustentam a maior parte do faturamento: são os que mais merecem atenção quando atrasam na compra ou no pagamento.</p>
               </>
             )}
           </>
@@ -518,6 +730,94 @@ export default function CRM() {
                 )}
               </>
             )}
+          </>
+        )}
+
+        {/* ============================ ROTA DE VISITAS ============================ */}
+        {aba === "rota" && (
+          <>
+            <style>{`
+              .somente-impressao { display: none; }
+              @media print {
+                .nao-imprimir { display: none !important; }
+                .somente-impressao { display: block !important; }
+              }
+            `}</style>
+            <div className="nao-imprimir">
+              <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
+                <select value={vendedorRota} onChange={(e) => setVendedorRota(e.target.value)} style={{ ...campo, width: "auto" }}>
+                  <option value="">Todos os vendedores</option>
+                  {(rota?.vendedores ?? []).map((v) => <option key={v} value={v}>{v}</option>)}
+                </select>
+                <span className={styles.hint} style={{ margin: 0 }}>Marque as paradas da semana e imprima o roteiro. Cidades com mais valor em jogo aparecem primeiro.</span>
+                <span className={styles.spacer} />
+                <button type="button" disabled={roteiro.length === 0} onClick={() => window.print()} style={{ ...chip(true), opacity: roteiro.length === 0 ? 0.5 : 1 }}>Imprimir roteiro ({roteiro.length})</button>
+                {roteiro.length > 0 && <button type="button" onClick={() => setRoteiro([])} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--ink-muted)" }}>limpar</button>}
+              </div>
+              {!rota && !erro && <div className={styles.carregando}>Montando a rota…</div>}
+              {rota && rota.cidades.length === 0 && <p className={styles.hint}>Nenhuma parada: ninguém atrasado na compra, sem cobrança ou prospecto em aberto.</p>}
+              {rota?.cidades.map((c) => {
+                const aberta = cidadesAbertas.includes(c.cidade);
+                const chaves = c.paradas.map((p) => `${p.tipo}-${p.cliente_id}`);
+                const todas = chaves.every((k) => roteiro.includes(k));
+                return (
+                  <div key={c.cidade} style={{ border: "1px solid var(--rule)", borderRadius: 12, marginBottom: 10, background: "var(--surface)", overflow: "hidden" }}>
+                    <div onClick={() => setCidadesAbertas((l) => (aberta ? l.filter((x) => x !== c.cidade) : [...l, c.cidade]))}
+                      style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap", padding: "11px 14px", cursor: "pointer" }}>
+                      <strong style={{ fontSize: "1rem" }}>{aberta ? "▾" : "▸"} {c.cidade}</strong>
+                      <span>{c.paradas.length} parada(s)</span>
+                      {c.potencial_mensal > 0 && <span style={{ color: "var(--ink-muted)" }}>compra em risco {moeda(c.potencial_mensal)}/mês</span>}
+                      {c.vencido > 0 && <span style={{ color: "var(--crit)", fontWeight: 700 }}>{moeda(c.vencido)} a cobrar</span>}
+                      {c.prospectos > 0 && <span style={{ color: "var(--brand-deep)", fontWeight: 700 }}>{c.prospectos} prospecto(s)</span>}
+                      <span className={styles.spacer} />
+                      <button type="button" onClick={(e) => { e.stopPropagation(); setRoteiro((r) => (todas ? r.filter((k) => !chaves.includes(k)) : Array.from(new Set([...r, ...chaves])))); }}
+                        style={{ ...chip(todas), padding: "5px 11px" }}>{todas ? "Tirar todas" : "Marcar todas"}</button>
+                    </div>
+                    {aberta && (
+                      <div style={{ borderTop: "1px solid var(--rule)", padding: "6px 14px 10px" }}>
+                        {c.paradas.map((p) => {
+                          const k = `${p.tipo}-${p.cliente_id}`;
+                          const wa = linkWhatsApp(p.telefone, `Olá, ${p.nome.split(" ")[0]}! Estou passando na sua região essa semana — posso te visitar?`);
+                          return (
+                            <label key={k} style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "7px 0", borderBottom: "1px dashed var(--rule)", cursor: "pointer" }}>
+                              <input type="checkbox" checked={roteiro.includes(k)} onChange={() => setRoteiro((r) => (r.includes(k) ? r.filter((x) => x !== k) : [...r, k]))} style={{ marginTop: 4 }} />
+                              <span style={{ flex: 1 }}>
+                                <Link href={`/cadastros/clientes/${p.cliente_id}`} style={{ fontWeight: 700, color: "var(--ink)", textDecoration: "none" }}>{p.nome}</Link>{" "}
+                                <span style={{ fontSize: "0.7rem", color: "var(--ink-faint)" }}>{p.tipo === "prospecto" ? "prospecto" : `curva ${p.curva}`}{p.vendedor ? ` · ${p.vendedor}` : ""}</span>
+                                <div style={{ fontSize: "0.78rem", color: "var(--ink-muted)" }}>{p.motivos.join(" · ")}</div>
+                                <div style={{ fontSize: "0.74rem", color: "var(--ink-faint)" }}>{[p.endereco, p.telefone].filter(Boolean).join(" · ") || "sem endereço/telefone cadastrado"}</div>
+                              </span>
+                              {wa && <a href={wa} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} style={{ color: "var(--ok)", fontWeight: 700, textDecoration: "none" }}>WhatsApp</a>}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* versão para impressão: só as paradas marcadas, por cidade */}
+            <div className="somente-impressao">
+              <h2 style={{ margin: "0 0 8px" }}>Roteiro de visitas{vendedorRota ? ` — ${vendedorRota}` : ""}</h2>
+              {rota?.cidades.map((c) => {
+                const marcadas = c.paradas.filter((p) => roteiro.includes(`${p.tipo}-${p.cliente_id}`));
+                if (marcadas.length === 0) return null;
+                return (
+                  <div key={c.cidade} style={{ marginBottom: 14 }}>
+                    <h3 style={{ margin: "0 0 4px" }}>{c.cidade}</h3>
+                    {marcadas.map((p) => (
+                      <div key={`${p.tipo}-${p.cliente_id}`} style={{ borderBottom: "1px solid #999", padding: "5px 0", fontSize: "11pt" }}>
+                        ☐ <strong>{p.nome}</strong> {p.tipo === "prospecto" ? "(prospecto)" : `(curva ${p.curva})`}
+                        <div>{p.motivos.join(" · ")}</div>
+                        <div>{[p.endereco, p.telefone].filter(Boolean).join(" · ")}</div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
           </>
         )}
 

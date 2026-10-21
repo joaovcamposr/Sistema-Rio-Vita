@@ -43,6 +43,17 @@ export interface ClienteRecompra {
   temperatura: string | null;
   proxima_acao: string | null;
   proxima_acao_data: string | null;
+  // crédito / cobrança
+  em_aberto: number;
+  vencido: number;
+  maior_atraso_pagamento_dias: number | null;
+  limite_credito: number | null;
+  status_credito: string | null;
+  endereco: string | null;
+  // curva ABC (faturamento de 12 meses)
+  curva: "A" | "B" | "C" | "-";
+  participacao_12m: number;
+  participacao_acumulada: number;
 }
 
 export interface ParametrosRecompra {
@@ -52,11 +63,24 @@ export interface ParametrosRecompra {
   pedidos_do_intervalo: number;
   min_pedidos: number;
   dias_padrao: number;
+  abc_a: number;
+  abc_b: number;
+}
+
+export interface ResumoCurva {
+  clientes: number;
+  valor_12m: number;
+  participacao: number;
+  em_risco: number;
+  potencial_mensal_em_risco: number;
+  vencido: number;
 }
 
 export interface Recompra {
   parametros: ParametrosRecompra;
   resumo: Record<SituacaoRecompra, number> & { potencial_mensal_em_risco: number };
+  abc: Record<"A" | "B" | "C" | "-", ResumoCurva>;
+  total_12m: number;
   clientes: ClienteRecompra[];
 }
 
@@ -64,7 +88,60 @@ export const buscarRecompra = (p: ParametrosRecompra) =>
   chamar<Recompra>(`/crm/recompra?${new URLSearchParams({
     modo: p.modo, fator: String(p.fator), dias_fixos: String(p.dias_fixos),
     pedidos_do_intervalo: String(p.pedidos_do_intervalo), min_pedidos: String(p.min_pedidos), dias_padrao: String(p.dias_padrao),
+    abc_a: String(p.abc_a), abc_b: String(p.abc_b),
   })}`);
+
+export interface ClienteCobranca {
+  cliente_id: number;
+  nome: string;
+  cidade: string | null;
+  telefone: string | null;
+  vendedor_nome: string | null;
+  limite_credito: number | null;
+  em_aberto: number;
+  vencido: number;
+  a_vencer: number;
+  a_vencer_3d: number;
+  disponivel: number | null;
+  uso: number | null;
+  status: "sem_limite" | "ok" | "atencao" | "estourado";
+  maior_atraso_dias: number | null;
+  proximo_vencimento: string | null;
+  vendas_abertas: number;
+  ultima_compra: string | null;
+  ultima_cobranca: string | null;
+  proxima_acao: string | null;
+  proxima_acao_data: string | null;
+  situacao_recompra: SituacaoRecompra | null;
+  dias_sem_comprar: number | null;
+  curva: "A" | "B" | "C" | "-";
+  potencial_mensal: number | null;
+}
+export interface Cobranca {
+  resumo: {
+    vencido: number; clientes_vencidos: number; a_vencer_3d: number;
+    faixas: Record<"1-30" | "31-60" | "61-90" | "90+", number>; vencido_de_clientes_curva_a: number;
+  };
+  clientes: ClienteCobranca[];
+}
+export const buscarCobranca = () => chamar<Cobranca>("/crm/cobranca");
+
+export interface ParcelaAberta {
+  venda_id: number; data_venda: string; produto: string; valor: number; forma_pgto: string; data_prevista: string; dias_de_atraso: number;
+}
+export const buscarParcelasAbertas = (clienteId: number) => chamar<ParcelaAberta[]>(`/crm/cobranca/${clienteId}/parcelas`);
+
+export interface ParadaRota {
+  cliente_id: number; tipo: "cliente" | "prospecto"; nome: string; cidade: string | null; endereco: string | null;
+  telefone: string | null; vendedor: string | null; motivos: string[]; potencial_mensal: number; vencido: number;
+  volume_estimado_kg_mes: number | null; curva: string;
+}
+export interface Rota {
+  cidades: { cidade: string; paradas: ParadaRota[]; potencial_mensal: number; vencido: number; prospectos: number }[];
+  vendedores: string[];
+  total_paradas: number;
+}
+export const buscarRota = (vendedor?: string) => chamar<Rota>(`/crm/rota${vendedor ? `?vendedor=${encodeURIComponent(vendedor)}` : ""}`);
 
 /** Ajusta o limite (dias sem comprar) só desse cliente. `null` volta ao cálculo automático. */
 export const definirLimiteRecompra = (id: number, dias: number | null) =>

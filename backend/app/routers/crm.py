@@ -16,6 +16,7 @@ from ..auth import get_current_user
 from ..db import get_db
 from ..schemas import UsuarioOut
 from .clientes import _exigir_nome_novo
+from .credito import _SQL as _SQL_CREDITO, _linha as _linha_credito
 
 router = APIRouter(prefix="/crm", tags=["crm"])
 
@@ -40,10 +41,20 @@ def clientes_sem_comprar(
     pedidos_do_intervalo: int = Query(default=5, ge=2, le=12, description="quantos intervalos recentes entram na média"),
     min_pedidos: int = Query(default=3, ge=2, le=20, description="abaixo disso o histórico é curto e vale o prazo padrão"),
     dias_padrao: int = Query(default=60, ge=7, le=365, description="prazo usado quando o cliente tem poucos pedidos"),
+    abc_a: float = Query(default=0.8, gt=0, lt=1, description="curva A = clientes que somam até essa fatia do faturamento de 12 meses"),
+    abc_b: float = Query(default=0.95, gt=0, lt=1, description="curva B = até essa fatia acumulada; o resto é C"),
     db: Session = Depends(get_db),
 ):
     """Por cliente: último pedido, intervalo médio entre os últimos pedidos e há quantos dias ele não compra,
-    comparado ao limite X. 'Pedido' = um dia de compra do cliente (várias linhas no mesmo dia contam uma vez)."""
+    comparado ao limite X. 'Pedido' = um dia de compra do cliente (várias linhas no mesmo dia contam uma vez).
+    Traz também a curva ABC (faturamento de 12 meses) e a situação de crédito/cobrança de cada cliente."""
+    return _calcular_recompra(db, modo, fator, dias_fixos, pedidos_do_intervalo, min_pedidos, dias_padrao, abc_a, abc_b)
+
+
+def _calcular_recompra(
+    db: Session, modo: str, fator: float, dias_fixos: int, pedidos_do_intervalo: int, min_pedidos: int,
+    dias_padrao: int, abc_a: float = 0.8, abc_b: float = 0.95,
+) -> dict:
     hoje = date.today()
     linhas = db.execute(text("""
         SELECT v.cliente_id, v.data, SUM(v.valor_total) AS valor, SUM(v.quantidade_kg) AS kg
@@ -58,7 +69,7 @@ def clientes_sem_comprar(
     clientes = {
         r["id"]: r for r in db.execute(text("""
             SELECT c.id, c.nome, c.cidade, c.contato, c.temperatura, c.proxima_acao, c.proxima_acao_data, c.fase,
-                   c.limite_recompra_dias, vd.nome AS vendedor_cadastro
+                   c.limite_recompra_dias, c.endereco, vd.nome AS vendedor_cadastro
             FROM cliente c LEFT JOIN vendedor vd ON vd.id = c.vendedor_id
             WHERE c.ativo AND c.e_cliente
         """)).mappings().all()
@@ -84,6 +95,8 @@ def clientes_sem_comprar(
             "SELECT cliente_id, MAX(data) AS ultimo FROM interacao_cliente WHERE excluido_em IS NULL GROUP BY cliente_id"
         )).mappings().all()
     }
+
+    credito = {r["id"]: _linha_credito(r) for r in db.execute(text(_SQL_CREDITO.format(filtro="")), {"hoje": hoje}).mappings().all()}
 
     saida = []
     for cid, pedidos in por_cliente.items():
@@ -138,16 +151,44 @@ def clientes_sem_comprar(
             "produtos_principais": [t[0] for t in tops],
             "ultimo_contato": ultimo_contato.get(cid), "temperatura": c["temperatura"],
             "proxima_acao": c["proxima_acao"], "proxima_acao_data": c["proxima_acao_data"],
+            "em_aberto": credito.get(cid, {}).get("em_aberto", 0.0), "vencido": credito.get(cid, {}).get("vencido", 0.0),
+            "maior_atraso_pagamento_dias": credito.get(cid, {}).get("maior_atraso_dias"),
+            "limite_credito": credito.get(cid, {}).get("limite_credito"), "status_credito": credito.get(cid, {}).get("status"),
+            "endereco": c["endereco"],
         })
     # mais valioso e mais atrasado primeiro
     ordem = {"atrasado": 0, "atencao": 1, "inativo": 2, "em_dia": 3}
     saida.sort(key=lambda x: (ordem[x["situacao"]], -(x["potencial_mensal"] or 0)))
     resumo = {s: sum(1 for x in saida if x["situacao"] == s) for s in ("em_dia", "atencao", "atrasado", "inativo")}
     resumo["potencial_mensal_em_risco"] = round(sum((x["potencial_mensal"] or 0) for x in saida if x["situacao"] in ("atencao", "atrasado")), 2)
+    # curva ABC pelo faturamento dos últimos 12 meses (Pareto): A = quem soma até abc_a, B = até abc_b, C = o resto
+    base_abc = sorted((x for x in saida if x["valor_12m"] > 0), key=lambda x: -x["valor_12m"])
+    total_12m = sum(x["valor_12m"] for x in base_abc)
+    acumulado = 0.0
+    for x in base_abc:
+        antes = acumulado / total_12m if total_12m else 1.0
+        x["curva"] = "A" if antes < abc_a else "B" if antes < abc_b else "C"
+        x["participacao_12m"] = x["valor_12m"] / total_12m if total_12m else 0.0
+        acumulado += x["valor_12m"]
+        x["participacao_acumulada"] = acumulado / total_12m if total_12m else 0.0
+    for x in saida:
+        x.setdefault("curva", "-")
+        x.setdefault("participacao_12m", 0.0)
+        x.setdefault("participacao_acumulada", 1.0)
+    abc = {}
+    for k in ("A", "B", "C", "-"):
+        grupo = [x for x in saida if x["curva"] == k]
+        abc[k] = {
+            "clientes": len(grupo), "valor_12m": round(sum(x["valor_12m"] for x in grupo), 2),
+            "participacao": round(sum(x["valor_12m"] for x in grupo) / total_12m, 4) if total_12m else 0.0,
+            "em_risco": sum(1 for x in grupo if x["situacao"] in ("atencao", "atrasado")),
+            "potencial_mensal_em_risco": round(sum((x["potencial_mensal"] or 0) for x in grupo if x["situacao"] in ("atencao", "atrasado")), 2),
+            "vencido": round(sum(x["vencido"] for x in grupo), 2),
+        }
     return {
         "parametros": {"modo": modo, "fator": fator, "dias_fixos": dias_fixos, "pedidos_do_intervalo": pedidos_do_intervalo,
-                       "min_pedidos": min_pedidos, "dias_padrao": dias_padrao},
-        "resumo": resumo, "clientes": saida,
+                       "min_pedidos": min_pedidos, "dias_padrao": dias_padrao, "abc_a": abc_a, "abc_b": abc_b},
+        "resumo": resumo, "abc": abc, "total_12m": round(total_12m, 2), "clientes": saida,
     }
 
 
@@ -339,3 +380,138 @@ def agenda(ate: date | None = Query(default=None), db: Session = Depends(get_db)
     """), {"limite": limite, "perdido": FASE_PERDIDO}).mappings().all()
     hoje = date.today()
     return [{**dict(r), "atrasada": r["proxima_acao_data"] < hoje} for r in rows]
+
+
+# --------------------------------------------------------------------------- cobrança (crédito + recompra)
+
+_PADRAO = dict(modo="relativo", fator=1.5, dias_fixos=45, pedidos_do_intervalo=5, min_pedidos=3, dias_padrao=60)
+
+
+@router.get("/cobranca")
+def cobranca(db: Session = Depends(get_db)):
+    """Quem está devendo (vencido) ou vence nos próximos 3 dias, com a situação de recompra e a curva ABC do cliente —
+    para cobrar sabendo o que ele vale e se ainda está comprando."""
+    hoje = date.today()
+    rec = {c["cliente_id"]: c for c in _calcular_recompra(db, **_PADRAO)["clientes"]}
+    cred = [_linha_credito(r) for r in db.execute(text(_SQL_CREDITO.format(filtro="")), {"hoje": hoje}).mappings().all()]
+    prox = {
+        r["cliente_id"]: float(r["valor"]) for r in db.execute(text("""
+            SELECT v.cliente_id, SUM(vp.valor) AS valor
+            FROM venda v JOIN venda_parcela vp ON vp.venda_id = v.id
+            WHERE v.excluido_em IS NULL AND vp.excluido_em IS NULL AND vp.data_pagamento IS NULL
+              AND vp.data_prevista BETWEEN :hoje AND :ate AND v.cliente_id IS NOT NULL
+            GROUP BY v.cliente_id
+        """), {"hoje": hoje, "ate": hoje + timedelta(days=3)}).mappings().all()
+    }
+    extra = {
+        r["id"]: r for r in db.execute(text("""
+            SELECT c.id, c.contato, c.proxima_acao, c.proxima_acao_data,
+                   (SELECT MAX(i.data) FROM interacao_cliente i WHERE i.cliente_id = c.id AND i.excluido_em IS NULL AND i.tipo = 'Cobrança') AS ultima_cobranca
+            FROM cliente c WHERE c.ativo
+        """)).mappings().all()
+    }
+    saida = []
+    for c in cred:
+        a_vencer_3d = prox.get(c["cliente_id"], 0.0)
+        if c["vencido"] <= 0 and a_vencer_3d <= 0:
+            continue
+        r = rec.get(c["cliente_id"], {})
+        e = extra.get(c["cliente_id"], {})
+        saida.append({
+            **c, "a_vencer_3d": a_vencer_3d, "telefone": e.get("contato"), "proxima_acao": e.get("proxima_acao"),
+            "proxima_acao_data": e.get("proxima_acao_data"), "ultima_cobranca": e.get("ultima_cobranca"),
+            "situacao_recompra": r.get("situacao"), "dias_sem_comprar": r.get("dias_sem_comprar"), "curva": r.get("curva", "-"),
+            "potencial_mensal": r.get("potencial_mensal"),
+        })
+    saida.sort(key=lambda x: (-x["vencido"], -x["a_vencer_3d"]))
+    faixas = db.execute(text("""
+        SELECT
+          COALESCE(SUM(vp.valor) FILTER (WHERE :hoje - vp.data_prevista BETWEEN 1 AND 30), 0) AS f1,
+          COALESCE(SUM(vp.valor) FILTER (WHERE :hoje - vp.data_prevista BETWEEN 31 AND 60), 0) AS f2,
+          COALESCE(SUM(vp.valor) FILTER (WHERE :hoje - vp.data_prevista BETWEEN 61 AND 90), 0) AS f3,
+          COALESCE(SUM(vp.valor) FILTER (WHERE :hoje - vp.data_prevista > 90), 0) AS f4
+        FROM venda v JOIN venda_parcela vp ON vp.venda_id = v.id
+        WHERE v.excluido_em IS NULL AND vp.excluido_em IS NULL AND vp.data_pagamento IS NULL AND vp.data_prevista < :hoje
+    """), {"hoje": hoje}).mappings().first()
+    return {
+        "resumo": {
+            "vencido": round(sum(x["vencido"] for x in saida), 2), "clientes_vencidos": sum(1 for x in saida if x["vencido"] > 0),
+            "a_vencer_3d": round(sum(x["a_vencer_3d"] for x in saida), 2),
+            "faixas": {"1-30": float(faixas["f1"]), "31-60": float(faixas["f2"]), "61-90": float(faixas["f3"]), "90+": float(faixas["f4"])},
+            "vencido_de_clientes_curva_a": round(sum(x["vencido"] for x in saida if x["curva"] == "A"), 2),
+        },
+        "clientes": saida,
+    }
+
+
+@router.get("/cobranca/{cliente_id}/parcelas")
+def parcelas_em_aberto(cliente_id: int, db: Session = Depends(get_db)):
+    hoje = date.today()
+    rows = db.execute(text("""
+        SELECT v.id AS venda_id, v.data AS data_venda, pr.nome AS produto, vp.valor, vp.forma_pgto, vp.data_prevista
+        FROM venda v JOIN venda_parcela vp ON vp.venda_id = v.id JOIN produto pr ON pr.id = v.produto_id
+        WHERE v.cliente_id = :c AND v.excluido_em IS NULL AND vp.excluido_em IS NULL AND vp.data_pagamento IS NULL
+        ORDER BY vp.data_prevista, v.id
+    """), {"c": cliente_id}).mappings().all()
+    return [{**dict(r), "valor": float(r["valor"]), "dias_de_atraso": max(0, (hoje - r["data_prevista"]).days)} for r in rows]
+
+
+# --------------------------------------------------------------------------- rota de visitas
+
+@router.get("/rota")
+def rota_de_visitas(vendedor: str | None = Query(default=None), db: Session = Depends(get_db)):
+    """Paradas agrupadas por cidade para planejar a semana: clientes a reativar (recompra atrasada/atenção), cobranças,
+    prospectos em aberto e ações já marcadas. Cada parada traz os motivos pelos quais vale a visita."""
+    hoje = date.today()
+    paradas: dict[tuple[str, int], dict] = {}
+
+    def parada(tipo: str, cid: int, nome: str, cidade: str | None, endereco: str | None, telefone: str | None, vend: str | None) -> dict:
+        return paradas.setdefault((tipo, cid), {
+            "cliente_id": cid, "tipo": tipo, "nome": nome, "cidade": (cidade or "").strip() or None, "endereco": endereco,
+            "telefone": telefone, "vendedor": vend, "motivos": [], "potencial_mensal": 0.0, "vencido": 0.0,
+            "volume_estimado_kg_mes": None, "curva": "-",
+        })
+
+    for c in _calcular_recompra(db, **_PADRAO)["clientes"]:
+        if c["situacao"] in ("atrasado", "atencao"):
+            p = parada("cliente", c["cliente_id"], c["nome"], c["cidade"], c["endereco"], c["telefone"], c["vendedor"])
+            p["motivos"].append(f"Recompra: {c['dias_sem_comprar']} d sem comprar (limite {c['limite_dias']} d)")
+            p["potencial_mensal"] = c["potencial_mensal"] or 0.0
+            p["curva"] = c["curva"]
+        if c["vencido"] > 0:
+            p = parada("cliente", c["cliente_id"], c["nome"], c["cidade"], c["endereco"], c["telefone"], c["vendedor"])
+            p["motivos"].append(f"Cobrança: {c['vencido']:.2f} vencido".replace(".", ","))
+            p["vencido"] = c["vencido"]
+            p["curva"] = c["curva"]
+    for r in db.execute(text("""
+        SELECT c.id, c.nome, c.cidade, c.endereco, c.contato, c.fase, c.volume_estimado_kg_mes, vd.nome AS vendedor
+        FROM cliente c LEFT JOIN vendedor vd ON vd.id = c.vendedor_id
+        WHERE c.ativo AND NOT c.e_cliente AND COALESCE(c.fase, '') <> :perdido
+    """), {"perdido": FASE_PERDIDO}).mappings().all():
+        p = parada("prospecto", r["id"], r["nome"], r["cidade"], r["endereco"], r["contato"], r["vendedor"])
+        p["motivos"].append(f"Prospecção: {r['fase'] or 'Novo'}")
+        p["volume_estimado_kg_mes"] = float(r["volume_estimado_kg_mes"]) if r["volume_estimado_kg_mes"] is not None else None
+    for r in db.execute(text("""
+        SELECT c.id, c.nome, c.cidade, c.endereco, c.contato, c.e_cliente, c.proxima_acao, c.proxima_acao_data, vd.nome AS vendedor
+        FROM cliente c LEFT JOIN vendedor vd ON vd.id = c.vendedor_id
+        WHERE c.ativo AND c.proxima_acao_data IS NOT NULL AND c.proxima_acao_data <= :ate AND COALESCE(c.fase, '') <> :perdido
+    """), {"ate": hoje + timedelta(days=7), "perdido": FASE_PERDIDO}).mappings().all():
+        p = parada("cliente" if r["e_cliente"] else "prospecto", r["id"], r["nome"], r["cidade"], r["endereco"], r["contato"], r["vendedor"])
+        p["motivos"].append(f"Ação marcada {r['proxima_acao_data']:%d/%m}: {r['proxima_acao'] or '—'}")
+
+    lista = [p for p in paradas.values() if not vendedor or (p["vendedor"] or "").lower() == vendedor.lower()]
+    cidades: dict[str, dict] = {}
+    for p in lista:
+        chave = p["cidade"] or "Sem cidade"
+        c = cidades.setdefault(chave, {"cidade": chave, "paradas": [], "potencial_mensal": 0.0, "vencido": 0.0, "prospectos": 0})
+        c["paradas"].append(p)
+        c["potencial_mensal"] += p["potencial_mensal"]
+        c["vencido"] += p["vencido"]
+        c["prospectos"] += 1 if p["tipo"] == "prospecto" else 0
+    for c in cidades.values():
+        c["paradas"].sort(key=lambda p: -(p["potencial_mensal"] + p["vencido"]))
+        c["potencial_mensal"] = round(c["potencial_mensal"], 2)
+        c["vencido"] = round(c["vencido"], 2)
+    ordenadas = sorted(cidades.values(), key=lambda c: (c["cidade"] == "Sem cidade", -(c["potencial_mensal"] + c["vencido"]), -len(c["paradas"])))
+    vendedores = sorted({p["vendedor"] for p in paradas.values() if p["vendedor"]})
+    return {"cidades": ordenadas, "vendedores": vendedores, "total_paradas": len(lista)}
